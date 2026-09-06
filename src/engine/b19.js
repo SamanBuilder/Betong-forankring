@@ -93,28 +93,32 @@ export function b19Steel(m) {
   const s = steelGrade(m.anchors.steel), sh = shaftProps(m);
   const base = { id: s.id, nEdge: s.nEdge, As: sh.As, Wp: sh.Wp, sh };
 
+  // Skjær og dybelbøyning regnes i snittet ved betongoverflata. Står det
+  // glatte skaftet der, er det snittet grovere enn gjengene (sh.Av / sh.WpV).
+  const vTxt = sh.smooth > 0 ? 'A_v' : (sh.threaded ? 'A_sp' : 'A_s');
+
   if (s.kind === 'rebar') {
     const fyd = s.fyk / KB.gS;
     return { ...base, kind: 'rebar', f: fyd, fDowel: fyd, fM: fyd,
       fSym: 'f_yd', fSrc: `f_yk / 1,15 = ${n(s.fyk, 0)} / 1,15`,
       NRd: sh.As * fyd, NTxt: 'A_s · f_yd',
-      VRd: sh.As * fyd / Math.sqrt(3), VTxt: 'A_s · f_yd / √3',
-      MRd: sh.Wp * fyd, MTxt: 'W_p · f_yd' };
+      VRd: sh.Av * fyd / Math.sqrt(3), VTxt: `${vTxt} · f_yd / √3`,
+      MRd: sh.WpV * fyd, MTxt: 'W_p · f_yd' };
   }
   if (s.kind === 'bolt') {
     const fsd0 = s.fyk / KB.gM0, fsd2 = 0.9 * s.fuk / KB.gM2;
     return { ...base, kind: 'bolt', f: fsd2, fDowel: fsd2, fM: fsd0, kv: s.kv,
       fSym: 'f_sd2', fSrc: `0,9 · f_u / 1,25 = 0,9 · ${n(s.fuk, 0)} / 1,25`,
       NRd: sh.As * fsd2, NTxt: 'A_sp · f_sd2',
-      VRd: s.kv * fsd2 * sh.As, VTxt: `${n(s.kv, 1)} · f_sd2 · A_sp`,
-      MRd: sh.Wp * fsd0, MTxt: 'W_p · f_sd0' };
+      VRd: s.kv * fsd2 * sh.Av, VTxt: `${n(s.kv, 1)} · f_sd2 · ${vTxt}`,
+      MRd: sh.WpV * fsd0, MTxt: 'W_p · f_sd0' };
   }
   const fsd0 = s.fyk / KB.gM0;
   return { ...base, kind: 'struct', f: fsd0, fDowel: fsd0, fM: fsd0,
     fSym: 'f_sd0', fSrc: `f_y / 1,05 = ${n(s.fyk, 0)} / 1,05`,
     NRd: sh.As * fsd0, NTxt: 'A_s · f_sd0',
-    VRd: sh.As * fsd0 / Math.sqrt(3), VTxt: 'A_s · f_sd0 / √3',
-    MRd: sh.Wp * fsd0, MTxt: 'W_p · f_sd0' };
+    VRd: sh.Av * fsd0 / Math.sqrt(3), VTxt: `${vTxt} · f_sd0 / √3`,
+    MRd: sh.WpV * fsd0, MTxt: 'W_p · f_sd0' };
 }
 
 // ---------------------------------------------------------------------------
@@ -257,7 +261,9 @@ function b19BondBranch(m, res, c) {
   if (!sh.bond) return null;
   const cd = b19Concrete(m), a = m.anchors;
   const rebar = a.barType === 'rebar';
-  const lb = a.hef;
+  // Heft utvikles bare der stanga har kammer eller gjenger. Er skaftet glatt
+  // ned til en viss dybde, begynner heften først der gjengene begynner.
+  const lb = sh.lBond;
 
   const kb = c.step({ sym: 'f_bd', desc: rebar
       ? 'Heftfasthet, kamstål – nedre grense etter EC2-1-1 pkt. 8'
@@ -288,8 +294,13 @@ function b19BondBranch(m, res, c) {
     subst: `maks(${n(a2)} · ${n(a3)} ; 0,7)`,
     value: Math.max(KB.alphaMin, a2 * a3), unit: '–', ref: '19.3.3.1' });
 
-  c.step({ sym: 'l_b', desc: 'Heftlengde – innstøpt lengde uten fot',
-    formula: 'l_b = h_ef', subst: `${n(lb, 0)}`, value: lb, unit: 'mm' });
+  c.step({ sym: 'l_b', desc: sh.smooth > 0
+      ? 'Heftlengde – bare den gjengede delen utvikler heft'
+      : 'Heftlengde – innstøpt lengde uten fot',
+    formula: sh.smooth > 0 ? 'l_b = h_ef − l_glatt' : 'l_b = h_ef',
+    subst: sh.smooth > 0
+      ? `${n(a.hef, 0)} − ${n(sh.smooth, 0)}` : `${n(lb, 0)}`,
+    value: lb, unit: 'mm' });
   const NRd = Math.PI * sh.d * lb * kb / pa;
   c.step({ sym: 'N_Rd,b', desc: 'Heftkapasitet pr. stang',
     formula: 'π · ⌀ · l_b · f_bd / Πα',

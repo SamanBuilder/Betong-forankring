@@ -38,6 +38,16 @@ export function validate(m) {
   if (!foot.hasFoot && !sh.bond)
     err('«Uten endemutter» krever heftforankring: velg kamstål eller ' +
         'gjengestang som stangtype, eller sett på endemutter/endeplate.');
+
+  // Det glatte skaftet utvikler ingen heft. Er hele den innstøpte lengda
+  // glatt, finnes det ingen heftforankring å regne på.
+  if (sh.smooth >= a.hef)
+    err(`Det glatte skaftet (${a.lSmooth} mm) er like langt som den innstøpte ` +
+        `lengda (${a.hef} mm) – da er det ingen gjenger i betongen.`);
+  else if (!foot.hasFoot && sh.smooth > 0)
+    warn(`Bare den gjengede delen gir heft: l_b = ${Math.round(sh.lBond)} mm ` +
+         `av ${a.hef} mm innstøpt lengde. Det glatte skaftet på ` +
+         `${Math.round(sh.smooth)} mm overfører ingen strekk til betongen.`);
   if (foot.hasFoot && foot.Ah <= 0)
     err('Forankringsfoten er ikke større enn stangtverrsnittet – ' +
         `netto trykkareal A_h = ${Math.round(foot.Ah)} mm².`);

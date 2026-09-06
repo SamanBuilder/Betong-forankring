@@ -109,24 +109,25 @@ export function studSize(d) {
 export const REBAR_SIZES = [8, 10, 12, 16, 20, 25, 32];
 
 // Gjengestang.  Asp = spenningsareal, dekv = ekvivalent diameter (til W_p),
-// NV = nøkkelvidde på sekskantmutteren som brukes som endemutter.
-// Tallene er tab. B 19.7.1 i Betongelementboka bind B kap. B19.
+// NV = nøkkelvidde på sekskantmutteren som brukes som endemutter,
+// P = gjengestigning, grov metrisk gjenge etter ISO 261 (brukes i 3D).
+// De øvrige tallene er tab. B 19.7.1 i Betongelementboka bind B kap. B19.
 export const ROD_SIZES = [
-  { d: 10, Asp: 58,   dekv: 8.6,  NV: 17 },
-  { d: 12, Asp: 84,   dekv: 10.4, NV: 19 },
-  { d: 16, Asp: 157,  dekv: 14.1, NV: 24 },
-  { d: 20, Asp: 245,  dekv: 17.7, NV: 30 },
-  { d: 24, Asp: 353,  dekv: 21.2, NV: 36 },
-  { d: 30, Asp: 561,  dekv: 26.7, NV: 46 },
-  { d: 33, Asp: 694,  dekv: 29.7, NV: 50 },
-  { d: 36, Asp: 817,  dekv: 32.2, NV: 55 },
-  { d: 39, Asp: 976,  dekv: 35.3, NV: 60 },
-  { d: 42, Asp: 1121, dekv: 37.8, NV: 65 },
+  { d: 10, Asp: 58,   dekv: 8.6,  NV: 17, P: 1.5 },
+  { d: 12, Asp: 84,   dekv: 10.4, NV: 19, P: 1.75 },
+  { d: 16, Asp: 157,  dekv: 14.1, NV: 24, P: 2.0 },
+  { d: 20, Asp: 245,  dekv: 17.7, NV: 30, P: 2.5 },
+  { d: 24, Asp: 353,  dekv: 21.2, NV: 36, P: 3.0 },
+  { d: 30, Asp: 561,  dekv: 26.7, NV: 46, P: 3.5 },
+  { d: 33, Asp: 694,  dekv: 29.7, NV: 50, P: 3.5 },
+  { d: 36, Asp: 817,  dekv: 32.2, NV: 55, P: 4.0 },
+  { d: 39, Asp: 976,  dekv: 35.3, NV: 60, P: 4.0 },
+  { d: 42, Asp: 1121, dekv: 37.8, NV: 65, P: 4.5 },
 ];
 
 export function rodSize(d) {
   return ROD_SIZES.find(s => s.d === d) ||
-         { d, Asp: 0.78 * shaftArea(d), dekv: 0.9 * d, NV: 1.6 * d };
+         { d, Asp: 0.78 * shaftArea(d), dekv: 0.9 * d, NV: 1.6 * d, P: 0.12 * d };
 }
 
 export function shaftArea(d) { return Math.PI * d * d / 4; }
@@ -142,21 +143,48 @@ export function headArea(d, dh) { return Math.PI * (dh * dh - d * d) / 4; }
 //           'rod'    gjengestang                   - heft langs hele stanga,
 //                                                    gjenget tverrsnitt (A_sp)
 //
+//  En bolt er sjelden gjenget i hele lengda: skaftet er glatt fra hodet og
+//  gjengene begynner et stykke nede. Det glatte skaftet har ikke kammer eller
+//  gjenger, så det utvikler ingen heft - heftforankringen er bare den gjengede
+//  delen. Til gjengjeld er det glatte skaftet grovere enn gjengene, og det er
+//  nettopp der skjærsnittet ligger (ved betongoverflata). Derfor skilles det
+//  mellom strekksnittet og skjærsnittet:
+//
 //  d     nominell diameter (⌀_nom) - den som brukes i dybelformlene
 //  dEff  ekvivalent diameter til W_p (gjengestang: ⌀_ekv, ellers ⌀_nom)
-//  As    tverrsnitt som tar strekk (gjengestang: spenningsarealet A_sp)
+//  As    tverrsnitt som tar STREKK - brudd skjer i gjengene, altså A_sp
+//  Av    tverrsnitt som tar SKJÆR ved betongoverflata - πd²/4 når det glatte
+//        skaftet står der, ellers det samme som As
 //  Wp    plastisk motstandsmoment ⌀_ekv³ / 6  (B19 pkt. 19.5)
+//  WpV   det samme for skjærsnittet (dybelbøyning ved overflata)
+//  smooth  lengden av det glatte skaftet, målt ned fra betongoverflata
+//  lBond   lengden som faktisk utvikler heft
 //  bond  om stanga har heftforankring langs skaftet
 // ---------------------------------------------------------------------------
 export function shaftProps(m) {
   const a = m.anchors;
+  const gross = shaftArea(a.d);
+  // Glatt skaft finnes bare på gjengestang/bolt: kamstålet har kammer hele
+  // veien, og sveisebolten er glatt hele veien uten heft uansett.
+  const smooth = a.barType === 'rod'
+    ? Math.max(0, Math.min(a.lSmooth || 0, a.hef)) : 0;
+
   if (a.barType === 'rod') {
     const r = rodSize(a.d);
+    // Står det glatte skaftet i betongoverflata, går skjæret gjennom det
+    // grovere tverrsnittet i stedet for gjennom gjengene.
+    const threadedAtSurface = smooth <= 0;
+    const dV = threadedAtSurface ? r.dekv : a.d;
     return { d: a.d, dEff: r.dekv, As: r.Asp, Wp: Math.pow(r.dekv, 3) / 6,
-             bond: true, threaded: true, NV: r.NV };
+             Av: threadedAtSurface ? r.Asp : gross, dV,
+             WpV: Math.pow(dV, 3) / 6,
+             bond: true, threaded: true, NV: r.NV, P: r.P,
+             smooth, lBond: Math.max(0, a.hef - smooth) };
   }
-  return { d: a.d, dEff: a.d, As: shaftArea(a.d), Wp: Math.pow(a.d, 3) / 6,
-           bond: a.barType === 'rebar', threaded: false };
+  return { d: a.d, dEff: a.d, As: gross, Wp: Math.pow(a.d, 3) / 6,
+           Av: gross, dV: a.d, WpV: Math.pow(a.d, 3) / 6,
+           bond: a.barType === 'rebar', threaded: false,
+           smooth: 0, lBond: a.barType === 'rebar' ? a.hef : 0 };
 }
 
 // ---------------------------------------------------------------------------
@@ -283,7 +311,9 @@ export function defaultModel() {
       up: 40,               // felles endeplate: utstikk utenfor ytterste bolt
       tp: 10,               //                  tykkelse
       hef: 150,             // forankringsdybde til underkant fot; uten fot er
-                            // dette heftlengden l_b langs stanga
+                            // dette den innstøpte lengda av stanga
+      lSmooth: 0,           // glatt skaft ned fra betongoverflata før gjengene
+                            // begynner (bare gjengestang/bolt)
       attachment: 'welded',   // 'welded' = sveist til plata | 'bolted' = gjennomboltet
       steel: 'SD1 (S235J2+C450)',
       fyk: 350,

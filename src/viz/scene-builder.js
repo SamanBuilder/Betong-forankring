@@ -7,7 +7,32 @@
 
 import * as THREE from 'three';
 import { anchorPositions, edgeDistances, anchorFoot, mounting,
-         memberLimits } from '../core/model.js';
+         memberLimits, shaftProps } from '../core/model.js';
+
+// ---------------------------------------------------------------------------
+//  Gjenger.
+//
+//  Tegnes som ei skruelinje lagt utenpå skaftet - ekte geometri, ikke tekstur,
+//  så gjengene skyggelegges og blir med i OBJ/GLB-eksporten som alt annet.
+//  Skruelinja bygges rett i ingeniørkoordinater med z som akse, og skal derfor
+//  ikke roteres slik sylindrene må.
+//
+//  Ei lang stang med fin stigning gir mange segmenter. Taket holder eksporten
+//  liten uten at gjengene slutter å lese som gjenger.
+// ---------------------------------------------------------------------------
+function threadHelix(d, z0, z1, pitch, x, y) {
+  const len = z1 - z0;
+  if (!(len > 0) || !(pitch > 0)) return null;
+  const turns = len / pitch;
+  const seg = Math.max(8, Math.min(1600, Math.round(turns * 10)));
+  const r = d / 2;
+  const curve = new THREE.Curve();
+  curve.getPoint = (t, target = new THREE.Vector3()) => {
+    const ang = 2 * Math.PI * turns * t;
+    return target.set(x + r * Math.cos(ang), y + r * Math.sin(ang), z0 + len * t);
+  };
+  return new THREE.TubeGeometry(curve, seg, Math.max(0.3, 0.3 * pitch), 5, false);
+}
 
 // Betongkorn genereres i sida - ingen ekstern tekstur. Fin støy med noen få
 // mørkere luftporer, brukt både som farge- og ujevnhetskart, gir overflata en
@@ -470,6 +495,7 @@ export function buildScene(v, opts = {}) {
   const zTop = p.present ? mnt.offset + p.t : mnt.offset + Math.max(p.e, 0);
   const steelMat = MAT.steel();
   const foot = anchorFoot(m);
+  const sh = shaftProps(m);
   for (const an of res.anchors) {
     const u = utilByAnchor.get(an.id) ?? 0;
     const mat = byUtil
@@ -504,6 +530,25 @@ export function buildScene(v, opts = {}) {
     };
 
     put(new THREE.Mesh(cyl(a.d / 2, shaftLen), mat), zBot + shaftLen / 2, 'skaft');
+
+    // Gjengene tegnes bare der stanga faktisk er gjenget. Er skaftet glatt et
+    // stykke ned fra betongoverflata, begynner de først der - samme lengde som
+    // heftberegningen bruker, så bildet og tallene forteller det samme.
+    if (a.barType === 'rod') {
+      const zones = [[zBot, sh.smooth > 0 ? -sh.smooth : shaftTop]];
+      // Er skaftet glatt og plata gjennomboltet, må toppen likevel ha gjenger
+      // til mutteren.
+      if (sh.smooth > 0 && p.present && !welded)
+        zones.push([zTop - 0.2 * a.d, shaftTop]);
+      for (const [z0, z1] of zones) {
+        const geo = threadHelix(a.d, z0, z1, sh.P, an.x, an.y);
+        if (!geo) continue;
+        const th = new THREE.Mesh(geo, mat);
+        th.renderOrder = ORDER.steel;
+        th.name = `gjenger_${an.id}`;
+        g.add(th);
+      }
+    }
     // Foten tegnes fra modellens egne verdier, ikke fra standardtabellen, slik
     // at et redigert mål faktisk vises: rundt hode for sveisebolt, sekskantet
     // mutter for gjengestang, og firkantet plate for innstøpt endeplate.

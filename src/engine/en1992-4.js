@@ -360,7 +360,10 @@ export function shearSteel(m, res, g) {
   const VEd = Math.max(0, ...res.anchors.map(a => a.V));
   const sh = shaftProps(m);
   const d = m.anchors.d, fuk = m.anchors.fuk;
-  const As = sh.As;
+  // Skjæret går gjennom snittet ved betongoverflata. Er det glatte skaftet
+  // der, er tverrsnittet grovere enn gjengene - strekk brytes fortsatt i
+  // gjengene, så N_Rd,s under regnes av sh.As.
+  const As = sh.Av;
 
   if (res.leverArm > 0) {
     const c = new Calc('7.2.2.3.2');
@@ -369,13 +372,15 @@ export function shearSteel(m, res, g) {
     c.in('l_a', res.leverArm, 'mm', 'Plate · avstand fra betong + t/2');
     c.in('γ_Ms,V', g.gMsV, '–', '4.4.3.1');
     c.in('V_Ed', VEd, 'N', 'Største boltskjær fra kraftfordelinga');
-    const Wel = c.step({ sym: 'W_el', desc: 'Elastisk motstandsmoment i skaftet',
-      formula: 'π · ⌀_ekv³ / 32', subst: `π · ${n(sh.dEff, 1)}³ / 32`,
-      value: Math.PI * Math.pow(sh.dEff, 3) / 32, unit: 'mm³' });
+    const Wel = c.step({ sym: 'W_el', desc: sh.smooth > 0
+        ? 'Elastisk motstandsmoment – glatt skaft ved betongoverflata'
+        : 'Elastisk motstandsmoment i skaftet',
+      formula: 'π · ⌀_ekv³ / 32', subst: `π · ${n(sh.dV, 1)}³ / 32`,
+      value: Math.PI * Math.pow(sh.dV, 3) / 32, unit: 'mm³' });
     const M0 = c.step({ sym: 'M⁰_Rk,s', desc: 'Momentkapasitet uten samtidig strekk',
       formula: '1,2 · W_el · f_uk', subst: `1,2 · ${n(Wel)} · ${n(fuk, 0)}`,
       value: 1.2 * Wel * fuk, unit: 'Nmm', ref: '(7.37)' });
-    const NRds = As * fuk / g.gMsN;
+    const NRds = sh.As * fuk / g.gMsN;   // strekk brytes i gjengene
     const NEd = Math.max(0, ...res.anchors.map(a => a.N));
     const MRk = c.step({ sym: 'M_Rk,s', desc: 'Redusert av samtidig strekk i bolten',
       formula: 'M⁰_Rk,s · (1 − N_Ed/N_Rd,s)',
@@ -402,8 +407,13 @@ export function shearSteel(m, res, g) {
   c.in('γ_Ms,V', g.gMsV, '–',
     g.mild ? 'maks(f_uk/f_yk ; 1,25) – 4.4.3.1' : '1,5 – høyfast stål, 4.4.3.1');
   c.in('V_Ed', VEd, 'N', 'Største boltskjær fra kraftfordelinga');
-  c.step({ sym: 'A_s', desc: 'Spenningstverrsnitt i boltskaftet',
-    formula: 'π · ⌀² / 4', subst: `π · ${n(d, 0)}² / 4`, value: As, unit: 'mm²' });
+  c.step({ sym: 'A_s', desc: sh.smooth > 0
+      ? 'Skjærsnittet ligger i det glatte skaftet, ikke i gjengene'
+      : (sh.threaded ? 'Spenningsareal A_sp i gjengene'
+                     : 'Spenningstverrsnitt i boltskaftet'),
+    formula: sh.smooth > 0 || !sh.threaded ? 'π · ⌀² / 4' : 'A_sp (tabell)',
+    subst: sh.smooth > 0 || !sh.threaded
+      ? `π · ${n(d, 0)}² / 4` : `M${n(d, 0)}`, value: As, unit: 'mm²' });
   const VRk = c.res({ sym: 'V_Rk,s', formula: 'k_6 · k_7 · A_s · f_uk',
     subst: `${n(k6)} · ${n(k7)} · ${n(As)} · ${n(fuk, 0)}`,
     value: K.k6 * k7 * As * fuk, unit: 'N', ref: '(7.34)' });

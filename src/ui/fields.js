@@ -107,10 +107,19 @@ export const FIELDS = [
       hint: 'Med fot regnes kjeglebrudd (B19 pkt. 19.3.2). Uten fot regnes ' +
             'heftforankring (19.3.3 / 19.3.4). Har stanga både fot og heft, ' +
             'bruker B19 den modellen som gir størst kapasitet (19.3.1.2).' },
-    { p: 'anchors.hef', l: m => m.anchors.endType === 'none' ? 'Heftlengde l_b' : 'h_ef',
+    { p: 'anchors.hef',
+      l: m => m.anchors.endType === 'none' ? 'Innstøpt lengde' : 'h_ef',
       t: 'num', u: 'mm', step: 5,
-      hint: 'Med fot: dybden ned til underkant fot. Uten fot: innstøpt lengde ' +
-            'som utvikler heft.' },
+      hint: 'Med fot: dybden ned til underkant fot. Uten fot: hele den ' +
+            'innstøpte lengda. Heftlengda l_b er den gjengede delen av den.' },
+    // Bolter er sjelden gjenget helt opp: skaftet er glatt fra hodet, og
+    // gjengene begynner et stykke nede. Det flytter både heften og skjæret.
+    { p: 'anchors.lSmooth', l: 'Glatt skaft', t: 'num', u: 'mm', step: 5, min: 0,
+      when: m => m.anchors.barType === 'rod',
+      hint: 'Lengden av det glatte skaftet ned fra betongoverflata før ' +
+            'gjengene begynner. 0 = gjenget hele veien. Det glatte skaftet ' +
+            'utvikler ingen heft, så heftlengda blir kortere – men det er ' +
+            'grovere enn gjengene, så skjærkapasiteten øker.' },
     { p: 'anchors.dh', l: m => m.anchors.barType === 'rod'
         ? 'Nøkkelvidde NV' : 'Hodediameter ⌀_h',
       t: 'num', u: 'mm', step: 1, when: m => m.anchors.endType === 'nut',

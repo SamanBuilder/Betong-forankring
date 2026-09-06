@@ -284,6 +284,38 @@ Det har to konsekvenser for beregningen:
   telles én gang og deles på antall bolter. Er plata ikke fullt medvirkende,
   sier inndatakontrollen fra med hvor mye av den som regnes.
 
+### Glatt skaft og gjenget del
+
+En bolt er sjelden gjenget helt opp: skaftet er glatt fra hodet, og gjengene
+begynner et stykke nede. Feltet **Glatt skaft** (bare for gjengestang/bolt)
+sier hvor langt ned fra betongoverflata det glatte skaftet går. 0 betyr
+gjenget hele veien.
+
+Det er ikke bare tegning – snittet er ikke det samme de to stedene, og
+`shaftProps()` i `src/core/model.js` skiller derfor mellom dem:
+
+| | Tverrsnitt | Hvorfor |
+|---|---|---|
+| Strekk | `A_s = A_sp` | bruddet går i gjengene uansett hvor de sitter |
+| Skjær | `A_v = π⌀²/4` når skaftet er glatt ved overflata | skjærsnittet ligger i betongoverflata, og der er det glatte skaftet grovere enn gjengene |
+| Heft | `l_b = h_ef − l_glatt` | glatt stål har verken kammer eller gjenger å hefte mot |
+
+Det trekker i hver sin retning, og det er poenget: et glatt skaft **svekker**
+heftforankringen og **styrker** skjærkapasiteten. For M20 K8.8 med 300 mm
+innstøpt lengde og 100 mm glatt skaft faller heftkapasiteten fra 63,8 til
+42,5 kN, mens skjærkapasiteten stiger fra 51,4 til 66,0 kN (EN 1992-4).
+Strekkapasiteten står stille på 71,5 kN.
+
+Er hele den innstøpte lengda glatt, finnes det ingen gjenger i betongen, og
+inndatakontrollen stopper det. Er bare en del glatt og forankringen er uten
+endemutter, sier den fra hvor mye heftlengde som faktisk er igjen.
+
+Gjengene tegnes i 3D som ei skruelinje lagt utenpå skaftet – ekte geometri med
+riktig stigning etter ISO 261, ikke tekstur, så de skyggelegges og blir med i
+OBJ/GLB-eksporten. De tegnes bare der stanga faktisk er gjenget, slik at
+bildet og tallene forteller det samme. Er plata gjennomboltet, får toppen
+gjenger til mutteren selv om skaftet under er glatt.
+
 ### Boltavstand og bolthode
 
 Endrer du antall bolter, settes senteravstanden automatisk (`autoSpacing()` i
