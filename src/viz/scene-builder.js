@@ -6,7 +6,8 @@
 // ---------------------------------------------------------------------------
 
 import * as THREE from 'three';
-import { anchorPositions, edgeDistances } from '../core/model.js';
+import { anchorPositions, edgeDistances, anchorFoot, mounting,
+         memberLimits } from '../core/model.js';
 
 // Betongkorn genereres i sida - ingen ekstern tekstur. Fin støy med noen få
 // mørkere luftporer, brukt både som farge- og ujevnhetskart, gir overflata en
@@ -236,13 +237,20 @@ function buildDimensions(m, mnt, zTop, hud) {
   const pos = anchorPositions(m);
   const bxs = [...new Set(pos.map(q => q.x))].sort((u, w) => u - w);
   const bys = [...new Set(pos.map(q => q.y))].sort((u, w) => u - w);
-  const P = Math.max(p.bx, p.by);
+  // Uten plate finnes ingen platekant å måle fra. Da måles boltkjeden mot
+  // boltgruppas egen ytterkant, og platemålene faller bort.
+  const spanX = Math.max((a.nx - 1) * a.sx, 4 * a.d);
+  const spanY = Math.max((a.ny - 1) * a.sy, 4 * a.d);
+  const wx = p.present ? p.bx : spanX, wy = p.present ? p.by : spanY;
+  const P = Math.max(wx, wy);
   const g1 = P * 0.30, g2 = P * 0.68;
 
-  dimension(g, hud, V(-p.bx / 2, -p.by / 2, zTop), V(p.bx / 2, -p.by / 2, zTop),
-    V(0, -g1, 0), 'plate.bx', p.bx, opt());
-  dimension(g, hud, V(p.bx / 2, -p.by / 2, zTop), V(p.bx / 2, p.by / 2, zTop),
-    V(g1, 0, 0), 'plate.by', p.by, opt());
+  if (p.present) {
+    dimension(g, hud, V(-p.bx / 2, -p.by / 2, zTop), V(p.bx / 2, -p.by / 2, zTop),
+      V(0, -g1, 0), 'plate.bx', p.bx, opt());
+    dimension(g, hud, V(p.bx / 2, -p.by / 2, zTop), V(p.bx / 2, p.by / 2, zTop),
+      V(g1, 0, 0), 'plate.by', p.by, opt());
+  }
 
   // Kjede fra platekant til platekant. Segmentet mellom to bolter er selve
   // senteravstanden og kan redigeres; kantsegmentene er avledet.
@@ -253,18 +261,22 @@ function buildDimensions(m, mnt, zTop, hud) {
       along(c2[i], c2[i + 1], (bolts && n > 1) ? path : null, c2[i + 1] - c2[i]);
     }
   };
-  chain([-p.bx / 2, ...bxs, p.bx / 2], bxs,
+  chain([-wx / 2, ...bxs, wx / 2], bxs,
     (u, w, path, val) => dimension(g, hud,
-      V(u, -p.by / 2, zTop), V(w, -p.by / 2, zTop), V(0, -g2, 0), path, val, opt()),
+      V(u, -wy / 2, zTop), V(w, -wy / 2, zTop), V(0, -g2, 0), path, val, opt()),
     'anchors.sx', a.nx);
-  chain([-p.by / 2, ...bys, p.by / 2], bys,
+  chain([-wy / 2, ...bys, wy / 2], bys,
     (u, w, path, val) => dimension(g, hud,
-      V(p.bx / 2, u, zTop), V(p.bx / 2, w, zTop), V(g2, 0, 0), path, val, opt()),
+      V(wx / 2, u, zTop), V(wx / 2, w, zTop), V(g2, 0, 0), path, val, opt()),
     'anchors.sy', a.ny);
 
-  dimension(g, hud, V(-p.bx / 2, -p.by / 2, mnt.offset + p.t),
-    V(-p.bx / 2, -p.by / 2, mnt.offset), V(-g1 * 0.5, -g1 * 0.5, 0),
-    'plate.t', p.t, opt({ step: 1 }));
+  if (p.present)
+    dimension(g, hud, V(-p.bx / 2, -p.by / 2, mnt.offset + p.t),
+      V(-p.bx / 2, -p.by / 2, mnt.offset), V(-g1 * 0.5, -g1 * 0.5, 0),
+      'plate.t', p.t, opt({ step: 1 }));
+  else if (p.e > 0)
+    dimension(g, hud, V(-wx / 2, -wy / 2, p.e), V(-wx / 2, -wy / 2, 0),
+      V(-g1 * 0.5, -g1 * 0.5, 0), 'plate.e', p.e, opt({ step: 5 }));
 
   dimension(g, hud, V(bxs[0], bys[bys.length - 1], 0), V(bxs[0], bys[bys.length - 1], -a.hef),
     V(-P * 0.55, P * 0.55, 0), 'anchors.hef', a.hef, opt({ step: 5 }));
@@ -446,7 +458,7 @@ export function buildScene(v, opts = {}) {
   }
 
   // ---- stålplate --------------------------------------------------------
-  if (show.plate) {
+  if (show.plate && p.present) {
     const pl = boxMesh(p.bx, p.by, p.t, MAT.plate(), 'forankringsplate');
     pl.position.set(0, 0, mnt.offset + p.t / 2);
     pl.renderOrder = ORDER.steel;
@@ -455,8 +467,9 @@ export function buildScene(v, opts = {}) {
 
   // ---- bolter -----------------------------------------------------------
   const utilByAnchor = anchorUtil(v);
-  const zTop = mnt.offset + p.t;
+  const zTop = p.present ? mnt.offset + p.t : mnt.offset + Math.max(p.e, 0);
   const steelMat = MAT.steel();
+  const foot = anchorFoot(m);
   for (const an of res.anchors) {
     const u = utilByAnchor.get(an.id) ?? 0;
     const mat = byUtil
@@ -469,12 +482,15 @@ export function buildScene(v, opts = {}) {
 
     // Sveist bolt slutter ved platas underside og har en sveisekrage der.
     // Gjennomboltet bolt går gjennom plata og får skive og mutter over.
+    // Uten plate går stanga rett opp forbi betongoverflata, med utkraginga e.
     const welded = a.attachment !== 'bolted';
     const nutH = 0.8 * a.d, nutR = 0.87 * a.d;      // sekskantmutter, ca. M-serie
     const washT = 0.16 * a.d, washR = 1.1 * a.d;
-    const shaftTop = welded ? mnt.offset
+    const shaftTop = !p.present ? zTop
+                   : welded ? mnt.offset
                             : zTop + washT + nutH + 0.3 * a.d;
-    const zBot = -a.hef + a.k;                      // underkant skaft = overkant hode
+    // Med fot starter skaftet på overkant fot; uten fot går det helt ned.
+    const zBot = foot.hasFoot ? -a.hef + foot.t : -a.hef;
     const shaftLen = shaftTop - zBot;
 
     const cyl = (r, h, seg = 24) => new THREE.CylinderGeometry(r, r, h, seg);
@@ -488,11 +504,33 @@ export function buildScene(v, opts = {}) {
     };
 
     put(new THREE.Mesh(cyl(a.d / 2, shaftLen), mat), zBot + shaftLen / 2, 'skaft');
-    // Hodet tegnes fra modellens egne verdier, ikke fra standardtabellen,
-    // slik at en redigert hodediameter faktisk vises.
-    put(new THREE.Mesh(cyl(a.dh / 2, a.k), mat), -a.hef + a.k / 2, 'hode');
+    // Foten tegnes fra modellens egne verdier, ikke fra standardtabellen, slik
+    // at et redigert mål faktisk vises: rundt hode for sveisebolt, sekskantet
+    // mutter for gjengestang, og firkantet plate for innstøpt endeplate.
+    if (foot.kind === 'plate') {
+      const bp = new THREE.Mesh(
+        new THREE.BoxGeometry(a.bp, a.bp, foot.t), mat);
+      bp.position.set(an.x, an.y, -a.hef + foot.t / 2);
+      bp.renderOrder = ORDER.steel;
+      bp.name = `endeplate_${an.id}`;
+      g.add(bp);
+    } else if (foot.kind === 'nut') {
+      // Sekskantmutter: nøkkelvidden er avstanden mellom flatene, altså
+      // 2 * innskrevet radius. Sylinderradiusen er den omskrevne.
+      put(new THREE.Mesh(cyl(a.dh / Math.sqrt(3), foot.t, 6), mat),
+        -a.hef + foot.t / 2, 'endemutter');
+    } else if (foot.kind === 'head') {
+      put(new THREE.Mesh(cyl(a.dh / 2, foot.t), mat), -a.hef + foot.t / 2, 'hode');
+    }
 
-    if (welded) {
+    if (!p.present) {
+      // Ingen plate: bare stanga, med gjenger eller kammer antydet av at
+      // enden står fritt. Ved gjengestang settes det på en mutter i toppen.
+      if (a.barType === 'rod') {
+        put(new THREE.Mesh(cyl(washR, washT), mat), zTop - nutH - washT / 2, 'skive');
+        put(new THREE.Mesh(cyl(nutR, nutH, 6), mat), zTop - nutH / 2, 'mutter');
+      }
+    } else if (welded) {
       // Sveisekrage: videst inntil plata, smalner av nedover.
       const wh = 0.35 * a.d;
       put(new THREE.Mesh(
@@ -519,7 +557,9 @@ export function buildScene(v, opts = {}) {
   }
 
   // ---- bruddkjegle i strekk --------------------------------------------
-  const cone = v.checks.find(k => k.id === 'N-cone');
+  // Bruddkjegla vises for det regelverket som faktisk regner kjeglebrudd:
+  // EN 1992-4 alltid, B19 bare når kjeglemodellen er den styrende.
+  const cone = v.checks.find(k => k.id === 'N-cone' || (k.id === 'N-conc' && k.showCone));
   if (show.cone && res.tension.anchors.length && cone && Number.isFinite(cone.NRd)) {
     const ccr = 1.5 * a.hef;
     const xs = res.tension.anchors.map(t => t.x), ys = res.tension.anchors.map(t => t.y);
@@ -542,7 +582,8 @@ export function buildScene(v, opts = {}) {
   }
 
   // ---- kantbrudd-kile ---------------------------------------------------
-  const edge = v.checks.find(k => k.id?.startsWith('V-edge'));
+  // Kantbrudd-kila: EN 1992-4 sin V-edge, eller B19 sin V-conc mot en kant.
+  const edge = v.checks.find(k => k.edgeDir);
   if (show.wedge && edge && Number.isFinite(edge.NRd) && edge.util > 0) {
     const w = edgeWedge(m, res, edge.edgeDir);
     if (w) {
@@ -583,16 +624,6 @@ export function buildScene(v, opts = {}) {
   // teksten holder samme andel av modellen uansett hvor stor den er.
   const hudScale = HUD_SCALE(m);
   return { root, hud, hudScale };
-}
-
-function memberLimits(m) {
-  const c = m.concrete;
-  return {
-    x0: c.freeEdges.xNeg ? -(c.Lx / 2 + c.ex) : -1e6,
-    x1: c.freeEdges.xPos ? (c.Lx / 2 - c.ex) : 1e6,
-    y0: c.freeEdges.yNeg ? -(c.Ly / 2 + c.ey) : -1e6,
-    y1: c.freeEdges.yPos ? (c.Ly / 2 - c.ey) : 1e6,
-  };
 }
 
 // Kantbruddlegemet: kile fra forreste boltrad ut til kantflata.

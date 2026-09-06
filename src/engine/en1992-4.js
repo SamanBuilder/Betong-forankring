@@ -1,7 +1,10 @@
 // ---------------------------------------------------------------------------
 //  NS-EN 1992-4:2018 - forankring i betong.
-//  Prototypen dekker INNSTØPTE HODEBOLTER (headed fasteners), gruppe på
-//  stiv forankringsplate.
+//  Standarden dekker forankringer MED FOT (headed fasteners): bolthode,
+//  endemutter eller innstøpt plate i boltenden.  Uten fot - ren
+//  heftforankring av kamstål eller gjengestang - har EN 1992-4 ingen modell;
+//  de kontrollene hoppes over med henvisning til Betongelementboka B19
+//  pkt. 19.3.3 og 19.3.4 (se src/engine/b19.js).
 //
 //  Hver kontroll registrerer utregninga si i et Calc-objekt: inndata med kilde,
 //  hvert mellomledd symbolsk og med tall, og punktet i standarden. Det er den
@@ -12,8 +15,9 @@
 //  norsk NA før verktøyet brukes i prosjektering.
 // ---------------------------------------------------------------------------
 
-import { anchorPositions, shaftArea, headArea, edgeDistances } from '../core/model.js';
-import { unionRectArea, unionLength, clamp } from './geometry.js';
+import { anchorPositions, shaftProps, anchorFoot, edgeDistances,
+         memberLimits } from '../core/model.js';
+import { unionLength, clamp, clippedSquares } from './geometry.js';
 import { Calc, skipped, n } from './calc.js';
 
 export const K = {
@@ -35,6 +39,31 @@ export const K = {
 const EDGE_LABEL = { xNeg: '−x', xPos: '+x', yNeg: '−y', yPos: '+y' };
 const nz = v => (Number.isFinite(v) ? v : 1e9);
 
+const FOOT_TXT = { head: 'bolthodet', nut: 'endemutteren', plate: 'endeplata' };
+const FOOT_SRC = {
+  head: 'Bolter · hodediameter (EN ISO 13918)',
+  nut: 'Bolter · nøkkelvidde på endemutteren',
+  plate: 'Bolter · medvirkende sidekant på endeplata',
+};
+const FOOT_FORMULA = {
+  head: 'π · (⌀_h² − ⌀²) / 4',
+  nut: '0,866 · NV² − π · ⌀² / 4',
+  plate: 'b_eff² − π · ⌀² / 4,   b_eff = min(b_p ; ⌀ + 2·t_p)',
+};
+
+// Kontroller som forutsetter en forankringsfot. Uten fot (ren heftforankring)
+// har EN 1992-4 ingen modell - da vises kontrollen som ikke aktuell, med
+// henvisning til B19.
+const NO_FOOT =
+  'Forankringen har ingen fot (uten endemutter). NS-EN 1992-4 dekker bare ' +
+  'forankringer med fot. Heftforankring av kamstål og gjengestang er dekket ' +
+  'av Betongelementboka bind B kap. B19, pkt. 19.3.3 og 19.3.4 – bytt ' +
+  'regelverk for å få den kontrollen.';
+const noFoot = (id, mode, clause, scope) => ({
+  id, mode, clause, scope, NRk: Infinity, NRd: Infinity, NEd: 0, util: 0,
+  calc: skipped(clause, NO_FOOT), note: NO_FOOT,
+});
+
 // ---------------------------------------------------------------------------
 //  Materialfaktorer, 4.4.3.1 + NA
 // ---------------------------------------------------------------------------
@@ -50,17 +79,7 @@ export function partialFactors(m) {
 // Prosjektert areal for betongkjegle, 7.2.1.4 - union av rektangler klippet
 // mot betongdelens frie kanter.
 function coneArea(m, pts, ccr) {
-  const c = m.concrete;
-  const lim = {
-    x0: c.freeEdges.xNeg ? -(c.Lx / 2 + c.ex) : -1e9,
-    x1: c.freeEdges.xPos ? (c.Lx / 2 - c.ex) : 1e9,
-    y0: c.freeEdges.yNeg ? -(c.Ly / 2 + c.ey) : -1e9,
-    y1: c.freeEdges.yPos ? (c.Ly / 2 - c.ey) : 1e9,
-  };
-  return unionRectArea(pts.map(p => ({
-    x0: Math.max(p.x - ccr, lim.x0), x1: Math.min(p.x + ccr, lim.x1),
-    y0: Math.max(p.y - ccr, lim.y0), y1: Math.min(p.y + ccr, lim.y1),
-  })));
+  return clippedSquares(pts, ccr, memberLimits(m));
 }
 
 function minEdge(m, pts) {
@@ -79,6 +98,7 @@ function minEdge(m, pts) {
 // 7.2.1.3 Stålbrudd - pr. bolt
 export function tensionSteel(m, res, g) {
   const c = new Calc('7.2.1.3');
+  const sh = shaftProps(m);
   const d = c.in('⌀', m.anchors.d, 'mm', 'Bolter');
   const fuk = c.in('f_uk', m.anchors.fuk, 'N/mm²', `Bolter · ${m.anchors.steel}`);
   const gM = c.in('γ_Ms,N', g.gMsN, '–', 'maks(1,2·f_uk/f_yk ; 1,4) – 4.4.3.1');
@@ -86,9 +106,11 @@ export function tensionSteel(m, res, g) {
   c.in('N_Ed', NEd, 'N', 'Største boltestrekk fra kraftfordelinga');
 
   const As = c.step({
-    sym: 'A_s', desc: 'Spenningstverrsnitt i boltskaftet',
-    formula: 'π · ⌀² / 4', subst: `π · ${n(d, 0)}² / 4`,
-    value: shaftArea(d), unit: 'mm²',
+    sym: 'A_s', desc: sh.threaded
+      ? 'Spenningsareal A_sp i gjengene' : 'Spenningstverrsnitt i boltskaftet',
+    formula: sh.threaded ? 'A_sp (tabell)' : 'π · ⌀² / 4',
+    subst: sh.threaded ? `M${n(d, 0)}` : `π · ${n(d, 0)}² / 4`,
+    value: sh.As, unit: 'mm²',
   });
   const NRk = c.res({
     sym: 'N_Rk,s', formula: 'A_s · f_uk',
@@ -108,9 +130,11 @@ export function tensionSteel(m, res, g) {
 
 // 7.2.1.5 Uttrekk (hodetrykk) - pr. bolt
 export function tensionPullout(m, res, g) {
+  const foot = anchorFoot(m);
+  if (!foot.hasFoot) return noFoot('N-pullout', 'Uttrekk (hodetrykk)', '7.2.1.5', 'bolt');
   const c = new Calc('7.2.1.5');
   const d = c.in('⌀', m.anchors.d, 'mm', 'Bolter');
-  const dh = c.in('⌀_h', m.anchors.dh, 'mm', 'Bolter · hodediameter (EN ISO 13918)');
+  const dh = c.in('⌀_h', foot.eff, 'mm', FOOT_SRC[foot.kind]);
   const fck = c.in('f_ck', m.concrete.fck, 'N/mm²', `Betongdel · ${m.concrete.grade}`);
   const cracked = m.code.cracked;
   const k2 = c.in('k_2', cracked ? K.k2_cracked : K.k2_uncracked, '–',
@@ -120,9 +144,11 @@ export function tensionPullout(m, res, g) {
   c.in('N_Ed', NEd, 'N', 'Største boltestrekk fra kraftfordelinga');
 
   const Ah = c.step({
-    sym: 'A_h', desc: 'Lastopptakende areal under boltehodet',
-    formula: 'π · (⌀_h² − ⌀²) / 4', subst: `π · (${n(dh, 0)}² − ${n(d, 0)}²) / 4`,
-    value: headArea(d, dh), unit: 'mm²',
+    sym: 'A_h', desc: `Lastopptakende netto areal under ${FOOT_TXT[foot.kind]}`,
+    formula: FOOT_FORMULA[foot.kind],
+    subst: `${n(foot.Agross, 0)} − π · ${n(d, 0)}² / 4` +
+           (foot.limited ? `   (medvirkende sidekant begrenset til ⌀ + 2·t)` : ''),
+    value: foot.Ah, unit: 'mm²',
   });
   const NRk = c.res({
     sym: 'N_Rk,p', formula: 'k_2 · A_h · f_ck',
@@ -139,6 +165,8 @@ export function tensionPullout(m, res, g) {
 
 // 7.2.1.4 Betongkjegle - gruppe av strekkbolter
 export function tensionConcreteCone(m, res, g) {
+  if (!anchorFoot(m).hasFoot)
+    return noFoot('N-cone', 'Betongkjegle', '7.2.1.4', 'gruppe');
   const pts = res.tension.anchors;
   if (!pts.length) {
     return { id: 'N-cone', mode: 'Betongkjegle', clause: '7.2.1.4', scope: 'gruppe',
@@ -218,8 +246,10 @@ export function tensionConcreteCone(m, res, g) {
 
 // 7.2.1.9 Utblåsing ved kant - kun når c <= 0,5·h_ef
 export function tensionBlowout(m, res, g) {
+  const foot = anchorFoot(m);
+  if (!foot.hasFoot) return noFoot('N-blowout', 'Utblåsing ved kant', '7.2.1.9', 'bolt');
   const hef = m.anchors.hef;
-  const Ah = headArea(m.anchors.d, m.anchors.dh);
+  const Ah = foot.Ah;
   const cracked = m.code.cracked;
   const k5 = cracked ? K.k5_cracked : K.k5_uncracked;
 
@@ -275,6 +305,8 @@ export function tensionBlowout(m, res, g) {
 
 // 7.2.1.7 Spalting under last (forenklet)
 export function tensionSplitting(m, res, g, cone) {
+  if (!Number.isFinite(cone.NRk))
+    return noFoot('N-split', 'Spalting', '7.2.1.7', 'gruppe');
   const hef = m.anchors.hef;
   const ccr_sp = 2 * hef, hmin = 2 * hef;
   const cmin = minEdge(m, res.tension.anchors);
@@ -319,8 +351,9 @@ export function tensionSplitting(m, res, g, cone) {
 // 7.2.2.3 Stålbrudd
 export function shearSteel(m, res, g) {
   const VEd = Math.max(0, ...res.anchors.map(a => a.V));
+  const sh = shaftProps(m);
   const d = m.anchors.d, fuk = m.anchors.fuk;
-  const As = shaftArea(d);
+  const As = sh.As;
 
   if (res.leverArm > 0) {
     const c = new Calc('7.2.2.3.2');
@@ -330,8 +363,8 @@ export function shearSteel(m, res, g) {
     c.in('γ_Ms,V', g.gMsV, '–', '4.4.3.1');
     c.in('V_Ed', VEd, 'N', 'Største boltskjær fra kraftfordelinga');
     const Wel = c.step({ sym: 'W_el', desc: 'Elastisk motstandsmoment i skaftet',
-      formula: 'π · ⌀³ / 32', subst: `π · ${n(d, 0)}³ / 32`,
-      value: Math.PI * Math.pow(d, 3) / 32, unit: 'mm³' });
+      formula: 'π · ⌀_ekv³ / 32', subst: `π · ${n(sh.dEff, 1)}³ / 32`,
+      value: Math.PI * Math.pow(sh.dEff, 3) / 32, unit: 'mm³' });
     const M0 = c.step({ sym: 'M⁰_Rk,s', desc: 'Momentkapasitet uten samtidig strekk',
       formula: '1,2 · W_el · f_uk', subst: `1,2 · ${n(Wel)} · ${n(fuk, 0)}`,
       value: 1.2 * Wel * fuk, unit: 'Nmm', ref: '(7.37)' });
@@ -378,6 +411,8 @@ export function shearSteel(m, res, g) {
 
 // 7.2.2.4 Betongutstøting (pry-out)
 export function shearPryout(m, res, g) {
+  if (!anchorFoot(m).hasFoot)
+    return noFoot('V-pryout', 'Betongutstøting (pry-out)', '7.2.2.4', 'gruppe');
   const c = new Calc('7.2.2.4');
   const hef = c.in('h_ef', m.anchors.hef, 'mm', 'Bolter');
   const fck = c.in('f_ck', m.concrete.fck, 'N/mm²', `Betongdel · ${m.concrete.grade}`);

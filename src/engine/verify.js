@@ -14,6 +14,9 @@ export function verify(m) {
   const out = run(m, res);
 
   let checks = out.checks;
+  // Forankringsarmering er bare implementert etter EN 1992-4 tillegg C. B19
+  // dimensjonerer tilsvarende armering med stavmodell (19.3.2.6 / 19.4.3.5),
+  // som ikke er lagt inn.
   if (m.code.standard === 'EN1992-4' && m.code.supplementaryReinf && m.reinf) {
     const extra = [
       ...tensionReinforcement(m, res, m.reinf),
