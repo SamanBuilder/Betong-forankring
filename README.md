@@ -7,13 +7,29 @@ geometri/laster settes fritt.
 
 ## Hva prototypen dekker
 
-**Forbindelsestype:** forankringsplate med innstøpte hodebolter (headed studs),
-rektangulært boltemønster, i en betongdel med inntil fire frie kanter.
+**Forbindelsestype:** rektangulært boltemønster i en betongdel med inntil fire
+frie kanter, med eller uten forankringsplate i overflata.
 
-**Regelverk:** NS-EN 1992-4:2018 er implementert. Betongelementboka bind B
-kap. B19 er en *tom plugin* – se «Status B19» under.
+| Valg | Alternativer |
+|---|---|
+| Stangtype | sveisebolt · kamstål · gjengestang |
+| Forankringsende | endemutter/bolthode · innstøpt plate i boltenden · uten endemutter (heftforankring) |
+| Innfesting | stålplate, sveist eller gjennomboltet · uten plate (enkeltstående dybler) |
 
-### Kontroller som kjøres
+**Regelverk:** NS-EN 1992-4:2018 og Betongelementboka bind B kap. B19 er begge
+implementert. De dekker delvis ulike ting:
+
+| | EN 1992-4 | B19 |
+|---|---|---|
+| Forankring med fot | ja | ja |
+| Uten endemutter (heft) | **nei** | ja, pkt. 19.3.3 / 19.3.4 |
+| Enkeltstående dybel uten plate | delvis (som avstandsmontert) | ja, pkt. 19.4.2 |
+| Forankringsarmering | ja, tillegg C | nei (stavmodell, ikke lagt inn) |
+
+Velger du «uten endemutter» under EN 1992-4, faller strekkontrollene bort med
+en melding om å bytte regelverk – standarden har ingen heftmodell.
+
+### Kontroller som kjøres – NS-EN 1992-4
 
 | Kontroll | Pkt. i EN 1992-4 | Nivå |
 |---|---|---|
@@ -29,8 +45,27 @@ kap. B19 er en *tom plugin* – se «Status B19» under.
 | Forankringsarmering – stål og heft | 7.2.1.8 | gruppe (valgfri) |
 | Kantarmering | 7.2.2.6 | gruppe (valgfri) |
 
+Kontrollene som forutsetter en fot (uttrekk, betongkjegle, utblåsing, spalting,
+pry-out) hoppes over når forankringen ikke har endemutter.
+
+### Kontroller som kjøres – Betongelementboka B19
+
+| Kontroll | Pkt. i B19 | Nivå |
+|---|---|---|
+| Stålbrudd, strekk | 19.5 / 19.7.1 | bolt |
+| Utrivning – kjeglebrudd | 19.3.2 | gruppe |
+| Utrivning – heftforankring | 19.3.3 (kamstål) / 19.3.4 (gjengestang) | bolt |
+| Trykk mot forankringsfot | 19.3.2.4 | bolt |
+| Stålbrudd, skjær | 19.5 | bolt |
+| Stålbrudd, bøyning av dybel | 19.4.2.2 | bolt |
+| Dybelskjær i betong | 19.4.2.3 (uten plate) / 19.4.4 (med plate) | gruppe |
+| Samvirkning stål | 19.6 | kombinasjon |
+| Samvirkning betong | 19.6 | kombinasjon |
+| Samvirkning stål og betong | 19.6 | kombinasjon |
+
 I tillegg: kontakttrykk mot betongen mot `f_cd`, og inndatakontroll
-(bolt utenfor betongdelen, `h_ef` mot tykkelse, minste kant-/senteravstand).
+(bolt utenfor betongdelen, `h_ef` mot tykkelse, minste kant-/senteravstand,
+fotens stivhet, gyldighetsområdet til B19).
 
 ### Kraftfordeling
 
@@ -69,7 +104,8 @@ src/engine/geometry.js          arealunion (A_c,N, A_c,V)
 src/engine/plate-solver.js      kraftfordeling i boltegruppa
 src/engine/en1992-4.js          NS-EN 1992-4 – alle konstanter samlet i K
 src/engine/anchor-reinforcement.js  forankringsarmering (7.2.1.8 / 7.2.2.6)
-src/engine/b19.js               Betongelementboka B19 – TOM PLUGIN
+src/engine/b19.js               Betongelementboka B19 – alle konstanter i KB
+test/b19-examples.mjs           regner om bokas egne eksempler
 src/engine/validate.js          inndatakontroll
 src/engine/verify.js            orkestrering
 src/viz/three-d-stage.js        <three-d-stage> web component
@@ -215,17 +251,25 @@ Endrer du antall bolter, settes senteravstanden automatisk (`autoSpacing()` i
 den – helt til du endrer antallet igjen. Legger du bolter utenfor plata
 manuelt, sier inndatakontrollen fra.
 
-Bolthodet følger samme mønster: `⌀_h` og `k` settes fra EN ISO 13918 når du
-velger boltdiameter, men egne verdier står til diameteren endres. Hodearealet
-styrer uttrekkskapasiteten, så det er en reell inndata – ikke bare geometri.
+Forankringsfoten følger samme mønster: `⌀_h` og `k` settes fra EN ISO 13918
+(sveisebolt) eller muttertabellen i B19 (gjengestang) når du velger diameter,
+men egne verdier står til diameteren endres. Fotarealet styrer uttrekks- og
+fottrykkskapasiteten, så det er en reell inndata – ikke bare geometri.
+
+Stangtypen bestemmer hvilke diametre som finnes: hodebolter ⌀10–⌀25
+(EN ISO 13918), kamstål ⌀8–⌀32, gjengestang M10–M42 med spenningsareal og
+ekvivalent diameter fra tab. B 19.7.1. Bytter du stangtype, flyttes valget til
+nærmeste dimensjon i den nye tabellen.
 
 ### Montasje og innfesting
 
-`plate.mount` styrer hvordan plata står an mot betongen, og `mounting()` i
-`src/core/model.js` gjør valget om til geometri og statikk:
+`plate.present` og `plate.mount` styrer hvordan forbindelsen står an mot
+betongen, og `mounting()` i `src/core/model.js` gjør valget om til geometri og
+statikk:
 
 | Valg | Trykkflate | Momentarm i boltene |
 |---|---|---|
+| Uten plate | nei | utkraging `e` |
 | Direkte mot betong | ja | 0 |
 | Undergyting | ja | 0 når gytemassen er minst like fast som betongen og minst 30 N/mm², ellers `t_gyting + t/2` |
 | Avstandsmontert | nei | `fri avstand + t/2` |
@@ -234,7 +278,11 @@ styrer uttrekkskapasiteten, så det er en reell inndata – ikke bare geometri.
 ved platas underside og får sveisekrage; gjennomboltet går gjennom plata og får
 skive og mutter, samt justeringsmutter under plata ved avstandsmontasje.
 Sveiste bolter har ingen hullklaring, så alle tar skjær – da settes
-`code.holeClearanceFilled` automatisk og feltet skjules.
+`code.holeClearanceFilled` automatisk og feltet skjules. Uten plate finnes
+ingen hull i det hele tatt, og feltet faller bort.
+
+Uten plate faller også platemålene bort i 3D-visninga; boltkjeden måles da mot
+boltgruppas egen ytterkant, og utkraginga `e` får sitt eget mål.
 
 Plate, bolter og armering males i den gjennomskinnelige passeringa med høyere
 `renderOrder` enn betongen (`OVER_CONCRETE` i `scene-builder.js`). Uten det
@@ -263,18 +311,100 @@ fra hodenivå med 1,5·h_ef spredning, kantbruddet som en kile fra forreste
 boltrad ut til kantflata, begge klippet mot betongdelens kanter – de er de
 samme arealene som brukes i `A_c,N` og `A_c,V`.
 
-## Status B19
+## Betongelementboka B19
 
-`src/engine/b19.js` er en tom plugin. Grensesnittet og listen over forventede
-kontroller ligger der, men **ingen formler er lagt inn, og ingen tall er
-gjettet.** For å fylle den ut trengs, per kontroll: formel med alle faktorer,
-gyldighetsområde, materialfaktorer og geometrigrenser fra boka.
+`src/engine/b19.js` er skrevet etter utgaven som ligger åpent på
+<https://betongelementboka.betong.no/betongapp/BindB/Del_3/B19/>. Alle
+tallkonstanter ligger samlet i `KB`, med punkthenvisning.
+
+En viktig forskjell mot EN 1992-4: **B19 gir dimensjonerende verdier direkte** –
+materialfaktorene ligger inne i k-faktorene (`k_1 = 11,9/γ_c`), i stedet for
+karakteristiske verdier som deles på γ_M etterpå.
+
+### Endemutter, endeplate eller ingenting
+
+`anchors.endType` styrer hvilken strekkmodell som gjelder:
+
+| Valg | Strekkmodell | Fotens geometri |
+|---|---|---|
+| Endemutter / bolthode | kjeglebrudd, 19.3.2 | rundt hode `π·⌀_h²/4`, eller sekskantmutter `0,866·NV²` |
+| Innstøpt plate i boltenden | kjeglebrudd, 19.3.2 | firkant `b_eff²`, der `b_eff = min(b_p ; ⌀ + 2·t_p)` |
+| Uten endemutter | heftforankring, 19.3.3 / 19.3.4 | ingen |
+
+Endeplata er altså samme virkemåte som endemutteren, bare med annen geometri
+for netto trykkareal `A_h` og for kjegla. Begrensningen `b_eff` kommer av at
+foten må være stiv: utstikket `u` kan ikke være større enn tykkelsen `t`
+(fig. B 19.18 og B 19.57).
+
+Heftkapasiteten er bokas lengdeformel snudd:
+
+```
+f_bd  = 2,25 · f_ctd   (kamstål)      f_ctd = 0,85 · f_ctk,0,05 / γ_c
+f_bd  = 1,90 · f_ctd   (gjengestang)
+α_2   = 1 − 0,15 · (R/⌀ − 1,5),  0,7 ≤ α_2 ≤ 1,0,  R = min(a ; s/2)
+N_Rd,b = π · ⌀ · l_b · f_bd / Πα
+```
+
+`f_bd` er *nedre* grense for heftfasthet – den gjelder ved minste tillatte
+overdekning – så god overdekning senker `Πα` og hever kapasiteten.
+
+**Kjeglemodellen forutsetter ingen heft langs stanga** (pkt. 19.3.1.2). En lang
+gjengestang med endemutter og liten kantavstand kan derfor få *mindre*
+kapasitet etter kjeglemodellen enn samme stang uten endemutter etter
+heftmodellen. Boka sier uttrykkelig at man skal bruke den modellen som gir
+størst forankringskapasitet, så kontrollen `N-conc` regner begge når det er
+fot, og viser hvilken som ble styrende.
+
+### Med og uten stålplate
+
+`plate.present` skiller de to skjærmodellene. Uten plate skaller betongen foran
+stanga av; med plate holdes den på plass, og strekket som oppstår i
+forankringen gir et friksjonsbidrag (fig. B 19.26):
+
+| Innfesting | `V⁰_Rd,c` | Pkt. |
+|---|---|---|
+| Dybel uten stålplate | `1,0 · ⌀² · √(f_cd · f_sd)` | 19.4.2.3 |
+| Innstøpt plate, påsveiste forankringer | `1,8 · ⌀² · √(f_cd · f_sd)` | 19.4.4 |
+| Påskrudd plate | `1,5 · ⌀² · √(f_cd · f_sd)` | 19.4.4 |
+
+Deretter reduseres kapasiteten med `k_a` (kantavstand i kraftretninga),
+`k_s` (bruddflatas bredde på tvers) og `Ψ_f,V` (bakre boltrekker).
+
+Den andre forskjellen er stålets bøyning. Uten plate står stanga fritt over
+betongen, og maksimalmomentet blir `M = V · (e + 0,75·⌀)` – kontrollen
+`V-bend`. Med en plate som ligger an mot betongen faller den bort, fordi
+bøyningen er dekket av forhøyelsesfaktoren over.
+
+### Kontroll mot boka
+
+```bash
+node test/b19-examples.mjs
+```
+
+Regner om beregningseksemplene og kapasitetstabellene i kapitlet – k₁ for
+B30–B55, forankringslengder for gjengestang M10–M42 med og uten endemutter,
+trykk mot endemutter, dybelskjær for kamstål ⌀8–⌀32, og det fullstendige
+eksempelet B 19.4.2 med innstøpt plate og fire forankringer. 25 av 25 stemmer.
 
 ## Forbehold
 
 * **Konstantene i `K` (`src/engine/en1992-4.js`) må kontrolleres mot trykt
   utgave av NS-EN 1992-4 + norsk NA før verktøyet brukes i prosjektering.**
   De er samlet ett sted nettopp for at det skal være en overkommelig jobb.
+* Det samme gjelder `KB` i `src/engine/b19.js` mot trykt utgave av
+  Betongelementboka. Testene over dekker tallene boka selv viser fram, ikke
+  hele kapitlet.
+* B19 gir formler og tabeller for **B25–B55**. Utenfor det området er
+  `f_ck,cube` ekstrapolert, og inndatakontrollen sier fra.
+* B19 pkt. 19.4.3 (CEN/TS-metoden for kantbrudd) er ikke lagt inn som egen
+  kontroll – den er i praksis den samme modellen som EN 1992-4 pkt. 7.2.2.5,
+  som allerede kjøres under det regelverket. B19-modulen bruker den forenklede
+  metoden i 19.4.4, som er den bokas kapasitetstabeller bygger på.
+* Forankringsarmering er bare implementert etter EN 1992-4 tillegg C. B19
+  dimensjonerer tilsvarende armering med stavmodell (19.3.2.6 og 19.4.3.5) –
+  den er ikke lagt inn.
+* Spenningsarealer og nøkkelvidder for gjengestang er tab. B 19.7.1 i boka,
+  altså M10–M42.
 * `c_cr,sp` for spalting er satt til 2·h_ef som en typisk verdi. Reell verdi
   hentes fra ETA/produktdata.
 * Minste kant- og senteravstand (5·⌀) er veiledende, ikke normativ.

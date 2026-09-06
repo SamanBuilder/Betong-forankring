@@ -4,7 +4,8 @@
 //  ikke brukes.
 // ---------------------------------------------------------------------------
 
-import { anchorPositions, edgeDistances, mounting , boltsOutside, EDGE_MIN } from '../core/model.js';
+import { anchorPositions, edgeDistances, mounting, boltsOutside, EDGE_MIN,
+         shaftProps, anchorFoot, grade } from '../core/model.js';
 
 export function validate(m) {
   const out = [];
@@ -28,8 +29,61 @@ export function validate(m) {
   else if (a.hef > 0.8 * c.h)
     warn(`h_ef = ${a.hef} mm er over 80 % av tykkelsen (h = ${c.h} mm) – kontroller ` +
          `gjennomlokking og plass til hodet.`);
-  if (p.bx > c.Lx || p.by > c.Ly) warn('Forankringsplata er større enn betongdelen.');
+  if (p.present && (p.bx > c.Lx || p.by > c.Ly))
+    warn('Forankringsplata er større enn betongdelen.');
   if (a.nx * a.ny < 1) err('Minst én bolt kreves.');
+
+  // --- forankringsende og stangtype -------------------------------------
+  const sh = shaftProps(m), foot = anchorFoot(m);
+  if (!foot.hasFoot && !sh.bond)
+    err('«Uten endemutter» krever heftforankring: velg kamstål eller ' +
+        'gjengestang som stangtype, eller sett på endemutter/endeplate.');
+  if (foot.hasFoot && foot.Ah <= 0)
+    err('Forankringsfoten er ikke større enn stangtverrsnittet – ' +
+        `netto trykkareal A_h = ${Math.round(foot.Ah)} mm².`);
+  if (a.endType === 'plate' && foot.limited)
+    warn(`Endeplata er ${a.bp} mm bred, men bare ${Math.round(foot.eff)} mm ` +
+         `regnes med: foten må være stiv, så utstikket u kan ikke være større ` +
+         `enn tykkelsen t_p = ${a.tp} mm (B19 fig. B 19.18).`);
+
+  // --- forutsetninger for skjærmodellene --------------------------------
+  if (p.present && a.hef < 6 * sh.d)
+    warn(`h_ef = ${a.hef} mm < 6·⌀ = ${6 * sh.d} mm. Den forenklede ` +
+         `dybelformelen for stålplate (B19 pkt. 19.4.4) forutsetter minst 6·⌀.`);
+  if (foot.hasFoot && a.hef < 4.5 * sh.d)
+    warn(`h_ef/⌀ = ${(a.hef / sh.d).toFixed(1)} < 4,5. Da er betongutstøting ` +
+         `(pry-out) en aktuell bruddform – se B19 pkt. 19.4.1.2.`);
+
+  // --- boltgruppa må kunne ta momentet ----------------------------------
+  // Uten trykkflate under plata er det bare boltene som gir rotasjonsstivhet.
+  // Én bolt, eller én boltrad, kan da ikke ta moment om sin egen akse.
+  if (!mounting(m).contact) {
+    const L = m.load;
+    if (a.ny === 1 && Math.abs(L.Mx) > 1)
+      err(`M_x kan ikke tas opp: boltene ligger på én linje i x, og det er ` +
+          `ingen trykkflate under plata. Legg til en boltrad i y, eller før ` +
+          `momentet inn som utkraging e med skjærkraft.`);
+    if (a.nx === 1 && Math.abs(L.My) > 1)
+      err(`M_y kan ikke tas opp: boltene ligger på én linje i y, og det er ` +
+          `ingen trykkflate under plata. Legg til en boltrad i x, eller før ` +
+          `momentet inn som utkraging e med skjærkraft.`);
+  }
+
+  // --- regelverket mot forbindelsen -------------------------------------
+  if (m.code.standard === 'EN1992-4' && !foot.hasFoot)
+    warn('NS-EN 1992-4 dekker bare forankringer med fot. Uten endemutter ' +
+         'faller strekkontrollene bort – bytt til Betongelementboka B19, som ' +
+         'har heftforankring av kamstål og gjengestang (pkt. 19.3.3/19.3.4).');
+  if (m.code.standard === 'B19') {
+    const g = grade(c.grade);
+    if (g.fck < 25 || g.fck > 55)
+      warn(`B19 gir formler og tabeller for B25–B55. ${g.id} ligger utenfor; ` +
+           `f_ck,cube = ${g.fckCube} N/mm² er ekstrapolert.`);
+    if (m.code.supplementaryReinf)
+      warn('Forankringsarmering regnes etter NS-EN 1992-4 tillegg C. B19 ' +
+           'dimensjonerer tilsvarende armering med stavmodell (pkt. 19.3.2.6 ' +
+           'og 19.4.3.5) – den er ikke lagt inn, så armeringa teller ikke med her.');
+  }
 
   // --- minstekrav (veiledende, skal hentes fra ETA/produktdata) ----------
   const sMin = 5 * a.d, cMin = 5 * a.d;
@@ -51,6 +105,10 @@ export function validate(m) {
 
   // --- kontakttrykk mot betong ------------------------------------------
   const mnt = mounting(m);
+  if (mnt.kind === 'noplate' && p.e > 0)
+    warn(`Boltene kraker ${p.e} mm ut av betongen uten plate. Skjæret virker ` +
+         `da med momentarm e + 0,75·⌀, og stålets bøyning blir fort ` +
+         `begrensende (B19 pkt. 19.4.2.2).`);
   if (mnt.kind === 'standoff')
     warn(`Plata står ${p.gap} mm fra betongen – skjær regnes med momentarm ` +
          `og boltene tar også trykk.`);

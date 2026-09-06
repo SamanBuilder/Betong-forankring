@@ -91,7 +91,7 @@ export function solvePlate(m) {
     };
     for (const p of pos) addK(p.x, p.y, ka);
     for (const c of cells) addK(c.x, c.y, c.k);
-    const u0 = solve3(K, target);
+    const u0 = solve3reg(K, target);
     if (u0) u = u0;
   }
 
@@ -102,7 +102,7 @@ export function solvePlate(m) {
     const res = [s.R[0] - target[0], s.R[1] - target[1], s.R[2] - target[2]];
     const norm = Math.max(Math.abs(res[0]), Math.abs(res[1]) / 100, Math.abs(res[2]) / 100);
     if (norm < 1e-6 * scale) { converged = true; break; }
-    const du = solve3(s.K, res.map(v => -v));
+    const du = solve3reg(s.K, res.map(v => -v));
     if (!du) break;
     // dempet Newton for robusthet naar kontaktflaten endrer seg
     const relax = iter < 3 ? 1.0 : 0.9;
@@ -169,6 +169,26 @@ export function solvePlate(m) {
     mounting: mnt,
     leverArm: mnt.leverArm,
   };
+}
+
+// Er det ingen trykkflate under plata (avstandsmontert, eller ingen plate i
+// det hele tatt), kan tangentmatrisa bli singulaer: en enkelt bolt gir ingen
+// rotasjonsstivhet, og en enkelt boltrad gir ingen stivhet om sin egen akse.
+// Da legges det paa en liten diagonal saa loesningen finnes; retninga som
+// mangler stivhet blir staaende i ro naar det ikke er moment aa ta opp.
+// Er det moment om en slik akse, konvergerer ikke likevekten - inndata-
+// kontrollen sier fra om det.
+function solve3reg(A, b) {
+  const x = solve3(A, b);
+  if (x) return x;
+  const big = Math.max(...A.flat().map(Math.abs), 1);
+  for (let e = 1e-6; e <= 1e-1; e *= 100) {
+    const R = A.map((row, i) =>
+      row.map((v, j) => (i === j ? v + e * (Math.abs(v) || big) : v)));
+    const y = solve3(R, b);
+    if (y) return y;
+  }
+  return null;
 }
 
 // 3x3 loeser med delvis pivotering

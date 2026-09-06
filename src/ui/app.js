@@ -6,12 +6,12 @@
 //  hele utregninga for den - resultatlista blir stående ved siden av.
 // ---------------------------------------------------------------------------
 
-import { defaultModel, CONCRETE_GRADES, STUD_STEELS, studSize,
+import { defaultModel, CONCRETE_GRADES, STUD_STEELS, studSize, rodSize,
          autoSpacing, boltsOutside, syncLoad, combo, nextComboId,
-         LIMIT_STATES } from '../core/model.js';
+         LIMIT_STATES, anchorFoot } from '../core/model.js';
 import { verify } from '../engine/verify.js';
 import { buildScene } from '../viz/scene-builder.js';
-import { FIELDS, get, set } from './fields.js';
+import { FIELDS, barSizes, get, set } from './fields.js';
 import { n, kN } from '../engine/calc.js';
 import { saveFile, saveError } from '../core/download.js';
 import '../viz/three-d-stage.js';
@@ -24,6 +24,9 @@ const esc = s => String(s).replace(/[&<>]/g, ch => ({ '&': '&amp;', '<': '&lt;',
 
 const MOUNT_TXT = { direct: 'direkte mot betong', grout: 'undergyting',
                     standoff: 'avstandsmontert' };
+const BAR_TXT = { stud: 'Sveisebolt', rebar: 'Kamstål', rod: 'Gjengestang' };
+const END_TXT = { nut: 'endemutter', plate: 'innstøpt endeplate',
+                  none: 'uten endemutter (heft)' };
 
 const REINF_DEFAULT = () =>
   ({ ds: 12, n: 4, l1: 300, hooked: true, goodBond: true, fyk: 500, nV: 0, dsV: 12, fykV: 500 });
@@ -40,8 +43,11 @@ let viewTab = '3d';
 const SUMMARY = {
   'Regelverk': m => m.code.standard === 'EN1992-4' ? 'EN 1992-4' : 'B19',
   'Betongdel': m => m.concrete.grade,
-  'Forankringsplate': m => `${m.plate.bx}×${m.plate.by}`,
-  'Bolter': m => `${m.anchors.nx * m.anchors.ny} × ⌀${m.anchors.d}`,
+  'Forankringsplate': m => m.plate.present
+    ? `${m.plate.bx}×${m.plate.by}` : 'uten plate',
+  'Bolter': m => `${m.anchors.nx * m.anchors.ny} × ` +
+    `${m.anchors.barType === 'rod' ? 'M' : '⌀'}${m.anchors.d} · ` +
+    `${END_TXT[m.anchors.endType]}`,
   'Forankringsarmering': m => `${m.reinf.n} × ⌀${m.reinf.ds}`,
   'Laster': m => `N ${kN(m.load.N)} kN`,
 };
@@ -51,17 +57,31 @@ function sync(m) {
   if (g) m.concrete.fck = g.fck;
   const s = STUD_STEELS.find(x => x.id === m.anchors.steel);
   if (s) { m.anchors.fyk = s.fyk; m.anchors.fuk = s.fuk; m.anchors.ductile = s.ductile; }
-  // Hodet settes fra standardtabellen når boltdiameteren endres, men en verdi
-  // brukeren selv har skrevet får stå til diameteren endres igjen.
-  if (m.anchors._dLast !== m.anchors.d) {
-    const ss = studSize(m.anchors.d);
-    m.anchors.dh = ss.dh; m.anchors.k = ss.k;
-    m.anchors._dLast = m.anchors.d;
+
+  // Stangtypen bestemmer hvilke diametre som finnes. Bytter du type, flyttes
+  // valget til nærmeste dimensjon i den nye tabellen.
+  const a = m.anchors;
+  if (a._barLast !== a.barType) {
+    const sizes = barSizes(m).map(o => o[0]);
+    if (!sizes.includes(a.d))
+      a.d = sizes.reduce((b, v) => (Math.abs(v - a.d) < Math.abs(b - a.d) ? v : b));
+    a._barLast = a.barType;
+    a._dLast = null;            // tving nye fotmål fra tabellen
   }
+  // Foten settes fra standardtabellen når diameteren endres, men en verdi
+  // brukeren selv har skrevet får stå til diameteren endres igjen.
+  if (a._dLast !== a.d) {
+    if (a.barType === 'rod') { a.dh = rodSize(a.d).NV; a.k = Math.round(0.8 * a.d); }
+    else { const ss = studSize(a.d); a.dh = ss.dh; a.k = ss.k; }
+    a.bp = Math.max(a.bp, 2 * a.d);
+    a._dLast = a.d;
+  }
+
   m.reinf.fykV = m.reinf.fyk;
   syncLoad(m);                  // `load` peker på den aktive kombinasjonen
-  // Sveiste bolter har ingen hullklaring, så alle tar skjær.
-  if (m.anchors.attachment === 'welded') m.code.holeClearanceFilled = true;
+  // Sveiste bolter har ingen hullklaring, så alle tar skjær. Uten plate er det
+  // ingen hull i det hele tatt.
+  if (!m.plate.present || a.attachment === 'welded') m.code.holeClearanceFilled = true;
   return m;
 }
 
@@ -82,6 +102,7 @@ function mergeModel(loaded) {
 // etterpå, står den - til antallet endres igjen.
 function applyAutoSpacing(axis) {
   const a = model.anchors, p = model.plate;
+  if (!p.present) return;
   if (axis === 'x') a.sx = autoSpacing(p.bx, a.nx) || a.sx;
   else a.sy = autoSpacing(p.by, a.ny) || a.sy;
 }
@@ -118,14 +139,22 @@ function renderForm() {
     host.appendChild(el('p', 'hint',
       'Forankringsarmering slås på under Regelverk. Da erstatter armerings­kontrollen ' +
       'betongkjeglebruddet.'));
-  if (activeGroup === 'Regelverk' && model.code.standard === 'B19')
+  if (activeGroup === 'Bolter' && model.anchors.endType === 'none')
     host.appendChild(el('p', 'hint',
-      'B19-modulen er en tom plugin – formlene fra Betongelementboka er ikke lagt inn.'));
+      'Uten endemutter finnes ingen kjeglebruddmodell i NS-EN 1992-4. ' +
+      'Heftforankringen er dekket av Betongelementboka B19 pkt. 19.3.3 ' +
+      '(kamstål) og 19.3.4 (gjengestang) – velg B19 under Regelverk.'));
+  if (activeGroup === 'Forankringsplate' && !model.plate.present)
+    host.appendChild(el('p', 'hint',
+      'Uten plate regnes boltene som dybler: skjærkapasiteten i betongen ' +
+      'faller til ⌀²·√(f_cd·f_yd), og stålets bøyning over utkraginga blir ' +
+      'ofte begrensende (B19 pkt. 19.4.2).'));
 }
 
 function field(f) {
   const wrap = el('label', 'fld');
-  wrap.appendChild(el('span', 'lbl', esc(f.l) + (f.u ? ` <i>${esc(f.u)}</i>` : '')));
+  const label = typeof f.l === 'function' ? f.l(model) : f.l;
+  wrap.appendChild(el('span', 'lbl', esc(label) + (f.u ? ` <i>${esc(f.u)}</i>` : '')));
   let input;
   if (f.t === 'bool') {
     input = el('input'); input.type = 'checkbox'; input.checked = !!get(model, f.p);
@@ -133,7 +162,8 @@ function field(f) {
     input.onchange = () => { set(model, f.p, input.checked); refresh(true); };
   } else if (f.t === 'select') {
     input = el('select');
-    for (const [v, t] of f.o) { const o = el('option', null, esc(t)); o.value = v; input.appendChild(o); }
+    const opts = typeof f.o === 'function' ? f.o(model) : f.o;
+    for (const [v, t] of opts) { const o = el('option', null, esc(t)); o.value = v; input.appendChild(o); }
     input.value = String(get(model, f.p));
     input.onchange = () => { set(model, f.p, f.num ? +input.value : input.value); refresh(true); };
   } else {
@@ -176,6 +206,7 @@ function bar(u, cls = '') {
 
 function renderResults(v) {
   const m = model, a = m.anchors, g = v.gamma;
+  const foot = anchorFoot(m);
   $('#verdict').innerHTML = Number.isFinite(v.maxUtil)
     ? `<span style="color:${utilCss(v.maxUtil)}">maks ${pct(v.maxUtil)}</span> · ${esc(v.governing.mode)}`
     : 'ingen kontroller';
@@ -189,12 +220,23 @@ function renderResults(v) {
     ['Regelverk', v.standard],
     ['Betong', `${m.concrete.grade} · f_ck ${m.concrete.fck} N/mm²`],
     ['Tilstand', m.code.cracked ? 'Opprisset' : 'Uopprisset'],
-    ['Bolter', `${a.nx}×${a.ny} ⌀${a.d} · h_ef ${a.hef} mm`],
+    ['Bolter', `${a.nx}×${a.ny} ${a.barType === 'rod' ? 'M' : '⌀'}${a.d} · ` +
+      `${a.endType === 'none' ? 'l_b' : 'h_ef'} ${a.hef} mm`],
+    ['Stangtype', `${BAR_TXT[a.barType]} · ${END_TXT[a.endType]}`],
+    ['Forankringsfot', foot.hasFoot
+      ? `${n(foot.eff, 0)} mm · netto A_h = ${n(foot.Ah, 0)} mm²` +
+        (foot.limited ? ' (begrenset av u ≤ t)' : '')
+      : 'ingen – heftforankring langs stanga'],
     ['Stål', `${a.steel}`],
-    ['Plate', `${m.plate.bx}×${m.plate.by}×${m.plate.t} mm · ${MOUNT_TXT[m.plate.mount]}`],
-    ['Innfesting', m.anchors.attachment === 'welded' ? 'Sveist til plata' : 'Gjennomboltet'],
+    ['Plate', m.plate.present
+      ? `${m.plate.bx}×${m.plate.by}×${m.plate.t} mm · ${MOUNT_TXT[m.plate.mount]}`
+      : `ingen plate · utkraging e = ${m.plate.e} mm`],
+    ['Innfesting', !m.plate.present ? 'Fritt stående dybler'
+      : a.attachment === 'welded' ? 'Sveist til plata' : 'Gjennomboltet'],
     ['Materialfaktorer', g.gMsN
-      ? `γ_Ms,N ${n(g.gMsN, 2)} · γ_Ms,V ${n(g.gMsV, 2)} · γ_Mc ${n(g.gMc, 2)}` : '–'],
+      ? `γ_Ms,N ${n(g.gMsN, 2)} · γ_Ms,V ${n(g.gMsV, 2)} · γ_Mc ${n(g.gMc, 2)}`
+      : g.gc ? `γ_c ${n(g.gc, 2)} · γ_M0 ${n(g.gM0, 2)} · γ_M2 ${n(g.gM2, 2)}` +
+               (g.steel === 'rebar' ? ` · γ_s ${n(g.gS, 2)}` : '') : '–'],
   ];
   const ass = el('div', 'assump');
   for (const [k, val] of rows)
@@ -207,11 +249,6 @@ function renderResults(v) {
     host.appendChild(el('div', 'msg warn',
       `Kontakttrykk ${n(v.bearing.sigma, 2)} N/mm² > f_cd ${n(v.bearing.fcd, 2)} N/mm². ` +
       'Øk plata eller betongfastheten.'));
-  if (m.code.standard === 'B19')
-    host.appendChild(el('div', 'msg warn',
-      'B19-modulen er en tom plugin. Formlene fra Betongelementboka er ikke lagt inn – ' +
-      'ingen tall er gjettet. Se <code>src/engine/b19.js</code>.'));
-
   for (const fam of ['Strekk', 'Skjær', 'Samvirkning']) {
     const list = v.checks.filter(c => family(c) === fam)
       .sort((x, y) => (applicable(y) ? y.util : -1) - (applicable(x) ? x.util : -1));
@@ -228,12 +265,16 @@ function renderResults(v) {
       `<tr><td>${an.id}</td><td>${an.x}</td><td>${an.y}</td>` +
       `<td>${an.N > 1 ? kN(an.N) : '–'}</td><td>${kN(an.V)}</td></tr>`).join('') + '</tbody>';
   wrap.appendChild(t);
-  wrap.appendChild(el('p', 'hint', 'x, y i mm fra platesenter. N, V i kN.'));
+  wrap.appendChild(el('p', 'hint', m.plate.present
+    ? 'x, y i mm fra platesenter. N, V i kN.'
+    : 'x, y i mm fra boltgruppas senter. N, V i kN.'));
   const cp = v.res.compression;
   wrap.appendChild(el('p', 'hint', cp
     ? `Trykkresultant ${kN(cp.C)} kN i (${n(cp.x, 0)}, ${n(cp.y, 0)}) mm, ` +
       `maks kontakttrykk ${n(cp.sigmaMax, 2)} N/mm².`
-    : 'Ingen kontakt mot betongen – plata er avstivet, og boltene tar trykk i bøyning.'));
+    : m.plate.present
+      ? 'Ingen kontakt mot betongen – plata er avstivet, og boltene tar trykk i bøyning.'
+      : 'Ingen plate, altså ingen trykkflate – boltene tar både strekk og trykk.'));
   host.appendChild(wrap);
 }
 
@@ -579,6 +620,9 @@ function initSplitters() {
 let t0;
 function refresh(rebuildForm, rebuildCombos) {
   sync(model);
+  // Regelverket kan velges to steder - i verktøylinja og i skjemaet. Holder
+  // verktøylinja i takt med modellen uansett hvor valget ble gjort.
+  $('#code').value = model.code.standard;
   if (rebuildForm) { renderGroups(); renderForm(); } else { renderGroups(); }
   if (rebuildCombos) renderCombos();
   const v = verify(model);
@@ -699,10 +743,18 @@ function buildReport(v) {
   L.push('GEOMETRI', line('-'));
   L.push(`Betong ${m.concrete.grade} (f_ck = ${m.concrete.fck} N/mm²), ` +
     `${m.concrete.Lx} × ${m.concrete.Ly} × ${m.concrete.h} mm`);
-  L.push(`Plate ${m.plate.bx} × ${m.plate.by} × ${m.plate.t} mm, ` +
-    `montasje: ${MOUNT_TXT[m.plate.mount]}`);
-  L.push(`Bolter ${m.anchors.nx}×${m.anchors.ny} ⌀${m.anchors.d} ${m.anchors.steel}, ` +
-    `h_ef = ${m.anchors.hef} mm, c/c ${m.anchors.sx} × ${m.anchors.sy} mm`, '');
+  L.push(m.plate.present
+    ? `Plate ${m.plate.bx} × ${m.plate.by} × ${m.plate.t} mm, ` +
+      `montasje: ${MOUNT_TXT[m.plate.mount]}, ` +
+      `${m.anchors.attachment === 'welded' ? 'sveiste' : 'gjennomboltede'} forankringer`
+    : `Ingen stålplate – enkeltstående dybler, utkraging e = ${m.plate.e} mm`);
+  const a = m.anchors, foot = anchorFoot(m);
+  L.push(`Bolter ${a.nx}×${a.ny} ${a.barType === 'rod' ? 'M' : '⌀'}${a.d} ` +
+    `${BAR_TXT[a.barType].toLowerCase()} ${a.steel}, ` +
+    `${a.endType === 'none' ? 'l_b' : 'h_ef'} = ${a.hef} mm, ` +
+    `c/c ${a.sx} × ${a.sy} mm`);
+  L.push(`Forankringsende: ${END_TXT[a.endType]}` + (foot.hasFoot
+    ? `, medvirkende fot ${n(foot.eff, 0)} mm, netto A_h = ${n(foot.Ah, 0)} mm²` : ''), '');
   L.push('LASTER', line('-'));
   const l = m.load;
   L.push(`N = ${kN(l.N)} kN    V_x = ${kN(l.Vx)} kN    V_y = ${kN(l.Vy)} kN`);

@@ -28,4 +28,13 @@ export function unionLength(ivs) {
   return L;
 }
 
+// Prosjektert areal av kvadratene (punkt +/- r), klippet mot betongdelens
+// frie kanter. Brukes til A_c,N i baade EN 1992-4 og B19.
+export function clippedSquares(pts, r, lim) {
+  return unionRectArea(pts.map(p => ({
+    x0: Math.max(p.x - r, lim.x0), x1: Math.min(p.x + r, lim.x1),
+    y0: Math.max(p.y - r, lim.y0), y1: Math.min(p.y + r, lim.y1),
+  })));
+}
+
 export const clamp = (v, lo, hi) => Math.min(hi, Math.max(lo, v));
