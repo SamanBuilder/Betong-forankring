@@ -37,4 +37,20 @@ export function clippedSquares(pts, r, lim) {
   })));
 }
 
+// Prosjektert bruddareal for strekkbrudd.
+//
+// Henger boltene i en felles endeplate, er forankringen ett stivt legeme:
+// kjegla sprer seg fra platekanten, ikke fra hver bolt for seg. Uten slik
+// plate er arealet unionen av de enkelte boltenes kjegler.
+export function coneProjection(foot, pts, r, lim) {
+  if (foot && foot.common) {
+    const pl = foot.plate;
+    return unionRectArea([{
+      x0: Math.max(pl.x0 - r, lim.x0), x1: Math.min(pl.x1 + r, lim.x1),
+      y0: Math.max(pl.y0 - r, lim.y0), y1: Math.min(pl.y1 + r, lim.y1),
+    }]);
+  }
+  return clippedSquares(pts, r, lim);
+}
+
 export const clamp = (v, lo, hi) => Math.min(hi, Math.max(lo, v));

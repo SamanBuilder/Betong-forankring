@@ -8,7 +8,8 @@
 
 import { defaultModel, CONCRETE_GRADES, STUD_STEELS, studSize, rodSize,
          autoSpacing, boltsOutside, syncLoad, combo, nextComboId,
-         LIMIT_STATES, anchorFoot } from '../core/model.js';
+         LIMIT_STATES, anchorFoot, steelsFor, defaultSteel,
+         endsFor } from '../core/model.js';
 import { verify } from '../engine/verify.js';
 import { buildScene } from '../viz/scene-builder.js';
 import { FIELDS, barSizes, get, set } from './fields.js';
@@ -24,8 +25,8 @@ const esc = s => String(s).replace(/[&<>]/g, ch => ({ '&': '&amp;', '<': '&lt;',
 
 const MOUNT_TXT = { direct: 'direkte mot betong', grout: 'undergyting',
                     standoff: 'avstandsmontert' };
-const BAR_TXT = { stud: 'Sveisebolt', rebar: 'Kamstål', rod: 'Gjengestang' };
-const END_TXT = { nut: 'endemutter', plate: 'innstøpt endeplate',
+const BAR_TXT = { stud: 'Sveisebolt', rebar: 'Kamstål', rod: 'Gjengestang/bolt' };
+const END_TXT = { nut: 'endemutter', plate: 'felles endeplate',
                   none: 'uten endemutter (heft)' };
 
 const REINF_DEFAULT = () =>
@@ -55,12 +56,23 @@ const SUMMARY = {
 function sync(m) {
   const g = CONCRETE_GRADES.find(x => x.id === m.concrete.grade);
   if (g) m.concrete.fck = g.fck;
-  const s = STUD_STEELS.find(x => x.id === m.anchors.steel);
-  if (s) { m.anchors.fyk = s.fyk; m.anchors.fuk = s.fuk; m.anchors.ductile = s.ductile; }
+
+  const a = m.anchors;
+  // Stangtypen er styrende: stålkvalitet, forankringsende og innfesting må
+  // høre til typen. Ugyldige kombinasjoner rettes opp her - også når de
+  // kommer fra ei prosjektfil som er lagra før reglene ble strammet inn.
+  if (!steelsFor(a.barType).some(x => x.id === a.steel))
+    a.steel = defaultSteel(a.barType);
+  if (!endsFor(a.barType).includes(a.endType))
+    a.endType = endsFor(a.barType)[0];
+  // Sveisebolt er sveist per definisjon, og kamstål festes sveist til plata.
+  if (a.barType !== 'rod') a.attachment = 'welded';
+
+  const s = STUD_STEELS.find(x => x.id === a.steel);
+  if (s) { a.fyk = s.fyk; a.fuk = s.fuk; a.ductile = s.ductile; }
 
   // Stangtypen bestemmer hvilke diametre som finnes. Bytter du type, flyttes
   // valget til nærmeste dimensjon i den nye tabellen.
-  const a = m.anchors;
   if (a._barLast !== a.barType) {
     const sizes = barSizes(m).map(o => o[0]);
     if (!sizes.includes(a.d))
@@ -73,7 +85,6 @@ function sync(m) {
   if (a._dLast !== a.d) {
     if (a.barType === 'rod') { a.dh = rodSize(a.d).NV; a.k = Math.round(0.8 * a.d); }
     else { const ss = studSize(a.d); a.dh = ss.dh; a.k = ss.k; }
-    a.bp = Math.max(a.bp, 2 * a.d);
     a._dLast = a.d;
   }
 

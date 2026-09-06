@@ -5,7 +5,7 @@
 // ---------------------------------------------------------------------------
 
 import { anchorPositions, edgeDistances, mounting, boltsOutside, EDGE_MIN,
-         shaftProps, anchorFoot, grade } from '../core/model.js';
+         shaftProps, anchorFoot, grade, endsFor } from '../core/model.js';
 
 export function validate(m) {
   const out = [];
@@ -41,10 +41,16 @@ export function validate(m) {
   if (foot.hasFoot && foot.Ah <= 0)
     err('Forankringsfoten er ikke større enn stangtverrsnittet – ' +
         `netto trykkareal A_h = ${Math.round(foot.Ah)} mm².`);
-  if (a.endType === 'plate' && foot.limited)
-    warn(`Endeplata er ${a.bp} mm bred, men bare ${Math.round(foot.eff)} mm ` +
-         `regnes med: foten må være stiv, så utstikket u kan ikke være større ` +
-         `enn tykkelsen t_p = ${a.tp} mm (B19 fig. B 19.18).`);
+  if (a.endType === 'plate' && !endsFor(a.barType).includes('plate'))
+    err(`Felles endeplate finnes ikke for ${a.barType === 'rebar'
+      ? 'kamstål' : 'denne stangtypen'} – bruk endemutter eller heftforankring.`);
+  if (a.endType === 'plate' && foot.limited) {
+    const pl = foot.plate;
+    warn(`Endeplata er ${Math.round(pl.bx)} × ${Math.round(pl.by)} mm, men bare ` +
+         `${Math.round(foot.Aeff)} mm² av den regnes som trykkflate: plata må ` +
+         `være stiv, så utstikket u kan ikke være større enn tykkelsen ` +
+         `t_p = ${a.tp} mm (B19 fig. B 19.18). Øk t_p, eller reduser utstikket.`);
+  }
 
   // --- forutsetninger for skjærmodellene --------------------------------
   if (p.present && a.hef < 6 * sh.d)

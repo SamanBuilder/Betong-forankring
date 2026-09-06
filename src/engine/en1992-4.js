@@ -17,7 +17,7 @@
 
 import { anchorPositions, shaftProps, anchorFoot, edgeDistances,
          memberLimits } from '../core/model.js';
-import { unionLength, clamp, clippedSquares } from './geometry.js';
+import { unionLength, clamp, clippedSquares, coneProjection } from './geometry.js';
 import { Calc, skipped, n } from './calc.js';
 
 export const K = {
@@ -39,16 +39,17 @@ export const K = {
 const EDGE_LABEL = { xNeg: '−x', xPos: '+x', yNeg: '−y', yPos: '+y' };
 const nz = v => (Number.isFinite(v) ? v : 1e9);
 
-const FOOT_TXT = { head: 'bolthodet', nut: 'endemutteren', plate: 'endeplata' };
+const FOOT_TXT = { head: 'bolthodet', nut: 'endemutteren',
+                   plate: 'den felles endeplata' };
 const FOOT_SRC = {
   head: 'Bolter · hodediameter (EN ISO 13918)',
   nut: 'Bolter · nøkkelvidde på endemutteren',
-  plate: 'Bolter · medvirkende sidekant på endeplata',
+  plate: 'Bolter · medvirkende sidekant ⌀ + 2·t_p rundt hver bolt',
 };
 const FOOT_FORMULA = {
   head: 'π · (⌀_h² − ⌀²) / 4',
   nut: '0,866 · NV² − π · ⌀² / 4',
-  plate: 'b_eff² − π · ⌀² / 4,   b_eff = min(b_p ; ⌀ + 2·t_p)',
+  plate: 'A_eff / n − π · ⌀² / 4,   A_eff = union av (⌀ + 2·t_p) innenfor plata',
 };
 
 // Kontroller som forutsetter en forankringsfot. Uten fot (ren heftforankring)
@@ -79,7 +80,7 @@ export function partialFactors(m) {
 // Prosjektert areal for betongkjegle, 7.2.1.4 - union av rektangler klippet
 // mot betongdelens frie kanter.
 function coneArea(m, pts, ccr) {
-  return clippedSquares(pts, ccr, memberLimits(m));
+  return coneProjection(anchorFoot(m), pts, ccr, memberLimits(m));
 }
 
 function minEdge(m, pts) {
@@ -198,10 +199,16 @@ export function tensionConcreteCone(m, res, g) {
   });
   const A0 = c.step({ sym: 'A⁰_c,N', desc: 'Referanseareal for én bolt',
     formula: 's_cr,N²', subst: `${n(scr, 0)}²`, value: scr * scr, unit: 'mm²' });
+  const cfoot = anchorFoot(m);
   const Ac = c.step({
     sym: 'A_c,N', desc: 'Faktisk utbruddsareal for gruppa',
-    formula: 'union av (⌀ ± c_cr,N) for strekkboltene, klippet mot frie kanter',
-    subst: `${nt} bolter, c_cr,N = ${n(ccr, 0)} mm`,
+    formula: cfoot.common
+      ? 'endeplata ± c_cr,N, klippet mot frie kanter'
+      : 'union av (⌀ ± c_cr,N) for strekkboltene, klippet mot frie kanter',
+    subst: cfoot.common
+      ? `felles endeplate ${n(cfoot.plate.bx, 0)} × ${n(cfoot.plate.by, 0)} mm, ` +
+        `c_cr,N = ${n(ccr, 0)} mm`
+      : `${nt} bolter, c_cr,N = ${n(ccr, 0)} mm`,
     value: coneArea(m, pts, 1.5 * hef), unit: 'mm²', ref: '(7.3)',
   });
 

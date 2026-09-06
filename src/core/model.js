@@ -3,6 +3,7 @@
 //  Enheter overalt:  lengde = mm,  kraft = N,  moment = Nmm,  spenning = MPa.
 //  Fortegn:  +N = strekk (plata trekkes av betongen),  z = ut av betongen.
 // ---------------------------------------------------------------------------
+import { unionRectArea } from '../engine/geometry.js';
 
 // fckCube = terningfasthet f_ck,cube, fctk = f_ctk,0,05.  Begge etter
 // NS-EN 1992-1-1 tab. 3.1 (parene C20/25 ... C55/67).  B65-B85 har ingen
@@ -33,28 +34,65 @@ export function Ecm(fck) { return 22000 * Math.pow((fck + 8) / 10, 0.3); }
 //   'bolt'           skrue/gjengestang   N_Rd,s = f_sd2 * A_sp,  V_Rd,s = k_v * f_sd2 * A_sp
 // kv = 0,6 for K4.6, K5.6 og K8.8;  0,5 for K4.8, K5.8, K6.8 og K10.9 (19.5).
 // nEdge = kantavstanden n * ⌀ som gir øvre grense for dybelskjær, tab. B 19.4.2.
+//
+// `bars` er hvilke stangtyper kvaliteten hører til. Stålkvalitet og stangtype
+// er ikke to frie valg: en sveisebolt leveres i sveiseboltstål, kamstål i
+// B500NC og gjengestang i skruekvalitetene. Lista filtreres derfor på
+// stangtypen (se steelsFor), så kombinasjoner som ikke finnes ikke kan velges.
 export const STUD_STEELS = [
   { id: 'SD1 (S235J2+C450)', label: 'SD1 (S235J2+C450) – sveisebolt',
-    fyk: 350, fuk: 450, ductile: true,  kind: 'stud',   kv: 0.6, nEdge: 12 },
+    fyk: 350, fuk: 450, ductile: true,  kind: 'stud',   kv: 0.6, nEdge: 12,
+    bars: ['stud'] },
   { id: 'S235J2',            label: 'S235J2 – konstruksjonsstål',
-    fyk: 235, fuk: 360, ductile: true,  kind: 'struct', kv: 0.6, nEdge: 10 },
+    fyk: 235, fuk: 360, ductile: true,  kind: 'struct', kv: 0.6, nEdge: 10,
+    bars: ['stud'] },
   { id: 'S355J2',            label: 'S355J2 – konstruksjonsstål',
-    fyk: 355, fuk: 490, ductile: true,  kind: 'struct', kv: 0.6, nEdge: 12 },
+    fyk: 355, fuk: 490, ductile: true,  kind: 'struct', kv: 0.6, nEdge: 12,
+    bars: ['stud'] },
   { id: 'B500NC (kamstål)',  label: 'B500NC – kamstål',
-    fyk: 500, fuk: 550, ductile: true,  kind: 'rebar',  kv: 0.6, nEdge: 14 },
-  { id: 'K4.6',              label: 'K4.6 – skrue/gjengestang',
-    fyk: 240, fuk: 400, ductile: true,  kind: 'bolt',   kv: 0.6, nEdge: 11 },
-  { id: 'K4.8',              label: 'K4.8 – skrue/gjengestang',
-    fyk: 320, fuk: 400, ductile: true,  kind: 'bolt',   kv: 0.5, nEdge: 11 },
-  { id: 'K5.6',              label: 'K5.6 – skrue/gjengestang',
-    fyk: 300, fuk: 500, ductile: true,  kind: 'bolt',   kv: 0.6, nEdge: 11 },
-  { id: '8.8',               label: 'K8.8 – skrue/gjengestang',
-    fyk: 640, fuk: 800, ductile: true,  kind: 'bolt',   kv: 0.6, nEdge: 16 },
-  { id: '10.9',              label: 'K10.9 – skrue/gjengestang',
-    fyk: 900, fuk: 1000, ductile: false, kind: 'bolt',  kv: 0.5, nEdge: 16 },
+    fyk: 500, fuk: 550, ductile: true,  kind: 'rebar',  kv: 0.6, nEdge: 14,
+    bars: ['rebar'] },
+  { id: 'K4.6',              label: 'K4.6',
+    fyk: 240, fuk: 400, ductile: true,  kind: 'bolt',   kv: 0.6, nEdge: 11,
+    bars: ['rod'] },
+  { id: 'K4.8',              label: 'K4.8',
+    fyk: 320, fuk: 400, ductile: true,  kind: 'bolt',   kv: 0.5, nEdge: 11,
+    bars: ['rod'] },
+  { id: 'K5.6',              label: 'K5.6',
+    fyk: 300, fuk: 500, ductile: true,  kind: 'bolt',   kv: 0.6, nEdge: 11,
+    bars: ['rod'] },
+  { id: '8.8',               label: 'K8.8',
+    fyk: 640, fuk: 800, ductile: true,  kind: 'bolt',   kv: 0.6, nEdge: 16,
+    bars: ['rod'] },
+  { id: '10.9',              label: 'K10.9',
+    fyk: 900, fuk: 1000, ductile: false, kind: 'bolt',  kv: 0.5, nEdge: 16,
+    bars: ['rod'] },
 ];
 
 export const steelGrade = id => STUD_STEELS.find(s => s.id === id) || STUD_STEELS[0];
+
+// Kvalitetene som hører til en stangtype, og standardvalget blant dem.
+export const steelsFor = bar => STUD_STEELS.filter(s => s.bars.includes(bar));
+export const defaultSteel = bar => steelsFor(bar)[0].id;
+
+// ---------------------------------------------------------------------------
+//  Hvilke forankringsender som finnes for hver stangtype.
+//
+//   stud   sveisebolt: hodet er påsmidd i fabrikken og er ikke et valg.
+//   rebar  kamstål: heft langs kammene, med eller uten endemutter. En felles
+//          endeplate finnes ikke - kamstål gjenges ikke opp for platefeste.
+//   rod    gjengestang/bolt: gjengene tar mutter, felles endeplate eller
+//          ingenting (ren heftforankring langs gjengene).
+//
+//  Skrue og gjengestang er samme sak her: gjenget skaft, spenningsareal A_sp
+//  og skruekvalitetene K4.6-K10.9. De er derfor én type, ikke to.
+// ---------------------------------------------------------------------------
+export const END_TYPES = {
+  stud:  ['nut'],
+  rebar: ['nut', 'none'],
+  rod:   ['nut', 'plate', 'none'],
+};
+export const endsFor = bar => END_TYPES[bar] || END_TYPES.rod;
 
 // Hodebolt-geometri, ca. EN ISO 13918 type SD.  dh = hodediameter, k = hodetykkelse.
 export const STUD_SIZES = [
@@ -122,14 +160,36 @@ export function shaftProps(m) {
 }
 
 // ---------------------------------------------------------------------------
+//  Felles endeplate i innstøpingsenden.
+//
+//  Én gjennomgående plate som knytter hele boltegruppa sammen nede i betongen,
+//  ikke en liten skive pr. bolt. Plata følger boltemønsteret med et utstikk
+//  u_p utenfor de ytterste boltene, så den aldri kan bli mindre enn mønsteret
+//  den skal knytte sammen - utstikket er inndata, ikke sidekanten.
+//
+//  Returnerer null når enden ikke er en plate.
+// ---------------------------------------------------------------------------
+export function endPlate(m) {
+  const a = m.anchors;
+  if (a.endType !== 'plate') return null;
+  const pts = anchorPositions(m);
+  const xs = pts.map(p => p.x), ys = pts.map(p => p.y);
+  const x0 = Math.min(...xs) - a.up, x1 = Math.max(...xs) + a.up;
+  const y0 = Math.min(...ys) - a.up, y1 = Math.max(...ys) + a.up;
+  return { x0, x1, y0, y1, bx: x1 - x0, by: y1 - y0, t: a.tp };
+}
+
+// ---------------------------------------------------------------------------
 //  Forankringsenden.
 //
 //   'nut'    endemutter / bolthode - rund for sveisebolt, sekskantet for
 //            gjengestang.  ⌀_h er hodediameter (rund) eller nøkkelvidde (mutter).
-//   'plate'  innstøpt plate i boltenden.  Samme virkemåte som endemutter, men
-//            firkantet, og foten må være stiv: utstikket u ≤ tykkelsen t,
-//            så medvirkende sidekant er begrenset til ⌀ + 2·t
-//            (Betongelementboka B19 fig. B 19.18 og B 19.57).
+//   'plate'  felles innstøpt endeplate over hele gruppa (se endPlate).
+//            Plata må være stiv for å regnes med: utstikket u kan ikke være
+//            større enn tykkelsen, så bare et felt ⌀ + 2·t_p rundt hver bolt
+//            teller som trykkflate (B19 fig. B 19.18 og B 19.57). Ligger
+//            boltene tett, flyter feltene sammen til ett - unionen telles
+//            derfor én gang, og deles på antall bolter siden lasta deles likt.
 //   'none'   uten endemutter - forankringen er ren heftforankring langs
 //            kamstålet eller gjengestanga (B19 pkt. 19.3.3 og 19.3.4).
 //
@@ -142,10 +202,18 @@ export function anchorFoot(m) {
     return { kind: 'none', hasFoot: false, Ah: 0, t: 0, shape: 'none' };
 
   if (a.endType === 'plate') {
-    const bEff = Math.min(a.bp, sh.d + 2 * a.tp);   // u ≤ t
-    return { kind: 'plate', hasFoot: true, shape: 'square',
-             size: a.bp, eff: bEff, t: a.tp, limited: bEff < a.bp,
-             Agross: a.bp * a.bp, Aeff: bEff * bEff, Ah: bEff * bEff - core };
+    const pl = endPlate(m);
+    const pts = anchorPositions(m);
+    const r = sh.d / 2 + a.tp;                      // medvirkende halvbredde, u ≤ t_p
+    const Aeff = unionRectArea(pts.map(p => ({
+      x0: Math.max(p.x - r, pl.x0), x1: Math.min(p.x + r, pl.x1),
+      y0: Math.max(p.y - r, pl.y0), y1: Math.min(p.y + r, pl.y1),
+    })));
+    const per = Aeff / pts.length;                  // trykkflate pr. bolt
+    return { kind: 'plate', hasFoot: true, shape: 'square', common: true,
+             plate: pl, size: Math.min(pl.bx, pl.by), eff: 2 * r, t: a.tp,
+             limited: Aeff < pl.bx * pl.by,
+             Agross: per, Aeff, Ah: Math.max(0, per - core) };
   }
   if (a.barType === 'rod') {                        // sekskantet endemutter
     const A = 0.866 * a.dh * a.dh;                  // NV over nøkkelvidde
@@ -212,8 +280,8 @@ export function defaultModel() {
       d: 16,
       dh: 32,               // hodediameter, eller nøkkelvidde på endemutteren
       k: 8,                 // hode-/mutterhøyde
-      bp: 60,               // innstøpt plate i boltenden: sidekant
-      tp: 10,               //                             tykkelse
+      up: 40,               // felles endeplate: utstikk utenfor ytterste bolt
+      tp: 10,               //                  tykkelse
       hef: 150,             // forankringsdybde til underkant fot; uten fot er
                             // dette heftlengden l_b langs stanga
       attachment: 'welded',   // 'welded' = sveist til plata | 'bolted' = gjennomboltet

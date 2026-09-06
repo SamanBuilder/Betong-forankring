@@ -701,6 +701,22 @@ function clippedSquares(pts, r, lim) {
   })));
 }
 
+// Prosjektert bruddareal for strekkbrudd.
+//
+// Henger boltene i en felles endeplate, er forankringen ett stivt legeme:
+// kjegla sprer seg fra platekanten, ikke fra hver bolt for seg. Uten slik
+// plate er arealet unionen av de enkelte boltenes kjegler.
+function coneProjection(foot, pts, r, lim) {
+  if (foot && foot.common) {
+    const pl = foot.plate;
+    return unionRectArea([{
+      x0: Math.max(pl.x0 - r, lim.x0), x1: Math.min(pl.x1 + r, lim.x1),
+      y0: Math.max(pl.y0 - r, lim.y0), y1: Math.min(pl.y1 + r, lim.y1),
+    }]);
+  }
+  return clippedSquares(pts, r, lim);
+}
+
 const clamp = (v, lo, hi) => Math.min(hi, Math.max(lo, v));
 
 // ===== src/core/model.js ===========================================
@@ -739,28 +755,65 @@ function Ecm(fck) { return 22000 * Math.pow((fck + 8) / 10, 0.3); }
 //   'bolt'           skrue/gjengestang   N_Rd,s = f_sd2 * A_sp,  V_Rd,s = k_v * f_sd2 * A_sp
 // kv = 0,6 for K4.6, K5.6 og K8.8;  0,5 for K4.8, K5.8, K6.8 og K10.9 (19.5).
 // nEdge = kantavstanden n * ⌀ som gir øvre grense for dybelskjær, tab. B 19.4.2.
+//
+// `bars` er hvilke stangtyper kvaliteten hører til. Stålkvalitet og stangtype
+// er ikke to frie valg: en sveisebolt leveres i sveiseboltstål, kamstål i
+// B500NC og gjengestang i skruekvalitetene. Lista filtreres derfor på
+// stangtypen (se steelsFor), så kombinasjoner som ikke finnes ikke kan velges.
 const STUD_STEELS = [
   { id: 'SD1 (S235J2+C450)', label: 'SD1 (S235J2+C450) – sveisebolt',
-    fyk: 350, fuk: 450, ductile: true,  kind: 'stud',   kv: 0.6, nEdge: 12 },
+    fyk: 350, fuk: 450, ductile: true,  kind: 'stud',   kv: 0.6, nEdge: 12,
+    bars: ['stud'] },
   { id: 'S235J2',            label: 'S235J2 – konstruksjonsstål',
-    fyk: 235, fuk: 360, ductile: true,  kind: 'struct', kv: 0.6, nEdge: 10 },
+    fyk: 235, fuk: 360, ductile: true,  kind: 'struct', kv: 0.6, nEdge: 10,
+    bars: ['stud'] },
   { id: 'S355J2',            label: 'S355J2 – konstruksjonsstål',
-    fyk: 355, fuk: 490, ductile: true,  kind: 'struct', kv: 0.6, nEdge: 12 },
+    fyk: 355, fuk: 490, ductile: true,  kind: 'struct', kv: 0.6, nEdge: 12,
+    bars: ['stud'] },
   { id: 'B500NC (kamstål)',  label: 'B500NC – kamstål',
-    fyk: 500, fuk: 550, ductile: true,  kind: 'rebar',  kv: 0.6, nEdge: 14 },
-  { id: 'K4.6',              label: 'K4.6 – skrue/gjengestang',
-    fyk: 240, fuk: 400, ductile: true,  kind: 'bolt',   kv: 0.6, nEdge: 11 },
-  { id: 'K4.8',              label: 'K4.8 – skrue/gjengestang',
-    fyk: 320, fuk: 400, ductile: true,  kind: 'bolt',   kv: 0.5, nEdge: 11 },
-  { id: 'K5.6',              label: 'K5.6 – skrue/gjengestang',
-    fyk: 300, fuk: 500, ductile: true,  kind: 'bolt',   kv: 0.6, nEdge: 11 },
-  { id: '8.8',               label: 'K8.8 – skrue/gjengestang',
-    fyk: 640, fuk: 800, ductile: true,  kind: 'bolt',   kv: 0.6, nEdge: 16 },
-  { id: '10.9',              label: 'K10.9 – skrue/gjengestang',
-    fyk: 900, fuk: 1000, ductile: false, kind: 'bolt',  kv: 0.5, nEdge: 16 },
+    fyk: 500, fuk: 550, ductile: true,  kind: 'rebar',  kv: 0.6, nEdge: 14,
+    bars: ['rebar'] },
+  { id: 'K4.6',              label: 'K4.6',
+    fyk: 240, fuk: 400, ductile: true,  kind: 'bolt',   kv: 0.6, nEdge: 11,
+    bars: ['rod'] },
+  { id: 'K4.8',              label: 'K4.8',
+    fyk: 320, fuk: 400, ductile: true,  kind: 'bolt',   kv: 0.5, nEdge: 11,
+    bars: ['rod'] },
+  { id: 'K5.6',              label: 'K5.6',
+    fyk: 300, fuk: 500, ductile: true,  kind: 'bolt',   kv: 0.6, nEdge: 11,
+    bars: ['rod'] },
+  { id: '8.8',               label: 'K8.8',
+    fyk: 640, fuk: 800, ductile: true,  kind: 'bolt',   kv: 0.6, nEdge: 16,
+    bars: ['rod'] },
+  { id: '10.9',              label: 'K10.9',
+    fyk: 900, fuk: 1000, ductile: false, kind: 'bolt',  kv: 0.5, nEdge: 16,
+    bars: ['rod'] },
 ];
 
 const steelGrade = id => STUD_STEELS.find(s => s.id === id) || STUD_STEELS[0];
+
+// Kvalitetene som hører til en stangtype, og standardvalget blant dem.
+const steelsFor = bar => STUD_STEELS.filter(s => s.bars.includes(bar));
+const defaultSteel = bar => steelsFor(bar)[0].id;
+
+// ---------------------------------------------------------------------------
+//  Hvilke forankringsender som finnes for hver stangtype.
+//
+//   stud   sveisebolt: hodet er påsmidd i fabrikken og er ikke et valg.
+//   rebar  kamstål: heft langs kammene, med eller uten endemutter. En felles
+//          endeplate finnes ikke - kamstål gjenges ikke opp for platefeste.
+//   rod    gjengestang/bolt: gjengene tar mutter, felles endeplate eller
+//          ingenting (ren heftforankring langs gjengene).
+//
+//  Skrue og gjengestang er samme sak her: gjenget skaft, spenningsareal A_sp
+//  og skruekvalitetene K4.6-K10.9. De er derfor én type, ikke to.
+// ---------------------------------------------------------------------------
+const END_TYPES = {
+  stud:  ['nut'],
+  rebar: ['nut', 'none'],
+  rod:   ['nut', 'plate', 'none'],
+};
+const endsFor = bar => END_TYPES[bar] || END_TYPES.rod;
 
 // Hodebolt-geometri, ca. EN ISO 13918 type SD.  dh = hodediameter, k = hodetykkelse.
 const STUD_SIZES = [
@@ -828,14 +881,36 @@ function shaftProps(m) {
 }
 
 // ---------------------------------------------------------------------------
+//  Felles endeplate i innstøpingsenden.
+//
+//  Én gjennomgående plate som knytter hele boltegruppa sammen nede i betongen,
+//  ikke en liten skive pr. bolt. Plata følger boltemønsteret med et utstikk
+//  u_p utenfor de ytterste boltene, så den aldri kan bli mindre enn mønsteret
+//  den skal knytte sammen - utstikket er inndata, ikke sidekanten.
+//
+//  Returnerer null når enden ikke er en plate.
+// ---------------------------------------------------------------------------
+function endPlate(m) {
+  const a = m.anchors;
+  if (a.endType !== 'plate') return null;
+  const pts = anchorPositions(m);
+  const xs = pts.map(p => p.x), ys = pts.map(p => p.y);
+  const x0 = Math.min(...xs) - a.up, x1 = Math.max(...xs) + a.up;
+  const y0 = Math.min(...ys) - a.up, y1 = Math.max(...ys) + a.up;
+  return { x0, x1, y0, y1, bx: x1 - x0, by: y1 - y0, t: a.tp };
+}
+
+// ---------------------------------------------------------------------------
 //  Forankringsenden.
 //
 //   'nut'    endemutter / bolthode - rund for sveisebolt, sekskantet for
 //            gjengestang.  ⌀_h er hodediameter (rund) eller nøkkelvidde (mutter).
-//   'plate'  innstøpt plate i boltenden.  Samme virkemåte som endemutter, men
-//            firkantet, og foten må være stiv: utstikket u ≤ tykkelsen t,
-//            så medvirkende sidekant er begrenset til ⌀ + 2·t
-//            (Betongelementboka B19 fig. B 19.18 og B 19.57).
+//   'plate'  felles innstøpt endeplate over hele gruppa (se endPlate).
+//            Plata må være stiv for å regnes med: utstikket u kan ikke være
+//            større enn tykkelsen, så bare et felt ⌀ + 2·t_p rundt hver bolt
+//            teller som trykkflate (B19 fig. B 19.18 og B 19.57). Ligger
+//            boltene tett, flyter feltene sammen til ett - unionen telles
+//            derfor én gang, og deles på antall bolter siden lasta deles likt.
 //   'none'   uten endemutter - forankringen er ren heftforankring langs
 //            kamstålet eller gjengestanga (B19 pkt. 19.3.3 og 19.3.4).
 //
@@ -848,10 +923,18 @@ function anchorFoot(m) {
     return { kind: 'none', hasFoot: false, Ah: 0, t: 0, shape: 'none' };
 
   if (a.endType === 'plate') {
-    const bEff = Math.min(a.bp, sh.d + 2 * a.tp);   // u ≤ t
-    return { kind: 'plate', hasFoot: true, shape: 'square',
-             size: a.bp, eff: bEff, t: a.tp, limited: bEff < a.bp,
-             Agross: a.bp * a.bp, Aeff: bEff * bEff, Ah: bEff * bEff - core };
+    const pl = endPlate(m);
+    const pts = anchorPositions(m);
+    const r = sh.d / 2 + a.tp;                      // medvirkende halvbredde, u ≤ t_p
+    const Aeff = unionRectArea(pts.map(p => ({
+      x0: Math.max(p.x - r, pl.x0), x1: Math.min(p.x + r, pl.x1),
+      y0: Math.max(p.y - r, pl.y0), y1: Math.min(p.y + r, pl.y1),
+    })));
+    const per = Aeff / pts.length;                  // trykkflate pr. bolt
+    return { kind: 'plate', hasFoot: true, shape: 'square', common: true,
+             plate: pl, size: Math.min(pl.bx, pl.by), eff: 2 * r, t: a.tp,
+             limited: Aeff < pl.bx * pl.by,
+             Agross: per, Aeff, Ah: Math.max(0, per - core) };
   }
   if (a.barType === 'rod') {                        // sekskantet endemutter
     const A = 0.866 * a.dh * a.dh;                  // NV over nøkkelvidde
@@ -918,8 +1001,8 @@ function defaultModel() {
       d: 16,
       dh: 32,               // hodediameter, eller nøkkelvidde på endemutteren
       k: 8,                 // hode-/mutterhøyde
-      bp: 60,               // innstøpt plate i boltenden: sidekant
-      tp: 10,               //                             tykkelse
+      up: 40,               // felles endeplate: utstikk utenfor ytterste bolt
+      tp: 10,               //                  tykkelse
       hef: 150,             // forankringsdybde til underkant fot; uten fot er
                             // dette heftlengden l_b langs stanga
       attachment: 'welded',   // 'welded' = sveist til plata | 'bolted' = gjennomboltet
@@ -1319,16 +1402,17 @@ const K = {
 const EDGE_LABEL = { xNeg: '−x', xPos: '+x', yNeg: '−y', yPos: '+y' };
 const nz = v => (Number.isFinite(v) ? v : 1e9);
 
-const FOOT_TXT = { head: 'bolthodet', nut: 'endemutteren', plate: 'endeplata' };
+const FOOT_TXT = { head: 'bolthodet', nut: 'endemutteren',
+                   plate: 'den felles endeplata' };
 const FOOT_SRC = {
   head: 'Bolter · hodediameter (EN ISO 13918)',
   nut: 'Bolter · nøkkelvidde på endemutteren',
-  plate: 'Bolter · medvirkende sidekant på endeplata',
+  plate: 'Bolter · medvirkende sidekant ⌀ + 2·t_p rundt hver bolt',
 };
 const FOOT_FORMULA = {
   head: 'π · (⌀_h² − ⌀²) / 4',
   nut: '0,866 · NV² − π · ⌀² / 4',
-  plate: 'b_eff² − π · ⌀² / 4,   b_eff = min(b_p ; ⌀ + 2·t_p)',
+  plate: 'A_eff / n − π · ⌀² / 4,   A_eff = union av (⌀ + 2·t_p) innenfor plata',
 };
 
 // Kontroller som forutsetter en forankringsfot. Uten fot (ren heftforankring)
@@ -1359,7 +1443,7 @@ function partialFactors(m) {
 // Prosjektert areal for betongkjegle, 7.2.1.4 - union av rektangler klippet
 // mot betongdelens frie kanter.
 function coneArea(m, pts, ccr) {
-  return clippedSquares(pts, ccr, memberLimits(m));
+  return coneProjection(anchorFoot(m), pts, ccr, memberLimits(m));
 }
 
 function minEdge(m, pts) {
@@ -1478,10 +1562,16 @@ function tensionConcreteCone(m, res, g) {
   });
   const A0 = c.step({ sym: 'A⁰_c,N', desc: 'Referanseareal for én bolt',
     formula: 's_cr,N²', subst: `${n(scr, 0)}²`, value: scr * scr, unit: 'mm²' });
+  const cfoot = anchorFoot(m);
   const Ac = c.step({
     sym: 'A_c,N', desc: 'Faktisk utbruddsareal for gruppa',
-    formula: 'union av (⌀ ± c_cr,N) for strekkboltene, klippet mot frie kanter',
-    subst: `${nt} bolter, c_cr,N = ${n(ccr, 0)} mm`,
+    formula: cfoot.common
+      ? 'endeplata ± c_cr,N, klippet mot frie kanter'
+      : 'union av (⌀ ± c_cr,N) for strekkboltene, klippet mot frie kanter',
+    subst: cfoot.common
+      ? `felles endeplate ${n(cfoot.plate.bx, 0)} × ${n(cfoot.plate.by, 0)} mm, ` +
+        `c_cr,N = ${n(ccr, 0)} mm`
+      : `${nt} bolter, c_cr,N = ${n(ccr, 0)} mm`,
     value: coneArea(m, pts, 1.5 * hef), unit: 'mm²', ref: '(7.3)',
   });
 
@@ -2241,9 +2331,14 @@ function b19ConeBranch(m, res, c) {
     formula: '9 · h_ef²', subst: `9 · ${n(hef, 0)}²`,
     value: 9 * hef * hef, unit: 'mm²', ref: '19.3.2.2' });
   const Ac = c.step({ sym: 'A_c,N', desc: 'Bruddareal for gruppa',
-    formula: 'union av (⌀ ± 1,5·h_ef), klippet mot frie kanter',
-    subst: `${pts.length} bolter i strekk, 1,5·h_ef = ${n(1.5 * hef, 0)} mm`,
-    value: clippedSquares(pts, 1.5 * hef, memberLimits(m)), unit: 'mm²',
+    formula: foot.common
+      ? 'endeplata ± 1,5·h_ef, klippet mot frie kanter'
+      : 'union av (⌀ ± 1,5·h_ef), klippet mot frie kanter',
+    subst: foot.common
+      ? `felles endeplate ${n(foot.plate.bx, 0)} × ${n(foot.plate.by, 0)} mm, ` +
+        `1,5·h_ef = ${n(1.5 * hef, 0)} mm`
+      : `${pts.length} bolter i strekk, 1,5·h_ef = ${n(1.5 * hef, 0)} mm`,
+    value: coneProjection(foot, pts, 1.5 * hef, memberLimits(m)), unit: 'mm²',
     ref: 'fig. B 19.11' });
 
   const cmin = minEdgeDist(m, pts);
@@ -2403,13 +2498,15 @@ function b19FootPressure(m, res) {
   const cd = b19Concrete(m), sh = shaftProps(m);
   const c = new Calc('19.3.2.4');
   const plain = m.code.cracked && m.code.edgeReinf === 'none';
-  const FOOT = { head: 'bolthode', nut: 'endemutter', plate: 'innstøpt endeplate' };
+  const FOOT = { head: 'bolthode', nut: 'endemutter',
+                 plate: 'felles innstøpt endeplate' };
 
   c.in('⌀', sh.d, 'mm', 'Bolter');
   c.in('f_ck,cube', cd.fckCube, 'N/mm²', `Betongdel · ${cd.grade}`);
   c.in('γ_c', cd.gc, '–', 'Regelverk');
   c.in('fot', foot.size, 'mm', `Bolter · ${FOOT[foot.kind]}` +
-    (foot.kind === 'nut' ? ' (nøkkelvidde)' : foot.kind === 'plate' ? ' (sidekant)' : ''));
+    (foot.kind === 'nut' ? ' (nøkkelvidde)'
+     : foot.kind === 'plate' ? ' (minste sidekant på den felles plata)' : ''));
   const NEd = Math.max(0, ...res.anchors.map(a => a.N));
   c.in('N_Ed', NEd, 'N', 'Største boltestrekk fra kraftfordelinga');
 
@@ -2421,20 +2518,33 @@ function b19FootPressure(m, res) {
     value: (plain ? KB.sigmaFootPlain : KB.sigmaFoot) * cd.fckCube / cd.gc,
     unit: 'N/mm²', ref: '19.3.2.4' });
 
-  if (foot.kind === 'plate')
+  if (foot.kind === 'plate') {
     c.step({ sym: 'b_eff', desc:
-      'Foten må være stiv – utstikket u ≤ tykkelsen t, så medvirkende sidekant ' +
-      'er begrenset',
-      formula: 'min(b_p ; ⌀ + 2 · t_p)',
-      subst: `min(${n(foot.size, 0)} ; ${n(sh.d, 0)} + 2·${n(foot.t, 0)})`,
+      'Plata må være stiv – utstikket u ≤ tykkelsen t, så bare et felt rundt ' +
+      'hver bolt regnes som trykkflate',
+      formula: '⌀ + 2 · t_p',
+      subst: `${n(sh.d, 0)} + 2·${n(foot.t, 0)}`,
       value: foot.eff, unit: 'mm', ref: 'fig. B 19.18 / B 19.57' });
+    c.step({ sym: 'A_eff', desc:
+      'Medvirkende felt for hele gruppa – overlappende felt telles én gang, ' +
+      'og alt utenfor plata faller bort',
+      formula: 'union av (⌀ + 2·t_p) innenfor endeplata',
+      subst: `${n(foot.plate.bx, 0)} × ${n(foot.plate.by, 0)} mm plate, ` +
+             `${m.anchors.nx * m.anchors.ny} bolter`,
+      value: foot.Aeff, unit: 'mm²', ref: 'fig. B 19.18' });
+  }
 
-  const AFORM = { head: 'π · ⌀_h² / 4', nut: '0,866 · NV²', plate: 'b_eff²' };
-  c.step({ sym: 'A_fot', desc: 'Fotens bruttoareal', formula: AFORM[foot.kind],
-    subst: `${n(foot.eff, 0)} mm`, value: foot.Aeff, unit: 'mm²' });
+  const AFORM = { head: 'π · ⌀_h² / 4', nut: '0,866 · NV²',
+                  plate: 'A_eff / n' };
+  c.step({ sym: 'A_fot', desc: foot.common
+      ? 'Trykkflate pr. bolt – lasta deles likt på boltene i plata'
+      : 'Fotens bruttoareal', formula: AFORM[foot.kind],
+    subst: foot.common
+      ? `${n(foot.Aeff, 0)} / ${m.anchors.nx * m.anchors.ny}` : `${n(foot.eff, 0)} mm`,
+    value: foot.Agross, unit: 'mm²' });
   const Ah = c.step({ sym: 'A_h', desc: 'Netto trykkareal mot betongen',
     formula: 'A_fot − π/4 · ⌀²',
-    subst: `${n(foot.Aeff, 0)} − π/4 · ${n(sh.d, 0)}²`,
+    subst: `${n(foot.Agross, 0)} − π/4 · ${n(sh.d, 0)}²`,
     value: foot.Ah, unit: 'mm²', ref: 'fig. B 19.16' });
 
   const NRd = c.res({ sym: 'N_Rd,fot', formula: 'σ_c · A_h',
@@ -2812,10 +2922,16 @@ function validate(m) {
   if (foot.hasFoot && foot.Ah <= 0)
     err('Forankringsfoten er ikke større enn stangtverrsnittet – ' +
         `netto trykkareal A_h = ${Math.round(foot.Ah)} mm².`);
-  if (a.endType === 'plate' && foot.limited)
-    warn(`Endeplata er ${a.bp} mm bred, men bare ${Math.round(foot.eff)} mm ` +
-         `regnes med: foten må være stiv, så utstikket u kan ikke være større ` +
-         `enn tykkelsen t_p = ${a.tp} mm (B19 fig. B 19.18).`);
+  if (a.endType === 'plate' && !endsFor(a.barType).includes('plate'))
+    err(`Felles endeplate finnes ikke for ${a.barType === 'rebar'
+      ? 'kamstål' : 'denne stangtypen'} – bruk endemutter eller heftforankring.`);
+  if (a.endType === 'plate' && foot.limited) {
+    const pl = foot.plate;
+    warn(`Endeplata er ${Math.round(pl.bx)} × ${Math.round(pl.by)} mm, men bare ` +
+         `${Math.round(foot.Aeff)} mm² av den regnes som trykkflate: plata må ` +
+         `være stiv, så utstikket u kan ikke være større enn tykkelsen ` +
+         `t_p = ${a.tp} mm (B19 fig. B 19.18). Øk t_p, eller reduser utstikket.`);
+  }
 
   // --- forutsetninger for skjærmodellene --------------------------------
   if (p.present && a.hef < 6 * sh.d)
@@ -3870,14 +3986,9 @@ function buildScene(v, opts = {}) {
     // Foten tegnes fra modellens egne verdier, ikke fra standardtabellen, slik
     // at et redigert mål faktisk vises: rundt hode for sveisebolt, sekskantet
     // mutter for gjengestang, og firkantet plate for innstøpt endeplate.
-    if (foot.kind === 'plate') {
-      const bp = new THREE.Mesh(
-        new THREE.BoxGeometry(a.bp, a.bp, foot.t), mat);
-      bp.position.set(an.x, an.y, -a.hef + foot.t / 2);
-      bp.renderOrder = ORDER.steel;
-      bp.name = `endeplate_${an.id}`;
-      g.add(bp);
-    } else if (foot.kind === 'nut') {
+    // Den felles endeplata hører til gruppa, ikke til den enkelte bolten, og
+    // tegnes derfor én gang etter løkka.
+    if (foot.kind === 'nut') {
       // Sekskantmutter: nøkkelvidden er avstanden mellom flatene, altså
       // 2 * innskrevet radius. Sylinderradiusen er den omskrevne.
       put(new THREE.Mesh(cyl(a.dh / Math.sqrt(3), foot.t, 6), mat),
@@ -3919,14 +4030,33 @@ function buildScene(v, opts = {}) {
     root.add(g);
   }
 
+  // ---- felles endeplate -------------------------------------------------
+  // Én plate i innstøpingsenden som knytter hele boltegruppa sammen. Den er
+  // gruppas del, så den får sin egen farge uavhengig av utnyttelsen i boltene.
+  if (foot.kind === 'plate') {
+    const pl = foot.plate;
+    const ep = new THREE.Mesh(
+      new THREE.BoxGeometry(pl.bx, pl.by, foot.t), steelMat);
+    ep.position.set((pl.x0 + pl.x1) / 2, (pl.y0 + pl.y1) / 2, -a.hef + foot.t / 2);
+    ep.renderOrder = ORDER.steel;
+    ep.name = 'endeplate';
+    root.add(ep);
+  }
+
   // ---- bruddkjegle i strekk --------------------------------------------
   // Bruddkjegla vises for det regelverket som faktisk regner kjeglebrudd:
   // EN 1992-4 alltid, B19 bare når kjeglemodellen er den styrende.
   const cone = v.checks.find(k => k.id === 'N-cone' || (k.id === 'N-conc' && k.showCone));
   if (show.cone && res.tension.anchors.length && cone && Number.isFinite(cone.NRd)) {
     const ccr = 1.5 * a.hef;
+    // Med felles endeplate river hele plata ut ett legeme, så kjegla starter
+    // ved platekanten - det samme arealet som A_c,N regnes av.
     const xs = res.tension.anchors.map(t => t.x), ys = res.tension.anchors.map(t => t.y);
-    const b = { x0: Math.min(...xs), x1: Math.max(...xs), y0: Math.min(...ys), y1: Math.max(...ys) };
+    const b = foot.common
+      ? { x0: foot.plate.x0, x1: foot.plate.x1,
+          y0: foot.plate.y0, y1: foot.plate.y1 }
+      : { x0: Math.min(...xs), x1: Math.max(...xs),
+          y0: Math.min(...ys), y1: Math.max(...ys) };
     const lim = memberLimits(m);
     const t = {
       x0: Math.max(b.x0 - ccr, lim.x0), x1: Math.min(b.x1 + ccr, lim.x1),
@@ -4050,6 +4180,14 @@ function barSizes(m) {
   return STUD_SIZES.map(s => [s.d, `⌀${s.d}  (hode ⌀${s.dh})`]);
 }
 
+// Navnet på forankringsenden. Hodet på en sveisebolt er påsmidd, mens
+// gjengestang og kamstål får en mutter skrudd på - samme virkemåte, ulikt navn.
+const END_LABEL = {
+  nut: m => m.anchors.barType === 'stud' ? 'Påsmidd bolthode' : 'Endemutter',
+  plate: () => 'Felles endeplate over hele gruppa',
+  none: () => 'Uten endemutter (heftforankring)',
+};
+
 const FIELDS = [
   { group: 'Regelverk', items: [
     { p: 'code.standard', l: 'Regelverk', t: 'select', o: [
@@ -4113,27 +4251,28 @@ const FIELDS = [
   ] },
 
   { group: 'Bolter', items: [
+    // Stangtype er hovedvalget: den styrer hvilke stålkvaliteter, diametre og
+    // forankringsender som i det hele tatt finnes, så listene under er alltid
+    // bare det som kan leveres for typen du har valgt.
     { p: 'anchors.barType', l: 'Stangtype', t: 'select', o: [
-      ['stud', 'Sveisebolt / hodebolt'],
+      ['stud', 'Sveisebolt (hodebolt)'],
+      ['rod', 'Gjengestang / bolt'],
       ['rebar', 'Kamstål'],
-      ['rod', 'Gjengestang'],
     ], auto: 'bar',
-      hint: 'Kamstål og gjengestang har heft langs hele stanga og kan ' +
-            'forankres uten endemutter. En glatt sveisebolt har bare foten.' },
-    { p: 'anchors.endType', l: 'Forankringsende', t: 'select', o: m => [
-      ['nut', m.anchors.barType === 'stud' ? 'Bolthode' : 'Endemutter'],
-      ['plate', 'Innstøpt plate i boltenden'],
-      ['none', 'Uten endemutter (heftforankring)'],
-    ], auto: 'end',
+      hint: 'Gjengestang og bolt er samme sak her: gjenget skaft, ' +
+            'spenningsareal A_sp og skruekvalitet. Sveisebolt har påsmidd ' +
+            'hode og glatt skaft uten heft. Kamstål har heft langs kammene.' },
+    { p: 'anchors.steel', l: 'Stålkvalitet', t: 'select',
+      o: m => steelsFor(m.anchors.barType).map(s => [s.id, s.label || s.id]) },
+    { p: 'anchors.d', l: 'Diameter', t: 'select', o: m => barSizes(m), num: true },
+
+    // Sveiseboltens hode er påsmidd i fabrikken, så da er det ikke noe å velge.
+    { p: 'anchors.endType', l: 'Forankringsende', t: 'select',
+      o: m => endsFor(m.anchors.barType).map(k => [k, END_LABEL[k](m)]),
+      when: m => endsFor(m.anchors.barType).length > 1, auto: 'end',
       hint: 'Med fot regnes kjeglebrudd (B19 pkt. 19.3.2). Uten fot regnes ' +
             'heftforankring (19.3.3 / 19.3.4). Har stanga både fot og heft, ' +
             'bruker B19 den modellen som gir størst kapasitet (19.3.1.2).' },
-    { p: 'anchors.d', l: 'Diameter', t: 'select', o: m => barSizes(m), num: true },
-    { p: 'anchors.attachment', l: 'Innfesting til plate', t: 'select',
-      when: m => m.plate.present, o: [
-      ['welded', 'Sveist til plata'],
-      ['bolted', 'Gjennomboltet (skive + mutter)'],
-    ] },
     { p: 'anchors.hef', l: m => m.anchors.endType === 'none' ? 'Heftlengde l_b' : 'h_ef',
       t: 'num', u: 'mm', step: 5,
       hint: 'Med fot: dybden ned til underkant fot. Uten fot: innstøpt lengde ' +
@@ -4147,15 +4286,24 @@ const FIELDS = [
     { p: 'anchors.k', l: 'Høyde på fot', t: 'num', u: 'mm', step: 1,
       when: m => m.anchors.endType === 'nut',
       hint: 'Hode- eller mutterhøyde. Settes fra tabell når du velger diameter.' },
-    { p: 'anchors.bp', l: 'Endeplate, sidekant b_p', t: 'num', u: 'mm', step: 5,
+
+    // Den felles endeplata følger boltemønsteret, så utstikket er inndata og
+    // sidekanten er avledet - da kan plata aldri bli mindre enn gruppa.
+    { p: 'anchors.up', l: 'Endeplate, utstikk u_p', t: 'num', u: 'mm', step: 5,
       when: m => m.anchors.endType === 'plate',
-      hint: 'Foten må være stiv: bare ⌀ + 2·t_p av bredden regnes med, ' +
-            'siden utstikket u ikke kan være større enn tykkelsen ' +
-            '(B19 fig. B 19.18).' },
+      hint: 'Hvor langt plata stikker utenfor de ytterste boltene. Sidekanten ' +
+            'følger av boltemønsteret pluss to utstikk. Plata må være stiv: ' +
+            'bare ⌀ + 2·t_p rundt hver bolt regnes som trykkflate ' +
+            '(B19 fig. B 19.18), men hele plata sprer bruddkjegla.' },
     { p: 'anchors.tp', l: 'Endeplate, tykkelse t_p', t: 'num', u: 'mm', step: 1,
       when: m => m.anchors.endType === 'plate' },
-    { p: 'anchors.steel', l: 'Stålkvalitet', t: 'select',
-      o: STUD_STEELS.map(s => [s.id, s.label || s.id]) },
+
+    // Sveisebolt er sveist per definisjon, og kamstål festes sveist til plata.
+    { p: 'anchors.attachment', l: 'Innfesting til plate', t: 'select',
+      when: m => m.plate.present && m.anchors.barType === 'rod', o: [
+      ['welded', 'Sveist til plata'],
+      ['bolted', 'Gjennomboltet (skive + mutter)'],
+    ] },
     { p: 'anchors.nx', l: 'Antall i x', t: 'num', step: 1, min: 1, auto: 'x' },
     { p: 'anchors.ny', l: 'Antall i y', t: 'num', step: 1, min: 1, auto: 'y' },
     { p: 'anchors.sx', l: 'c/c i x', t: 'num', u: 'mm', step: 10,
@@ -4203,8 +4351,8 @@ const esc = s => String(s).replace(/[&<>]/g, ch => ({ '&': '&amp;', '<': '&lt;',
 
 const MOUNT_TXT = { direct: 'direkte mot betong', grout: 'undergyting',
                     standoff: 'avstandsmontert' };
-const BAR_TXT = { stud: 'Sveisebolt', rebar: 'Kamstål', rod: 'Gjengestang' };
-const END_TXT = { nut: 'endemutter', plate: 'innstøpt endeplate',
+const BAR_TXT = { stud: 'Sveisebolt', rebar: 'Kamstål', rod: 'Gjengestang/bolt' };
+const END_TXT = { nut: 'endemutter', plate: 'felles endeplate',
                   none: 'uten endemutter (heft)' };
 
 const REINF_DEFAULT = () =>
@@ -4234,12 +4382,23 @@ const SUMMARY = {
 function sync(m) {
   const g = CONCRETE_GRADES.find(x => x.id === m.concrete.grade);
   if (g) m.concrete.fck = g.fck;
-  const s = STUD_STEELS.find(x => x.id === m.anchors.steel);
-  if (s) { m.anchors.fyk = s.fyk; m.anchors.fuk = s.fuk; m.anchors.ductile = s.ductile; }
+
+  const a = m.anchors;
+  // Stangtypen er styrende: stålkvalitet, forankringsende og innfesting må
+  // høre til typen. Ugyldige kombinasjoner rettes opp her - også når de
+  // kommer fra ei prosjektfil som er lagra før reglene ble strammet inn.
+  if (!steelsFor(a.barType).some(x => x.id === a.steel))
+    a.steel = defaultSteel(a.barType);
+  if (!endsFor(a.barType).includes(a.endType))
+    a.endType = endsFor(a.barType)[0];
+  // Sveisebolt er sveist per definisjon, og kamstål festes sveist til plata.
+  if (a.barType !== 'rod') a.attachment = 'welded';
+
+  const s = STUD_STEELS.find(x => x.id === a.steel);
+  if (s) { a.fyk = s.fyk; a.fuk = s.fuk; a.ductile = s.ductile; }
 
   // Stangtypen bestemmer hvilke diametre som finnes. Bytter du type, flyttes
   // valget til nærmeste dimensjon i den nye tabellen.
-  const a = m.anchors;
   if (a._barLast !== a.barType) {
     const sizes = barSizes(m).map(o => o[0]);
     if (!sizes.includes(a.d))
@@ -4252,7 +4411,6 @@ function sync(m) {
   if (a._dLast !== a.d) {
     if (a.barType === 'rod') { a.dh = rodSize(a.d).NV; a.k = Math.round(0.8 * a.d); }
     else { const ss = studSize(a.d); a.dh = ss.dh; a.k = ss.k; }
-    a.bp = Math.max(a.bp, 2 * a.d);
     a._dLast = a.d;
   }
 

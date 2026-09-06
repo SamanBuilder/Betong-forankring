@@ -2,8 +2,8 @@
 //
 // `o` kan vaere en fast liste, eller en funksjon av modellen naar valgene
 // avhenger av noe annet - som boltdiameteren, der utvalget foelger stangtypen.
-import { CONCRETE_GRADES, STUD_STEELS, STUD_SIZES, REBAR_SIZES,
-         ROD_SIZES } from '../core/model.js';
+import { CONCRETE_GRADES, STUD_SIZES, REBAR_SIZES, ROD_SIZES,
+         steelsFor, endsFor } from '../core/model.js';
 
 // Diameterne som finnes for hver stangtype.
 export function barSizes(m) {
@@ -13,6 +13,14 @@ export function barSizes(m) {
     return REBAR_SIZES.map(d => [d, `⌀${d}`]);
   return STUD_SIZES.map(s => [s.d, `⌀${s.d}  (hode ⌀${s.dh})`]);
 }
+
+// Navnet på forankringsenden. Hodet på en sveisebolt er påsmidd, mens
+// gjengestang og kamstål får en mutter skrudd på - samme virkemåte, ulikt navn.
+const END_LABEL = {
+  nut: m => m.anchors.barType === 'stud' ? 'Påsmidd bolthode' : 'Endemutter',
+  plate: () => 'Felles endeplate over hele gruppa',
+  none: () => 'Uten endemutter (heftforankring)',
+};
 
 export const FIELDS = [
   { group: 'Regelverk', items: [
@@ -77,27 +85,28 @@ export const FIELDS = [
   ] },
 
   { group: 'Bolter', items: [
+    // Stangtype er hovedvalget: den styrer hvilke stålkvaliteter, diametre og
+    // forankringsender som i det hele tatt finnes, så listene under er alltid
+    // bare det som kan leveres for typen du har valgt.
     { p: 'anchors.barType', l: 'Stangtype', t: 'select', o: [
-      ['stud', 'Sveisebolt / hodebolt'],
+      ['stud', 'Sveisebolt (hodebolt)'],
+      ['rod', 'Gjengestang / bolt'],
       ['rebar', 'Kamstål'],
-      ['rod', 'Gjengestang'],
     ], auto: 'bar',
-      hint: 'Kamstål og gjengestang har heft langs hele stanga og kan ' +
-            'forankres uten endemutter. En glatt sveisebolt har bare foten.' },
-    { p: 'anchors.endType', l: 'Forankringsende', t: 'select', o: m => [
-      ['nut', m.anchors.barType === 'stud' ? 'Bolthode' : 'Endemutter'],
-      ['plate', 'Innstøpt plate i boltenden'],
-      ['none', 'Uten endemutter (heftforankring)'],
-    ], auto: 'end',
+      hint: 'Gjengestang og bolt er samme sak her: gjenget skaft, ' +
+            'spenningsareal A_sp og skruekvalitet. Sveisebolt har påsmidd ' +
+            'hode og glatt skaft uten heft. Kamstål har heft langs kammene.' },
+    { p: 'anchors.steel', l: 'Stålkvalitet', t: 'select',
+      o: m => steelsFor(m.anchors.barType).map(s => [s.id, s.label || s.id]) },
+    { p: 'anchors.d', l: 'Diameter', t: 'select', o: m => barSizes(m), num: true },
+
+    // Sveiseboltens hode er påsmidd i fabrikken, så da er det ikke noe å velge.
+    { p: 'anchors.endType', l: 'Forankringsende', t: 'select',
+      o: m => endsFor(m.anchors.barType).map(k => [k, END_LABEL[k](m)]),
+      when: m => endsFor(m.anchors.barType).length > 1, auto: 'end',
       hint: 'Med fot regnes kjeglebrudd (B19 pkt. 19.3.2). Uten fot regnes ' +
             'heftforankring (19.3.3 / 19.3.4). Har stanga både fot og heft, ' +
             'bruker B19 den modellen som gir størst kapasitet (19.3.1.2).' },
-    { p: 'anchors.d', l: 'Diameter', t: 'select', o: m => barSizes(m), num: true },
-    { p: 'anchors.attachment', l: 'Innfesting til plate', t: 'select',
-      when: m => m.plate.present, o: [
-      ['welded', 'Sveist til plata'],
-      ['bolted', 'Gjennomboltet (skive + mutter)'],
-    ] },
     { p: 'anchors.hef', l: m => m.anchors.endType === 'none' ? 'Heftlengde l_b' : 'h_ef',
       t: 'num', u: 'mm', step: 5,
       hint: 'Med fot: dybden ned til underkant fot. Uten fot: innstøpt lengde ' +
@@ -111,15 +120,24 @@ export const FIELDS = [
     { p: 'anchors.k', l: 'Høyde på fot', t: 'num', u: 'mm', step: 1,
       when: m => m.anchors.endType === 'nut',
       hint: 'Hode- eller mutterhøyde. Settes fra tabell når du velger diameter.' },
-    { p: 'anchors.bp', l: 'Endeplate, sidekant b_p', t: 'num', u: 'mm', step: 5,
+
+    // Den felles endeplata følger boltemønsteret, så utstikket er inndata og
+    // sidekanten er avledet - da kan plata aldri bli mindre enn gruppa.
+    { p: 'anchors.up', l: 'Endeplate, utstikk u_p', t: 'num', u: 'mm', step: 5,
       when: m => m.anchors.endType === 'plate',
-      hint: 'Foten må være stiv: bare ⌀ + 2·t_p av bredden regnes med, ' +
-            'siden utstikket u ikke kan være større enn tykkelsen ' +
-            '(B19 fig. B 19.18).' },
+      hint: 'Hvor langt plata stikker utenfor de ytterste boltene. Sidekanten ' +
+            'følger av boltemønsteret pluss to utstikk. Plata må være stiv: ' +
+            'bare ⌀ + 2·t_p rundt hver bolt regnes som trykkflate ' +
+            '(B19 fig. B 19.18), men hele plata sprer bruddkjegla.' },
     { p: 'anchors.tp', l: 'Endeplate, tykkelse t_p', t: 'num', u: 'mm', step: 1,
       when: m => m.anchors.endType === 'plate' },
-    { p: 'anchors.steel', l: 'Stålkvalitet', t: 'select',
-      o: STUD_STEELS.map(s => [s.id, s.label || s.id]) },
+
+    // Sveisebolt er sveist per definisjon, og kamstål festes sveist til plata.
+    { p: 'anchors.attachment', l: 'Innfesting til plate', t: 'select',
+      when: m => m.plate.present && m.anchors.barType === 'rod', o: [
+      ['welded', 'Sveist til plata'],
+      ['bolted', 'Gjennomboltet (skive + mutter)'],
+    ] },
     { p: 'anchors.nx', l: 'Antall i x', t: 'num', step: 1, min: 1, auto: 'x' },
     { p: 'anchors.ny', l: 'Antall i y', t: 'num', step: 1, min: 1, auto: 'y' },
     { p: 'anchors.sx', l: 'c/c i x', t: 'num', u: 'mm', step: 10,

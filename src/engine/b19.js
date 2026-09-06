@@ -36,7 +36,7 @@
 
 import { anchorPositions, edgeDistances, memberLimits, shaftProps, anchorFoot,
          grade, steelGrade } from '../core/model.js';
-import { unionLength, clamp, clippedSquares } from './geometry.js';
+import { unionLength, clamp, clippedSquares, coneProjection } from './geometry.js';
 import { Calc, skipped, n } from './calc.js';
 
 export const KB = {
@@ -208,9 +208,14 @@ function b19ConeBranch(m, res, c) {
     formula: '9 · h_ef²', subst: `9 · ${n(hef, 0)}²`,
     value: 9 * hef * hef, unit: 'mm²', ref: '19.3.2.2' });
   const Ac = c.step({ sym: 'A_c,N', desc: 'Bruddareal for gruppa',
-    formula: 'union av (⌀ ± 1,5·h_ef), klippet mot frie kanter',
-    subst: `${pts.length} bolter i strekk, 1,5·h_ef = ${n(1.5 * hef, 0)} mm`,
-    value: clippedSquares(pts, 1.5 * hef, memberLimits(m)), unit: 'mm²',
+    formula: foot.common
+      ? 'endeplata ± 1,5·h_ef, klippet mot frie kanter'
+      : 'union av (⌀ ± 1,5·h_ef), klippet mot frie kanter',
+    subst: foot.common
+      ? `felles endeplate ${n(foot.plate.bx, 0)} × ${n(foot.plate.by, 0)} mm, ` +
+        `1,5·h_ef = ${n(1.5 * hef, 0)} mm`
+      : `${pts.length} bolter i strekk, 1,5·h_ef = ${n(1.5 * hef, 0)} mm`,
+    value: coneProjection(foot, pts, 1.5 * hef, memberLimits(m)), unit: 'mm²',
     ref: 'fig. B 19.11' });
 
   const cmin = minEdgeDist(m, pts);
@@ -370,13 +375,15 @@ export function b19FootPressure(m, res) {
   const cd = b19Concrete(m), sh = shaftProps(m);
   const c = new Calc('19.3.2.4');
   const plain = m.code.cracked && m.code.edgeReinf === 'none';
-  const FOOT = { head: 'bolthode', nut: 'endemutter', plate: 'innstøpt endeplate' };
+  const FOOT = { head: 'bolthode', nut: 'endemutter',
+                 plate: 'felles innstøpt endeplate' };
 
   c.in('⌀', sh.d, 'mm', 'Bolter');
   c.in('f_ck,cube', cd.fckCube, 'N/mm²', `Betongdel · ${cd.grade}`);
   c.in('γ_c', cd.gc, '–', 'Regelverk');
   c.in('fot', foot.size, 'mm', `Bolter · ${FOOT[foot.kind]}` +
-    (foot.kind === 'nut' ? ' (nøkkelvidde)' : foot.kind === 'plate' ? ' (sidekant)' : ''));
+    (foot.kind === 'nut' ? ' (nøkkelvidde)'
+     : foot.kind === 'plate' ? ' (minste sidekant på den felles plata)' : ''));
   const NEd = Math.max(0, ...res.anchors.map(a => a.N));
   c.in('N_Ed', NEd, 'N', 'Største boltestrekk fra kraftfordelinga');
 
@@ -388,20 +395,33 @@ export function b19FootPressure(m, res) {
     value: (plain ? KB.sigmaFootPlain : KB.sigmaFoot) * cd.fckCube / cd.gc,
     unit: 'N/mm²', ref: '19.3.2.4' });
 
-  if (foot.kind === 'plate')
+  if (foot.kind === 'plate') {
     c.step({ sym: 'b_eff', desc:
-      'Foten må være stiv – utstikket u ≤ tykkelsen t, så medvirkende sidekant ' +
-      'er begrenset',
-      formula: 'min(b_p ; ⌀ + 2 · t_p)',
-      subst: `min(${n(foot.size, 0)} ; ${n(sh.d, 0)} + 2·${n(foot.t, 0)})`,
+      'Plata må være stiv – utstikket u ≤ tykkelsen t, så bare et felt rundt ' +
+      'hver bolt regnes som trykkflate',
+      formula: '⌀ + 2 · t_p',
+      subst: `${n(sh.d, 0)} + 2·${n(foot.t, 0)}`,
       value: foot.eff, unit: 'mm', ref: 'fig. B 19.18 / B 19.57' });
+    c.step({ sym: 'A_eff', desc:
+      'Medvirkende felt for hele gruppa – overlappende felt telles én gang, ' +
+      'og alt utenfor plata faller bort',
+      formula: 'union av (⌀ + 2·t_p) innenfor endeplata',
+      subst: `${n(foot.plate.bx, 0)} × ${n(foot.plate.by, 0)} mm plate, ` +
+             `${m.anchors.nx * m.anchors.ny} bolter`,
+      value: foot.Aeff, unit: 'mm²', ref: 'fig. B 19.18' });
+  }
 
-  const AFORM = { head: 'π · ⌀_h² / 4', nut: '0,866 · NV²', plate: 'b_eff²' };
-  c.step({ sym: 'A_fot', desc: 'Fotens bruttoareal', formula: AFORM[foot.kind],
-    subst: `${n(foot.eff, 0)} mm`, value: foot.Aeff, unit: 'mm²' });
+  const AFORM = { head: 'π · ⌀_h² / 4', nut: '0,866 · NV²',
+                  plate: 'A_eff / n' };
+  c.step({ sym: 'A_fot', desc: foot.common
+      ? 'Trykkflate pr. bolt – lasta deles likt på boltene i plata'
+      : 'Fotens bruttoareal', formula: AFORM[foot.kind],
+    subst: foot.common
+      ? `${n(foot.Aeff, 0)} / ${m.anchors.nx * m.anchors.ny}` : `${n(foot.eff, 0)} mm`,
+    value: foot.Agross, unit: 'mm²' });
   const Ah = c.step({ sym: 'A_h', desc: 'Netto trykkareal mot betongen',
     formula: 'A_fot − π/4 · ⌀²',
-    subst: `${n(foot.Aeff, 0)} − π/4 · ${n(sh.d, 0)}²`,
+    subst: `${n(foot.Agross, 0)} − π/4 · ${n(sh.d, 0)}²`,
     value: foot.Ah, unit: 'mm²', ref: 'fig. B 19.16' });
 
   const NRd = c.res({ sym: 'N_Rd,fot', formula: 'σ_c · A_h',

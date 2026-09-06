@@ -507,14 +507,9 @@ export function buildScene(v, opts = {}) {
     // Foten tegnes fra modellens egne verdier, ikke fra standardtabellen, slik
     // at et redigert mål faktisk vises: rundt hode for sveisebolt, sekskantet
     // mutter for gjengestang, og firkantet plate for innstøpt endeplate.
-    if (foot.kind === 'plate') {
-      const bp = new THREE.Mesh(
-        new THREE.BoxGeometry(a.bp, a.bp, foot.t), mat);
-      bp.position.set(an.x, an.y, -a.hef + foot.t / 2);
-      bp.renderOrder = ORDER.steel;
-      bp.name = `endeplate_${an.id}`;
-      g.add(bp);
-    } else if (foot.kind === 'nut') {
+    // Den felles endeplata hører til gruppa, ikke til den enkelte bolten, og
+    // tegnes derfor én gang etter løkka.
+    if (foot.kind === 'nut') {
       // Sekskantmutter: nøkkelvidden er avstanden mellom flatene, altså
       // 2 * innskrevet radius. Sylinderradiusen er den omskrevne.
       put(new THREE.Mesh(cyl(a.dh / Math.sqrt(3), foot.t, 6), mat),
@@ -556,14 +551,33 @@ export function buildScene(v, opts = {}) {
     root.add(g);
   }
 
+  // ---- felles endeplate -------------------------------------------------
+  // Én plate i innstøpingsenden som knytter hele boltegruppa sammen. Den er
+  // gruppas del, så den får sin egen farge uavhengig av utnyttelsen i boltene.
+  if (foot.kind === 'plate') {
+    const pl = foot.plate;
+    const ep = new THREE.Mesh(
+      new THREE.BoxGeometry(pl.bx, pl.by, foot.t), steelMat);
+    ep.position.set((pl.x0 + pl.x1) / 2, (pl.y0 + pl.y1) / 2, -a.hef + foot.t / 2);
+    ep.renderOrder = ORDER.steel;
+    ep.name = 'endeplate';
+    root.add(ep);
+  }
+
   // ---- bruddkjegle i strekk --------------------------------------------
   // Bruddkjegla vises for det regelverket som faktisk regner kjeglebrudd:
   // EN 1992-4 alltid, B19 bare når kjeglemodellen er den styrende.
   const cone = v.checks.find(k => k.id === 'N-cone' || (k.id === 'N-conc' && k.showCone));
   if (show.cone && res.tension.anchors.length && cone && Number.isFinite(cone.NRd)) {
     const ccr = 1.5 * a.hef;
+    // Med felles endeplate river hele plata ut ett legeme, så kjegla starter
+    // ved platekanten - det samme arealet som A_c,N regnes av.
     const xs = res.tension.anchors.map(t => t.x), ys = res.tension.anchors.map(t => t.y);
-    const b = { x0: Math.min(...xs), x1: Math.max(...xs), y0: Math.min(...ys), y1: Math.max(...ys) };
+    const b = foot.common
+      ? { x0: foot.plate.x0, x1: foot.plate.x1,
+          y0: foot.plate.y0, y1: foot.plate.y1 }
+      : { x0: Math.min(...xs), x1: Math.max(...xs),
+          y0: Math.min(...ys), y1: Math.max(...ys) };
     const lim = memberLimits(m);
     const t = {
       x0: Math.max(b.x0 - ccr, lim.x0), x1: Math.min(b.x1 + ccr, lim.x1),

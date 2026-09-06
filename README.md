@@ -12,8 +12,8 @@ frie kanter, med eller uten forankringsplate i overflata.
 
 | Valg | Alternativer |
 |---|---|
-| Stangtype | sveisebolt · kamstål · gjengestang |
-| Forankringsende | endemutter/bolthode · innstøpt plate i boltenden · uten endemutter (heftforankring) |
+| Stangtype | sveisebolt · gjengestang/bolt · kamstål |
+| Forankringsende | endemutter/bolthode · felles endeplate over gruppa · uten endemutter (heftforankring) |
 | Innfesting | stålplate, sveist eller gjennomboltet · uten plate (enkeltstående dybler) |
 
 **Regelverk:** NS-EN 1992-4:2018 og Betongelementboka bind B kap. B19 er begge
@@ -243,6 +243,47 @@ til `CSS3DObject`-er.
 3D-ruta har ingen bakke, himmel eller rutenett – bare den samme varme papir-
 fargen som panelene. Retningen leses av modellen selv og av lasttriaden.
 
+### Stangtype, stålkvalitet og forankringsende
+
+Stangtypen er hovedvalget, og den styrer resten. Stålkvalitet, diameter og
+forankringsende er ikke frie valg ved siden av den, men lister som filtreres
+på typen – så kombinasjoner som ikke finnes, kan heller ikke velges.
+
+| Stangtype | Stålkvaliteter | Forankringsende |
+|---|---|---|
+| Sveisebolt (hodebolt) | SD1, S235J2, S355J2 | påsmidd bolthode |
+| Gjengestang / bolt | K4.6, K4.8, K5.6, K8.8, K10.9 | endemutter · felles endeplate · uten (heft) |
+| Kamstål | B500NC | endemutter · uten (heft) |
+
+Skrue og gjengestang er samme sak: gjenget skaft, spenningsareal `A_sp` og
+skruekvalitetene. De er derfor **én** type, ikke to. Sveisebolten har hodet
+påsmidt i fabrikken, så «forankringsende» er ikke et valg der og feltet vises
+ikke. Kamstål gjenges ikke opp for platefeste og har derfor ingen endeplate.
+
+Reglene ligger i `STUD_STEELS[].bars` og `END_TYPES` i `src/core/model.js`, og
+`sync()` i `src/ui/app.js` retter opp en ugyldig kombinasjon – også når den
+kommer fra ei prosjektfil lagra før reglene ble strammet inn.
+
+### Felles endeplate
+
+Endeplata er **én** plate som knytter hele boltegruppa sammen nede i
+innstøpingsenden – ikke en skive pr. bolt. Den følger boltemønsteret med et
+utstikk `u_p` utenfor de ytterste boltene, så inndata er utstikket og
+sidekanten er avledet; plata kan da aldri bli mindre enn gruppa den binder.
+
+Det har to konsekvenser for beregningen:
+
+* **Bruddkjegla** går fra platekanten og ikke fra hver bolt for seg – hele
+  gruppa river ut ett sammenhengende legeme. `A_c,N` regnes derfor av
+  plateomrisset utvidet med 1,5·h_ef (`coneProjection()` i
+  `src/engine/geometry.js`, brukt av både EN 1992-4 og B19). Det gir større
+  kapasitet enn løse bolter, og er hele poenget med detaljen.
+* **Trykkflata** krever at plata er stiv: utstikket kan ikke være større enn
+  tykkelsen, så bare et felt `⌀ + 2·t_p` rundt hver bolt regnes med
+  (B19 fig. B 19.18). Ligger boltene tett, flyter feltene sammen, og unionen
+  telles én gang og deles på antall bolter. Er plata ikke fullt medvirkende,
+  sier inndatakontrollen fra med hvor mye av den som regnes.
+
 ### Boltavstand og bolthode
 
 Endrer du antall bolter, settes senteravstanden automatisk (`autoSpacing()` i
@@ -328,7 +369,7 @@ karakteristiske verdier som deles på γ_M etterpå.
 | Valg | Strekkmodell | Fotens geometri |
 |---|---|---|
 | Endemutter / bolthode | kjeglebrudd, 19.3.2 | rundt hode `π·⌀_h²/4`, eller sekskantmutter `0,866·NV²` |
-| Innstøpt plate i boltenden | kjeglebrudd, 19.3.2 | firkant `b_eff²`, der `b_eff = min(b_p ; ⌀ + 2·t_p)` |
+| Felles endeplate over gruppa | kjeglebrudd fra platekanten, 19.3.2 | union av `(⌀ + 2·t_p)` innenfor plata, delt på antall bolter |
 | Uten endemutter | heftforankring, 19.3.3 / 19.3.4 | ingen |
 
 Endeplata er altså samme virkemåte som endemutteren, bare med annen geometri
