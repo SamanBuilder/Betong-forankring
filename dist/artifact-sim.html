@@ -1,0 +1,3900 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<style>:root{color-scheme:light}body{margin:0;font:14px system-ui;background:#faf9f7}img{max-width:100%}[hidden]{display:none!important}</style>
+</head>
+<body>
+<title>Bruddkjegle</title>
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600&display=swap">
+<script type="importmap">
+{ "imports": {
+    "three": "https://cdn.jsdelivr.net/npm/three@0.184.0/build/three.module.js",
+    "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.184.0/examples/jsm/"
+} }
+</script>
+<style>
+/* ---------------------------------------------------------------------------
+   Klassisk beregningsprogram-oppsett: verktøylinje øverst, tre ruter under,
+   statuslinje nederst. Hver rute er avgrenset og har sin egen dokkede
+   verktøylinje - ingenting flyter oppå 3D-visninga.
+
+   Lyst, varmt papir som grunn. Materialfargene i 3D er de virkelige; grønn,
+   gul og rød er reservert utnyttelse og brukes aldri som pynt.
+--------------------------------------------------------------------------- */
+:root {
+  color-scheme: light;
+
+  --bg:#efede8;
+  --panel:#faf9f6;
+  --panel2:#f3f1ec;
+  --panel3:#e8e5dd;
+  --line:#e2ded5;
+  --line2:#d2ccc0;
+
+  --tx:#2b2924;
+  --tx2:#6a655b;
+  --tx3:#9a9488;
+
+  --acc:#8a7448;
+  --acc-soft:#efe7d4;
+
+  --ok:#6e9e4f;
+  --warn:#c79030;
+  --bad:#c0524a;
+
+  --sans:"IBM Plex Sans", ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+  --mono:"IBM Plex Mono", ui-monospace, SFMono-Regular, Menlo, monospace;
+
+  --h-top:42px;
+  --h-status:26px;
+
+  /* Rutestørrelser. Endres av draghåndtakene, se initSplitters(). */
+  --w-left:300px;
+  --w-right:404px;
+  --h-loads:206px;
+}
+
+* { box-sizing:border-box; }
+body { margin:0; height:100vh; overflow:hidden; background:var(--bg); color:var(--tx);
+       font:13px/1.45 var(--sans); -webkit-font-smoothing:antialiased; }
+.mono, input[type=number], .num { font-variant-numeric:tabular-nums; }
+:focus-visible { outline:2px solid var(--acc); outline-offset:1px; border-radius:3px; }
+@media (prefers-reduced-motion:reduce){ *,*::before,*::after{ transition:none!important; } }
+
+/* === rammeverk ========================================================== */
+.app { display:grid; grid-template-rows:var(--h-top) minmax(0,1fr) var(--h-status);
+       height:100vh; }
+
+.topbar {
+  display:flex; align-items:center; gap:14px; padding:0 14px;
+  background:var(--panel); border-bottom:1px solid var(--line);
+}
+.topbar .brand { font-size:12.5px; font-weight:600; letter-spacing:.11em;
+  text-transform:uppercase; margin-right:2px; }
+.topbar .sep { width:1px; height:20px; background:var(--line); }
+.topbar .grow { flex:1 1 auto; }
+.topbar label { font-size:11px; color:var(--tx3); margin-right:5px; }
+.topbar select {
+  background:#fff; border:1px solid var(--line2); border-radius:5px;
+  padding:4px 7px; font:11.5px var(--sans); color:var(--tx);
+}
+.topbar .units { font:11px var(--mono); color:var(--tx3); }
+
+.body { display:grid;
+        grid-template-columns:var(--w-left) minmax(0,1fr) var(--w-right);
+        min-height:0; }
+
+.pane { position:relative; display:flex; flex-direction:column;
+        min-width:0; min-height:0; background:var(--panel); }
+.pane + .pane { border-left:1px solid var(--line); }
+.pane.view { background:var(--bg); }
+
+.pane-head {
+  flex:0 0 auto; display:flex; align-items:center; gap:8px;
+  padding:0 10px; height:34px;
+  border-bottom:1px solid var(--line); background:var(--panel2);
+}
+.pane-head h2 { margin:0; font-size:10.5px; font-weight:600; letter-spacing:.11em;
+  text-transform:uppercase; color:var(--tx2); white-space:nowrap; }
+.pane-head .grow { flex:1 1 auto; }
+.pane-head .stat { font:11px var(--mono); color:var(--tx3); white-space:nowrap; }
+
+.pane-sub {
+  flex:0 0 auto; display:flex; align-items:center; gap:12px; flex-wrap:wrap;
+  padding:6px 10px; border-bottom:1px solid var(--line); background:var(--panel);
+}
+.pane-body { flex:1 1 auto; overflow:auto; min-height:0; }
+.pane-body::-webkit-scrollbar { width:10px; }
+.pane-body::-webkit-scrollbar-thumb { background:var(--line2); border-radius:6px;
+  border:3px solid var(--panel); }
+
+.statusbar {
+  display:flex; align-items:center; gap:0; padding:0 12px;
+  background:var(--panel2); border-top:1px solid var(--line);
+  font:11px var(--mono); color:var(--tx2);
+}
+.statusbar span { padding:0 12px; border-right:1px solid var(--line); }
+.statusbar span:first-child { padding-left:0; }
+.statusbar span:last-child { border-right:0; }
+.statusbar .grow { flex:1 1 auto; border-right:0; }
+
+/* === knapper ============================================================ */
+.btn {
+  font:500 11px/1 var(--sans); padding:5px 9px; border-radius:5px; cursor:pointer;
+  border:1px solid var(--line2); background:#fff; color:var(--tx2); white-space:nowrap;
+  transition:color .12s, border-color .12s, background .12s;
+}
+.btn:hover { color:var(--acc); border-color:var(--acc); background:var(--acc-soft); }
+.btn[aria-pressed="true"] { color:var(--acc); border-color:var(--acc); background:var(--acc-soft); }
+.btn.ghost { border-color:transparent; background:none; }
+.btn.ghost:hover { border-color:var(--acc); }
+.btn.wide { width:100%; padding:9px; margin-top:20px; }
+.btn-row { display:flex; gap:4px; }
+
+.tog { display:inline-flex; align-items:center; gap:5px; font-size:11px;
+       color:var(--tx2); cursor:pointer; white-space:nowrap; }
+.tog:hover { color:var(--tx); }
+.tog input { accent-color:var(--acc); width:13px; height:13px; margin:0; }
+
+/* === inndata ============================================================ */
+/* Gruppevelgeren er navigasjonen i inndataruta: én gruppe om gangen, alltid
+   synlig hvilke som finnes. */
+.groups { flex:0 0 auto; border-bottom:1px solid var(--line); padding:5px; }
+.groups button {
+  display:flex; width:100%; align-items:center; gap:8px; text-align:left;
+  border:0; background:none; cursor:pointer; border-radius:5px;
+  padding:6px 8px; font:12px var(--sans); color:var(--tx2);
+  transition:background .12s, color .12s;
+}
+.groups button:hover { background:var(--panel2); color:var(--tx); }
+.groups button[aria-current="true"] { background:var(--acc-soft); color:var(--acc); font-weight:500; }
+.groups button i { font-style:normal; color:var(--tx3); font-size:10.5px; margin-left:auto;
+  font-family:var(--mono); }
+.groups button[aria-current="true"] i { color:var(--acc); }
+
+.form { padding:12px 14px 40px; }
+.form h3 { margin:0 0 11px; font-size:10px; font-weight:600; letter-spacing:.11em;
+  text-transform:uppercase; color:var(--tx3); padding-bottom:7px;
+  border-bottom:1px solid var(--line); }
+.fld { display:grid; grid-template-columns:1fr 92px; align-items:center; gap:10px;
+       margin-bottom:7px; }
+.fld.bool { grid-template-columns:1fr auto; }
+.lbl { color:var(--tx2); font-size:12px; }
+.lbl i { color:var(--tx3); font-style:normal; font-size:10.5px; }
+.fld input[type=number], .fld select {
+  width:100%; background:#fff; color:var(--tx); border:1px solid var(--line2);
+  border-radius:5px; padding:5px 7px; font:12px var(--mono);
+}
+.fld select { font:11.5px var(--sans); }
+.fld input[type=number]:hover, .fld select:hover { border-color:var(--acc); }
+.fld input[type=checkbox] { width:15px; height:15px; accent-color:var(--acc); }
+.hint { color:var(--tx3); font-size:11px; line-height:1.5; margin:14px 0 0; }
+
+/* === 3D ================================================================= */
+.stage-wrap { flex:1 1 auto; position:relative; min-height:0; }
+three-d-stage { position:absolute; inset:0; }
+
+/* === resultat =========================================================== */
+.assump { padding:12px 14px 4px; }
+.assump .row { display:flex; justify-content:space-between; gap:14px; align-items:baseline;
+  padding:5px 0; border-bottom:1px solid var(--line); }
+.assump .row:last-child { border-bottom:0; }
+.assump .k { color:var(--tx2); font-size:11.5px; }
+.assump .v { color:var(--tx); font:11px var(--mono); text-align:right; }
+
+.sect { margin:20px 14px 0; font-size:10px; font-weight:600; letter-spacing:.11em;
+  text-transform:uppercase; color:var(--tx3); padding-bottom:6px;
+  border-bottom:1px solid var(--line); }
+
+/* Utnyttelsen skal kunne leses på avstand: tykk stolpe, tydelig prosent. */
+.chk { display:block; width:100%; text-align:left; border:0; background:none;
+  cursor:pointer; padding:11px 14px; border-bottom:1px solid var(--line);
+  transition:background .12s; }
+.chk:hover { background:var(--panel2); }
+.chk[aria-current="true"] { background:var(--acc-soft); }
+.chk .top { display:flex; justify-content:space-between; align-items:baseline; gap:12px; }
+.chk .name { font-size:12.5px; color:var(--tx); }
+.chk .pc { font:600 13px var(--mono); color:var(--tx); font-variant-numeric:tabular-nums; }
+.chk.over .pc { color:var(--bad); }
+.chk.na .name, .chk.na .pc { color:var(--tx3); font-weight:400; }
+.track { height:10px; background:var(--panel3); border-radius:3px; margin:8px 0 7px;
+  overflow:hidden; position:relative; }
+.track i { display:block; height:100%; border-radius:3px; }
+/* Merket ved 100 % gjør at en stolpe nær grensa kan leses uten å se på tallet. */
+.track.full::after { content:''; position:absolute; inset:0 0 0 auto; width:2px;
+  background:var(--line2); }
+.chk .sub { font:10.5px/1.5 var(--mono); color:var(--tx3); }
+.chk .sub b { font-weight:400; color:var(--tx2); }
+
+.msg { margin:12px 14px 0; padding:9px 11px; border-radius:6px; font-size:11.5px; }
+.msg.warn { background:#fbf3e0; border:1px solid #ecdcb4; color:#8a6516; }
+.msg.err  { background:#fbeceb; border:1px solid #f0cfcc; color:#9a3b34; }
+.msg code { font-family:var(--mono); }
+
+table.anchors { width:100%; border-collapse:collapse; font-size:11.5px; }
+table.anchors th { text-align:right; color:var(--tx3); font-weight:500; font-size:9.5px;
+  letter-spacing:.08em; text-transform:uppercase; padding:7px 0 6px;
+  border-bottom:1px solid var(--line); }
+table.anchors th:first-child { text-align:left; }
+table.anchors td { padding:5px 0; border-bottom:1px solid var(--line);
+  font-family:var(--mono); text-align:right; font-variant-numeric:tabular-nums; }
+table.anchors td:first-child { text-align:left; color:var(--tx2); }
+.pad { padding:0 14px 40px; }
+
+/* === utregningsark ====================================================== */
+/* Vises i midtruta, så formlene får full bredde og resultatlista blir stående. */
+.sheet { padding:20px 26px 60px; max-width:900px; }
+.sheet .hdr { display:flex; justify-content:space-between; align-items:baseline;
+  gap:16px; padding-bottom:14px; border-bottom:2px solid var(--line2); }
+.sheet .hdr h2 { margin:0; font-size:17px; font-weight:600; letter-spacing:-.01em; }
+.sheet .hdr .ref { font:11px var(--mono); color:var(--tx2); text-align:right; }
+.sheet .verdict { display:flex; align-items:center; gap:14px; margin:16px 0 4px; }
+.sheet .verdict .track { flex:1 1 auto; height:14px; margin:0; }
+.sheet .verdict .pc { font:600 20px var(--mono); font-variant-numeric:tabular-nums; }
+
+.sheet h3 { margin:26px 0 10px; font-size:10px; font-weight:600; letter-spacing:.11em;
+  text-transform:uppercase; color:var(--tx3); padding-bottom:6px;
+  border-bottom:1px solid var(--line); }
+
+table.io { width:100%; border-collapse:collapse; }
+table.io th { font-size:9.5px; letter-spacing:.08em; text-transform:uppercase;
+  color:var(--tx3); font-weight:500; text-align:left; padding:0 10px 6px 0; }
+table.io td { padding:5px 10px 5px 0; border-top:1px solid var(--line);
+  font-size:12px; vertical-align:baseline; }
+table.io td.sym { font:12px var(--mono); color:var(--tx); white-space:nowrap; width:1%; }
+table.io td.num { font:12px var(--mono); text-align:right; white-space:nowrap; width:1%;
+  font-variant-numeric:tabular-nums; }
+table.io td.unit { font:11px var(--mono); color:var(--tx3); white-space:nowrap; width:1%; }
+table.io td.src { color:var(--tx2); font-size:11.5px; }
+
+.step { padding:12px 0; border-top:1px solid var(--line); }
+.step .l1 { display:flex; justify-content:space-between; align-items:baseline; gap:14px; }
+.step .sym { font:600 12.5px var(--mono); color:var(--tx); }
+.step .desc { color:var(--tx2); font-size:11.5px; flex:1 1 auto; }
+.step .ref { font:10.5px var(--mono); color:var(--tx3); white-space:nowrap; }
+/* Formel, innsatte tall og svar under hverandre, med = i samme kolonne. */
+.step .eq { display:grid; grid-template-columns:16px minmax(0,1fr); gap:0 6px;
+  margin-top:7px; font:12px/1.7 var(--mono); }
+.step .eq span:nth-child(odd) { color:var(--tx3); text-align:right; }
+.step .eq .f { color:var(--tx2); overflow-wrap:anywhere; }
+.step .eq .s { color:var(--tx2); overflow-wrap:anywhere; }
+.step .eq .v { color:var(--tx); font-weight:500; }
+
+.step.res { background:var(--panel2); border:1px solid var(--line); border-radius:8px;
+  padding:14px 16px; margin-top:10px; }
+.step.res .eq .v { font-size:13.5px; }
+.step.final { border:1px solid var(--line); border-radius:8px; padding:14px 16px;
+  margin-top:10px; }
+.step.final.ok  { background:#f1f6ec; border-color:#d7e5c9; }
+.step.final.bad { background:#fbeceb; border-color:#f0cfcc; }
+.step.final .eq .v { font-size:15px; font-weight:600; }
+
+.sheet .empty { color:var(--tx2); font-size:13px; padding:40px 0; text-align:center; }
+.sheet .note { margin:10px 0 0; padding:9px 11px; border-radius:6px; font-size:11.5px;
+  background:#fbf3e0; border:1px solid #ecdcb4; color:#8a6516; }
+
+/* === smale skjermer ===================================================== */
+/* --- draghåndtak ---------------------------------------------------------
+   Ett håndtak pr. rute, på den kanten som vender inn mot visninga: venstre
+   rute dras i høyre kant, høyre rute i venstre, lastruta i overkant. Selve
+   flata er bredere enn streken, så den er lett å treffe. */
+.split { position:absolute; z-index:6; background:transparent; touch-action:none; }
+.split.col { top:0; bottom:0; width:9px; right:-5px; cursor:col-resize; }
+.split.col.r { right:auto; left:-5px; }
+.split.row { left:0; right:0; height:9px; top:-5px; cursor:row-resize; }
+.split::after {
+  content:''; position:absolute; background:var(--acc);
+  opacity:0; transition:opacity .12s ease;
+}
+.split.col::after { top:0; bottom:0; left:4px; width:1px; }
+.split.row::after { left:0; right:0; top:4px; height:1px; }
+.split:hover::after, .split:focus-visible::after, .split.on::after { opacity:1; }
+.split:focus-visible { outline:none; }
+
+/* Under draging skal pekeren beholde formen og ingenting markeres. */
+body.rs-col, body.rs-col * { cursor:col-resize !important; }
+body.rs-row, body.rs-row * { cursor:row-resize !important; }
+body.rs-col, body.rs-row { user-select:none; }
+
+@media (max-width:1240px){ .body{ grid-template-columns:var(--w-left) minmax(0,1fr) var(--w-right); } }
+@media (max-width:1040px){
+  body{ overflow:auto; }
+  .app{ grid-template-rows:var(--h-top) auto var(--h-status);
+        height:auto; min-height:100vh; }
+  .pane.view > .loads{ flex:0 0 auto; min-height:var(--h-loads); }
+  .body{ grid-template-columns:minmax(0,1fr); }
+  .split{ display:none; }
+  .pane + .pane { border-left:0; border-top:1px solid var(--line); }
+  .pane.view .stage-wrap { height:56vh; }
+  .pane.inputs .pane-body, .pane.results .pane-body { overflow:visible; }
+}
+
+/* === påskrifter i modellen ===============================================
+   Mål og lastverdier er DOM-elementer plassert med 3D-transformasjoner, så de
+   ligger i modellens plan og følger den. Uttrykket er tegningens: tynn svart
+   tekst rett på flata, uten ramme og uten enhet - enhetene står i statuslinja.
+   Redigerbarheten vises først når pekeren er innom feltet.                  */
+.hud { position:absolute; inset:0; overflow:hidden; pointer-events:none; }
+.hud .dim, .hud .hload, .hud .hval { pointer-events:auto; white-space:nowrap; }
+
+.hud .dim {
+  font:400 13px/1.25 var(--mono); color:#14120f;
+  padding:0 2px; border-radius:2px; text-align:center;
+}
+.hud .dim.ro { color:#2f2b24; }
+.hud .dim input {
+  width:4.2em; border:0; padding:0; background:none; text-align:center;
+  font:inherit; color:inherit; font-variant-numeric:tabular-nums; cursor:text;
+}
+
+.hud .hload { font:400 13px/1.25 var(--mono); padding:0 2px; }
+.hud .hload input {
+  width:4.2em; border:0; padding:0; background:none; text-align:right;
+  font:inherit; color:inherit; font-variant-numeric:tabular-nums; cursor:text;
+}
+.hud .u { color:#6b665c; margin-left:.25em; font-size:.8em; }
+
+.hud .dim:hover, .hud .hload:hover { background:rgba(255,255,255,.75); }
+.hud .dim input:focus, .hud .hload input:focus {
+  outline:none; background:#fff; box-shadow:0 0 0 1px var(--acc);
+}
+
+.hud .hval {
+  font:400 12px/1.3 var(--mono); font-variant-numeric:tabular-nums;
+  text-shadow:0 0 3px var(--bg), 0 0 3px var(--bg);
+}
+
+.hud input::-webkit-outer-spin-button,
+.hud input::-webkit-inner-spin-button { -webkit-appearance:none; margin:0; }
+.hud input[type=number] { -moz-appearance:textfield; appearance:textfield; }
+
+/* === lastkombinasjoner ===================================================
+   Egen rute i full bredde under de tre kolonnene. Tabellen er hele
+   grensesnittet: én rad pr. kombinasjon, radioknappen velger hvilken som
+   vises i 3D og regnes ut i kontrollruta.                                  */
+/* Lastene ligger i midtkolonnen, under visninga - avgrenset av venstre og
+   høyre rute, ikke tvers over dem. */
+.pane.view > .loads {
+  flex:0 0 var(--h-loads); display:flex; flex-direction:column; min-height:0;
+  border-top:1px solid var(--line); background:var(--panel);
+}
+.pane.view > .loads .pane-body { padding:0 12px 14px; overflow:auto; }
+
+table.combos { width:100%; border-collapse:collapse; font-size:12px; }
+table.combos thead th {
+  position:sticky; top:0; z-index:1; background:var(--panel);
+  text-align:right; padding:8px 5px 6px; white-space:nowrap;
+  font:500 9.5px/1.4 var(--sans); letter-spacing:.08em; text-transform:uppercase;
+  color:var(--tx3); border-bottom:1px solid var(--line2);
+}
+table.combos thead th.l { text-align:left; }
+table.combos thead th i { font-style:normal; display:block; font-size:9px;
+  color:var(--tx3); opacity:.7; letter-spacing:0; text-transform:none; }
+table.combos td { padding:2px 5px; border-bottom:1px solid var(--line);
+  text-align:right; white-space:nowrap; }
+table.combos td.l { text-align:left; }
+table.combos tr.on td { background:var(--acc-soft); }
+table.combos tr:hover td { background:var(--panel2); }
+table.combos tr.on:hover td { background:var(--acc-soft); }
+
+table.combos input, table.combos select {
+  border:1px solid transparent; border-radius:4px; padding:3px 5px;
+  background:none; color:var(--tx); font:11.5px var(--mono);
+  font-variant-numeric:tabular-nums;
+}
+table.combos input[type=number] { width:58px; text-align:right; }
+table.combos input[type=text] { width:100%; min-width:74px; font-family:var(--sans); }
+table.combos select { font:11.5px var(--sans); }
+table.combos input:hover, table.combos select:hover { border-color:var(--line2); background:#fff; }
+table.combos input:focus, table.combos select:focus {
+  outline:none; border-color:var(--acc); background:#fff; }
+table.combos input[type=radio] { accent-color:var(--acc); width:14px; height:14px; margin:0; }
+
+table.combos .util { font:600 12px var(--mono); font-variant-numeric:tabular-nums; }
+table.combos .util.na { color:var(--tx3); font-weight:400; }
+table.combos .gov { font:10px var(--sans); color:var(--tx3); }
+table.combos .del {
+  border:0; background:none; cursor:pointer; color:var(--tx3);
+  font:14px/1 var(--sans); padding:2px 5px; border-radius:4px;
+}
+table.combos .del:hover { color:var(--bad); background:#fbeceb; }
+table.combos input::-webkit-outer-spin-button,
+table.combos input::-webkit-inner-spin-button { -webkit-appearance:none; margin:0; }
+table.combos input[type=number] { -moz-appearance:textfield; appearance:textfield; }
+</style>
+<div class="app">
+
+  <div class="topbar">
+    <span class="brand">Bruddkjegle</span>
+    <span class="sep"></span>
+    <label for="code">Regelverk</label>
+    <select id="code">
+      <option value="EN1992-4">NS-EN 1992-4:2018</option>
+      <option value="B19">Betongelementboka B19</option>
+    </select>
+    <span class="units">mm · kN · N/mm²</span>
+    <span class="grow"></span>
+    <button class="btn" id="save-project">Lagre prosjekt</button>
+    <button class="btn" id="open-project">Åpne prosjekt</button>
+    <input type="file" id="open-project-file" accept="application/json,.json" hidden>
+    <button class="btn" id="reset">Nullstill</button>
+    <button class="btn" id="report">Beregningsrapport</button>
+  </div>
+
+  <div class="body">
+
+    <!-- inndata -->
+    <aside class="pane inputs">
+      <div class="pane-head"><h2>Inndata</h2></div>
+      <nav class="groups" id="groups"></nav>
+      <div class="pane-body"><div class="form" id="form"></div></div>
+      <div class="split col" data-split="left" role="separator"
+           aria-orientation="vertical" tabindex="0"
+           title="Dra for å endre bredden. Dobbeltklikk nullstiller."></div>
+    </aside>
+
+    <!-- visning -->
+    <section class="pane view">
+      <div class="pane-head">
+        <div class="btn-row">
+          <button class="btn" id="tab-3d" aria-pressed="true">3D</button>
+          <button class="btn" id="tab-calc" aria-pressed="false">Utregning</button>
+        </div>
+        <span class="grow"></span>
+        <div class="btn-row" id="viewbtns">
+          <button class="btn ghost" data-view="iso">ISO</button>
+          <button class="btn ghost" data-view="top">Plan</button>
+          <button class="btn ghost" data-view="front">Front</button>
+          <button class="btn ghost" data-view="side">Side</button>
+          <button class="btn ghost" data-view="fit">Tilpass</button>
+        </div>
+        <span class="sep"></span>
+        <button class="btn ghost" id="ortho" aria-pressed="false"
+          title="Parallellprojeksjon: like store ting tegnes like store uansett avstand">Parallell</button>
+        <span class="sep"></span>
+        <div class="btn-row" id="exportbtns">
+          <button class="btn ghost" data-exp="obj">OBJ</button>
+          <button class="btn ghost" data-exp="glb">GLB</button>
+        </div>
+      </div>
+      <div class="pane-sub" id="viewsub">
+        <label class="tog"><input type="checkbox" data-show="concrete"> Betong</label>
+        <label class="tog"><input type="checkbox" data-show="cone"> Bruddkjegle</label>
+        <label class="tog"><input type="checkbox" data-show="wedge"> Kantbrudd</label>
+        <label class="tog"><input type="checkbox" data-show="rebar"> Armering</label>
+        <label class="tog"><input type="checkbox" data-show="loads"> Laster</label>
+        <label class="tog"><input type="checkbox" data-show="labels"> Boltkrefter</label>
+        <label class="tog"><input type="checkbox" data-show="dims"> Mål</label>
+        <label class="tog"><input type="checkbox" id="colormode"> Fargelegg utnyttelse</label>
+        <span class="stat" id="legend" hidden></span>
+      </div>
+      <div class="stage-wrap" id="wrap-3d">
+        <three-d-stage id="stage" background="#efede8" controls="none"></three-d-stage>
+        <div class="hud" id="hud"></div>
+      </div>
+      <div class="pane-body" id="wrap-calc" hidden><div class="sheet" id="sheet"></div></div>
+
+      <!-- lastene ligger under visninga, mellom venstre og høyre rute -->
+      <section class="loads">
+        <div class="pane-head">
+          <h2>Lastkombinasjoner</h2>
+          <span class="grow"></span>
+          <span class="stat" id="combo-note"></span>
+          <button class="btn" id="add-combo">Ny kombinasjon</button>
+        </div>
+        <div class="pane-body"><table class="combos" id="combos"></table></div>
+        <div class="split row" data-split="loads" role="separator"
+             aria-orientation="horizontal" tabindex="0"
+             title="Dra for å endre høyden. Dobbeltklikk nullstiller."></div>
+      </section>
+    </section>
+
+    <!-- resultat -->
+    <aside class="pane results">
+      <div class="pane-head">
+        <h2>Kontroll</h2><span class="grow"></span>
+        <span class="stat" id="verdict"></span>
+      </div>
+      <div class="pane-body" id="results"></div>
+      <div class="split col r" data-split="right" role="separator"
+           aria-orientation="vertical" tabindex="0"
+           title="Dra for å endre bredden. Dobbeltklikk nullstiller."></div>
+    </aside>
+
+  </div>
+
+  <div class="statusbar">
+    <span>mm · kN · N/mm²</span>
+    <span id="st-anchors">4 bolter</span>
+    <span id="st-solver">–</span>
+    <span class="grow"></span>
+    <span id="st-max">–</span>
+  </div>
+
+</div>
+<script type="module">
+import * as THREE from 'three';
+import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+import { GLTFExporter } from 'three/addons/exporters/GLTFExporter.js';
+import { CSS3DRenderer, CSS3DObject } from 'three/addons/renderers/CSS3DRenderer.js';
+import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
+
+// ===== src/core/download.js ========================================
+// ---------------------------------------------------------------------------
+//  Filnedlasting som virker begge steder.
+//
+//  Kjører verktøyet lokalt (eller selvhostet) brukes vanlig <a download>.
+//  Kjører det som publisert Artifact er direkte nedlasting sperret, og fila
+//  må gå gjennom verts-API-et - som bare godtar en liste med filendelser.
+//  .obj/.mtl/.glb står ikke på lista, så de legges om:
+//      .obj/.mtl -> .txt   (ren tekst uansett, endres tilbake ved lagring)
+//      .gltf     -> .json  (glTF ER JSON - fila er gyldig som den er)
+//  .glb (binær) har ingen vei gjennom, så eksporten velger glTF der i stedet.
+// ---------------------------------------------------------------------------
+
+const ALLOWED = new Set(['gif', 'png', 'jpg', 'jpeg', 'webp', 'mp4', 'webm', 'txt',
+  'json', 'md', 'docx', 'pptx', 'epub', 'csv', 'ttf', 'html', 'svg', 'pdf', 'xlsx']);
+const REMAP = { obj: 'txt', mtl: 'txt', gltf: 'json' };
+
+let cap;
+function host() {
+  if (cap === undefined) {
+    cap = (typeof window !== 'undefined' && window.claude?.use)
+      ? Promise.resolve(window.claude.use('downloads')).catch(() => null)
+      : Promise.resolve(null);
+  }
+  return cap;
+}
+
+// Kan verten lagre filer for oss?  Avgjør hvilket 3D-format vi eksporterer.
+async function hostSaves() { return !!(await host()); }
+
+async function saveFile(data, filename) {
+  const dl = await host();
+  if (!dl) { anchorSave(data, filename); return { filename, renamed: null }; }
+
+  const ext = (filename.split('.').pop() || '').toLowerCase();
+  let name = filename, renamed = null;
+  if (!ALLOWED.has(ext)) {
+    const to = REMAP[ext];
+    if (!to) throw new Error(`Formatet .${ext} kan ikke lastes ned her.`);
+    name = `${filename.replace(/\.[^.]+$/, '')}-${ext}.${to}`;
+    renamed = { from: ext, to };
+  }
+  await dl.save({ filename: name, data });
+  return { filename: name, renamed };
+}
+
+function anchorSave(data, filename) {
+  const blob = data instanceof Blob ? data : new Blob([data]);
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url; a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 10000);
+}
+
+// Kort, konkret melding til brukeren om hva som faktisk skjedde.
+function saveMessage(res) {
+  if (!res.renamed) return `Lagret ${res.filename}`;
+  return `Lagret ${res.filename} – gi den endelsen .${res.renamed.from} etter nedlasting`;
+}
+
+function saveError(e) {
+  const code = e?.code;
+  if (code === 'declined') return 'Nedlasting avbrutt';
+  if (code === 'rate_limited') return 'For mange nedlastinger – prøv igjen om litt';
+  if (code === 'unavailable' || code === 'not_granted') return 'Nedlasting er ikke tilgjengelig her';
+  return e?.message || 'Nedlasting feilet';
+}
+
+// ===== src/engine/calc.js ==========================================
+// ---------------------------------------------------------------------------
+//  Registrering av utregninga.
+//
+//  Hver kontroll bygger et Calc-objekt mens den regner, slik at brukeren kan
+//  se hele veien fram til svaret: hvilke inndata som gikk inn og hvor de kom
+//  fra, hver formel symbolsk, de samme formlene med tall satt inn, og hvilket
+//  punkt i standarden leddet stammer fra.
+//
+//  Poenget er at ingen tall i resultatet skal være uten sporbar opprinnelse.
+// ---------------------------------------------------------------------------
+
+// Norsk tallformat. Presisjonen følger størrelsesorden, så et areal ikke får
+// tre desimaler og en psi-faktor ikke blir avrundet til «1».
+function n(v, dec) {
+  if (v === Infinity) return '∞';
+  if (!Number.isFinite(v)) return '–';
+  if (dec == null) {
+    const a = Math.abs(v);
+    dec = a === 0 ? 0 : a >= 1e5 ? 0 : a >= 1000 ? 0 : a >= 100 ? 1 : a >= 10 ? 2 : 3;
+  }
+  return v.toFixed(dec).replace('.', ',').replace(/\B(?=(\d{3})+(?!\d))/g, ' ');
+}
+
+// kN/kNm for kraftstørrelser
+const kN = v => n(v / 1000, Math.abs(v) >= 1e6 ? 0 : 1);
+
+class Calc {
+  constructor(clause) {
+    this.clause = clause;
+    this.inputs = [];
+    this.steps = [];
+    this.result = null;
+    this.check = null;
+  }
+
+  // Inndata: symbol, verdi, enhet, hvor den er hentet fra
+  in(sym, value, unit, source) {
+    this.inputs.push({ sym, value, unit, source });
+    return value;
+  }
+
+  // Mellomledd. `formula` er symbolsk, `subst` er den samme med tall i.
+  step({ sym, desc, formula, subst, value, unit, ref, note }) {
+    this.steps.push({ sym, desc, formula, subst, value, unit, ref, note });
+    return value;
+  }
+
+  // Sluttkapasitet
+  res({ sym, formula, subst, value, unit, ref }) {
+    this.result = { sym, formula, subst, value, unit, ref };
+    return value;
+  }
+
+  // Selve utnyttelsen
+  util({ formula, subst, value }) {
+    this.check = { formula, subst, value };
+    return value;
+  }
+}
+
+// Tom registrering for kontroller som ikke er aktuelle
+function skipped(clause, why) {
+  const c = new Calc(clause);
+  c.skipped = why;
+  return c;
+}
+
+// ===== src/engine/geometry.js ======================================
+// Areal av unionen av akseparallelle rektangler, via koordinatkompresjon.
+// rects: [{x0,x1,y0,y1}]  -> areal (mm2).  Brukes til A_c,N og A_c,V.
+function unionRectArea(rects) {
+  const rs = rects.filter(r => r.x1 > r.x0 && r.y1 > r.y0);
+  if (!rs.length) return 0;
+  const xs = [...new Set(rs.flatMap(r => [r.x0, r.x1]))].sort((a, b) => a - b);
+  const ys = [...new Set(rs.flatMap(r => [r.y0, r.y1]))].sort((a, b) => a - b);
+  let A = 0;
+  for (let i = 0; i < xs.length - 1; i++) {
+    for (let j = 0; j < ys.length - 1; j++) {
+      const cx = (xs[i] + xs[i + 1]) / 2, cy = (ys[j] + ys[j + 1]) / 2;
+      if (rs.some(r => cx > r.x0 && cx < r.x1 && cy > r.y0 && cy < r.y1))
+        A += (xs[i + 1] - xs[i]) * (ys[j + 1] - ys[j]);
+    }
+  }
+  return A;
+}
+
+// Union av 1D-intervaller -> samlet lengde
+function unionLength(ivs) {
+  const s = ivs.filter(i => i[1] > i[0]).sort((a, b) => a[0] - b[0]);
+  let L = 0, cur = null;
+  for (const i of s) {
+    if (!cur || i[0] > cur[1]) { if (cur) L += cur[1] - cur[0]; cur = [...i]; }
+    else cur[1] = Math.max(cur[1], i[1]);
+  }
+  if (cur) L += cur[1] - cur[0];
+  return L;
+}
+
+const clamp = (v, lo, hi) => Math.min(hi, Math.max(lo, v));
+
+// ===== src/core/model.js ===========================================
+// ---------------------------------------------------------------------------
+//  Datamodell for forbindelsen.
+//  Enheter overalt:  lengde = mm,  kraft = N,  moment = Nmm,  spenning = MPa.
+//  Fortegn:  +N = strekk (plata trekkes av betongen),  z = ut av betongen.
+// ---------------------------------------------------------------------------
+
+const CONCRETE_GRADES = [
+  { id: 'B20', fck: 20 }, { id: 'B25', fck: 25 }, { id: 'B30', fck: 30 },
+  { id: 'B35', fck: 35 }, { id: 'B45', fck: 45 }, { id: 'B55', fck: 55 },
+  { id: 'B65', fck: 65 }, { id: 'B75', fck: 75 }, { id: 'B85', fck: 85 },
+];
+
+// Ecm etter NS-EN 1992-1-1 tab. 3.1 (normalvekt betong)
+function Ecm(fck) { return 22000 * Math.pow((fck + 8) / 10, 0.3); }
+
+const STUD_STEELS = [
+  { id: 'SD1 (S235J2+C450)', fyk: 350, fuk: 450, ductile: true },
+  { id: 'S355J2',            fyk: 355, fuk: 490, ductile: true },
+  { id: 'B500NC (kamstål)',  fyk: 500, fuk: 550, ductile: true },
+  { id: '8.8',               fyk: 640, fuk: 800, ductile: true },
+  { id: '10.9',              fyk: 900, fuk: 1000, ductile: false },
+];
+
+// Hodebolt-geometri, ca. EN ISO 13918 type SD.  dh = hodediameter, k = hodetykkelse.
+const STUD_SIZES = [
+  { d: 10, dh: 19, k: 7 },  { d: 12, dh: 22, k: 7 },
+  { d: 16, dh: 32, k: 8 },  { d: 19, dh: 32, k: 10 },
+  { d: 22, dh: 35, k: 10 }, { d: 25, dh: 41, k: 12 },
+];
+
+function studSize(d) {
+  return STUD_SIZES.find(s => s.d === d) || { d, dh: 2 * d, k: 0.5 * d };
+}
+
+function shaftArea(d) { return Math.PI * d * d / 4; }
+
+// Lastopptakende areal under hodet
+function headArea(d, dh) { return Math.PI * (dh * dh - d * d) / 4; }
+
+function defaultModel() {
+  return {
+    meta: {
+      prosjekt: 'Prototype - forankringsplate',
+      del: 'Konsoll i vegg',
+      dato: new Date().toISOString().slice(0, 10),
+    },
+
+    // ---- Regelverk -------------------------------------------------------
+    code: {
+      standard: 'EN1992-4',      // 'EN1992-4' | 'B19'
+      cracked: true,             // opprisset betong i strekksonen
+      gammaC: 1.5,               // NA: Norge
+      gammaInst: 1.0,            // støpt inn -> 1.0
+      denseReinf: false,         // tett armering (senteravst. < 150 mm)
+      supplementaryReinf: false, // egen forankringsarmering (tillegg C)
+      edgeReinf: 'none',         // 'none' | 'bars' | 'bars+stirrups'  (psi_re,V)
+      holeClearanceFilled: true, // alle bolter tar skjærkraft
+    },
+
+    // ---- Betongdel -------------------------------------------------------
+    concrete: {
+      grade: 'B35',
+      fck: 35,
+      Lx: 1200,   // utstrekning i x
+      Ly: 1200,   // utstrekning i y
+      h: 300,     // tykkelse
+      // Plassering av platas senter i betongdelens lokale system (0,0 = senter)
+      ex: 0,
+      ey: 0,
+      // Hvilke sider som er frie kanter. Er en side ikke fri, regnes den uendelig.
+      freeEdges: { xNeg: true, xPos: true, yNeg: true, yPos: true },
+    },
+
+    // ---- Stålplate -------------------------------------------------------
+    plate: {
+      bx: 300,
+      by: 300,
+      t: 20,
+      fy: 355,
+      mount: 'direct',   // 'direct' | 'grout' | 'standoff'
+      tGrout: 30,        // undergytingstykkelse
+      fckGrout: 50,      // gytemassens trykkfasthet
+      gap: 40,           // fri avstand ved avstandsmontasje
+    },
+
+    // ---- Forankring ------------------------------------------------------
+    anchors: {
+      type: 'headed_stud',  // prototypen dekker innstøpte hodebolter
+      d: 16,
+      dh: 32,
+      k: 8,
+      hef: 150,             // effektiv forankringsdybde til underkant hode
+      attachment: 'welded',   // 'welded' = sveist til plata | 'bolted' = gjennomboltet
+      steel: 'SD1 (S235J2+C450)',
+      fyk: 350,
+      fuk: 450,
+      ductile: true,
+      nx: 2, ny: 2,
+      sx: 200, sy: 200,     // senteravstand
+    },
+
+    // ---- Laster ----------------------------------------------------------
+    // Lastkombinasjonene er selve lastobjektene. `load` peker på den aktive
+    // (se syncLoad), så motoren trenger ikke vite at det finnes flere.
+    combos: [
+      combo('1', 'ULS 1', 'uls', { N: 40000, Vx: 25000, My: 4.0e6 }),
+      combo('2', 'ULS 2', 'uls', { N: 25000, Vy: 30000, Mx: -3.0e6 }),
+      combo('3', 'SLS 1', 'sls', { N: 18000, Vx: 11000, My: 1.8e6 }),
+    ],
+    activeCombo: '1',
+    load: null,          // settes av syncLoad()
+
+    // ---- Numerikk --------------------------------------------------------
+    solver: { nGrid: 24, bearingDepthFactor: 1.0 },
+  };
+}
+
+// Hvordan plata står an mot betongen.
+//
+//   direct    plata ligger rett på betongen - ingen momentarm i boltene
+//   grout     undergyting; med tilstrekkelig fast masse regnes det som
+//             direkte anlegg, ellers som fri avstand (NS-EN 1992-4 6.2.2.3)
+//   standoff  plata står av fra betongen - ingen kontaktflate, og skjæret
+//             virker med momentarm
+//
+// offset  = høyden fra betongoverflata opp til platas underside
+// contact = om det finnes en trykkflate under plata
+function mounting(m) {
+  const p = m.plate;
+  if (p.mount === 'standoff')
+    return { kind: 'standoff', offset: p.gap, contact: false,
+             leverArm: p.gap + p.t / 2 };
+  if (p.mount === 'grout') {
+    // Gytemassen må være minst like fast som betongen, og minst C30.
+    const ok = p.fckGrout >= 30 && p.fckGrout >= m.concrete.fck;
+    return { kind: 'grout', offset: p.tGrout, contact: true, groutOk: ok,
+             leverArm: ok ? 0 : p.tGrout + p.t / 2 };
+  }
+  return { kind: 'direct', offset: 0, contact: true, leverArm: 0 };
+}
+
+const LIMIT_STATES = [
+  ['uls', 'Bruddgrense'],
+  ['sls', 'Bruksgrense'],
+];
+
+function combo(id, name, limit, v = {}) {
+  return { id, name, limit,
+           N: 0, Vx: 0, Vy: 0, Mx: 0, My: 0, Mz: 0, ...v };
+}
+
+// Lar `load` peke på den aktive kombinasjonen. Da skriver alt som redigerer
+// load - skjema, målpåskrifter i 3D - rett inn i kombinasjonen.
+function syncLoad(m) {
+  if (!m.combos.length) m.combos.push(combo('1', 'ULS 1', 'uls'));
+  let c = m.combos.find(x => x.id === m.activeCombo);
+  if (!c) { c = m.combos[0]; m.activeCombo = c.id; }
+  m.load = c;
+  return c;
+}
+
+function nextComboId(m) {
+  return String(Math.max(0, ...m.combos.map(c => +c.id || 0)) + 1);
+}
+
+// Senteravstand som holder boltene innenfor plata med jevn deling og en
+// kantavstand i [EDGE_MIN, EDGE_MAX]. Verdien rundes til hele 5 mm og klemmes
+// deretter inn i det intervallet kantavstanden tillater.
+const EDGE_MIN = 30, EDGE_MAX = 50, EDGE_AIM = 40;
+
+function autoSpacing(b, n) {
+  if (n < 2) return 0;
+  const forEdge = e => (b - 2 * e) / (n - 1);
+  const sMin = forEdge(EDGE_MAX);          // stor kantavstand -> liten c/c
+  const sMax = forEdge(EDGE_MIN);
+  let s = Math.round(forEdge(EDGE_AIM) / 5) * 5;
+  s = Math.min(Math.max(s, Math.ceil(sMin / 5) * 5), Math.floor(sMax / 5) * 5);
+  return Math.max(5, s);
+}
+
+// Ligger boltene utenfor plata slik den står nå?
+function boltsOutside(m) {
+  const p = m.plate, a = m.anchors;
+  return (a.nx - 1) * a.sx > p.bx - 2 * EDGE_MIN ||
+         (a.ny - 1) * a.sy > p.by - 2 * EDGE_MIN;
+}
+
+// Boltposisjoner i platas lokale system (0,0 = platesenter)
+function anchorPositions(m) {
+  const { nx, ny, sx, sy } = m.anchors;
+  const out = [];
+  const x0 = -(nx - 1) * sx / 2;
+  const y0 = -(ny - 1) * sy / 2;
+  for (let j = 0; j < ny; j++) {
+    for (let i = 0; i < nx; i++) {
+      out.push({ id: out.length + 1, x: x0 + i * sx, y: y0 + j * sy });
+    }
+  }
+  return out;
+}
+
+// Kantavstander fra et punkt (x,y) i platas system til betongdelens frie kanter.
+// Ikke-frie kanter returneres som Infinity.
+function edgeDistances(m, x, y) {
+  const c = m.concrete;
+  const X = x + c.ex, Y = y + c.ey;   // punkt i betongdelens system
+  const big = Infinity;
+  return {
+    xNeg: c.freeEdges.xNeg ? c.Lx / 2 + X : big,
+    xPos: c.freeEdges.xPos ? c.Lx / 2 - X : big,
+    yNeg: c.freeEdges.yNeg ? c.Ly / 2 + Y : big,
+    yPos: c.freeEdges.yPos ? c.Ly / 2 - Y : big,
+  };
+}
+
+function minEdgeDistance(m, positions) {
+  let cmin = Infinity;
+  for (const p of positions) {
+    const e = edgeDistances(m, p.x, p.y);
+    cmin = Math.min(cmin, e.xNeg, e.xPos, e.yNeg, e.yPos);
+  }
+  return cmin;
+}
+
+// ===== src/engine/plate-solver.js ==================================
+// ---------------------------------------------------------------------------
+//  Kraftfordeling i boltegruppa.
+//
+//  Modell:  stiv stålplate (rigid baseplate), som i EN 1992-4 pkt. 6.2.
+//    * boltene er strekkfjærer  (tar ikke trykk - trykket går via kontakt)
+//    * betongen under plata er en trykk-kun kontaktflate, diskretisert i celler
+//    * 3 frihetsgrader:  w (translasjon z), thx (rotasjon om x), thy (om y)
+//
+//  Likevekt loeses med Newton-Raphson. Fjaerkarakteristikken er stykkevis
+//  lineaer, saa loesningen konvergerer typisk paa 5-15 iterasjoner.
+//
+//  Er plata avstivet fra betongen (standoff > 0) finnes ingen kontaktflate,
+//  og boltene tar baade strekk og trykk.
+// ---------------------------------------------------------------------------
+
+const Es = 210000; // MPa
+
+function solvePlate(m) {
+  const pos = anchorPositions(m);
+  const As = shaftArea(m.anchors.d);
+  const ka = Es * As / Math.max(m.anchors.hef, 1);     // N/mm pr. bolt
+  const mnt = mounting(m);
+  const contact = mnt.contact;
+
+  // Kontaktceller
+  const cells = [];
+  if (contact) {
+    const n = Math.max(6, m.solver.nGrid | 0);
+    const dx = m.plate.bx / n, dy = m.plate.by / n, A = dx * dy;
+    const kcArea = Ecm(m.concrete.fck) /
+                   Math.max(m.anchors.hef * m.solver.bearingDepthFactor, 1); // N/mm pr. mm2
+    for (let j = 0; j < n; j++) {
+      for (let i = 0; i < n; i++) {
+        cells.push({
+          x: -m.plate.bx / 2 + (i + 0.5) * dx,
+          y: -m.plate.by / 2 + (j + 0.5) * dy,
+          k: kcArea * A, A,
+        });
+      }
+    }
+  }
+
+  const L = m.load;
+  const target = [L.N, L.Mx, L.My];
+
+  // u = [w, thx, thy];  forskyvning i z for punkt (x,y):  d = w + thx*y - thy*x
+  const EPS = 1e-3;
+  let u = [0, 0, 0];
+
+  const state = (u) => {
+    const [w, thx, thy] = u;
+    const R = [0, 0, 0];
+    const K = [[0, 0, 0], [0, 0, 0], [0, 0, 0]];
+    const aF = [], cF = [];
+
+    const add = (x, y, k, F) => {
+      // Fz = F, bidrag til R og tangentstivhet
+      const g = [1, y, -x];                 // dFz/du-retning  og momentarmer
+      R[0] += F; R[1] += y * F; R[2] += -x * F;
+      for (let a = 0; a < 3; a++) for (let b = 0; b < 3; b++) K[a][b] += g[a] * k * g[b];
+    };
+
+    // Inaktive fjaerer beholder en liten restsstivhet (EPS) slik at tangent-
+    // matrisa aldri blir singulaer naar kontaktflaten skifter.
+    for (const p of pos) {
+      const d = w + thx * p.y - thy * p.x;
+      let F = 0, k = ka * EPS;
+      if (!contact) { F = ka * d; k = ka; }                      // avstivet: begge veier
+      else if (d > 0) { F = ka * d; k = ka; }                    // strekk-kun
+      aF.push({ ...p, delta: d, N: F });
+      add(p.x, p.y, k, F);
+    }
+    for (const c of cells) {
+      const d = w + thx * c.y - thy * c.x;
+      let F = 0, k = c.k * EPS;
+      if (d < 0) { F = c.k * d; k = c.k; }                       // trykk-kun (F < 0)
+      cF.push({ ...c, delta: d, F });
+      add(c.x, c.y, k, F);
+    }
+    return { R, K, aF, cF };
+  };
+
+  // Startgjett: lineaer loesning der alle fjaerer er aktive begge veier.
+  {
+    const K = [[0, 0, 0], [0, 0, 0], [0, 0, 0]];
+    const addK = (x, y, k) => {
+      const g = [1, y, -x];
+      for (let a = 0; a < 3; a++) for (let b = 0; b < 3; b++) K[a][b] += g[a] * k * g[b];
+    };
+    for (const p of pos) addK(p.x, p.y, ka);
+    for (const c of cells) addK(c.x, c.y, c.k);
+    const u0 = solve3(K, target);
+    if (u0) u = u0;
+  }
+
+  let s = state(u), iter = 0, converged = false;
+  const scale = Math.max(1, Math.abs(L.N), Math.abs(L.Mx) / 100, Math.abs(L.My) / 100);
+
+  for (; iter < 200; iter++) {
+    const res = [s.R[0] - target[0], s.R[1] - target[1], s.R[2] - target[2]];
+    const norm = Math.max(Math.abs(res[0]), Math.abs(res[1]) / 100, Math.abs(res[2]) / 100);
+    if (norm < 1e-6 * scale) { converged = true; break; }
+    const du = solve3(s.K, res.map(v => -v));
+    if (!du) break;
+    // dempet Newton for robusthet naar kontaktflaten endrer seg
+    const relax = iter < 3 ? 1.0 : 0.9;
+    u = [u[0] + relax * du[0], u[1] + relax * du[1], u[2] + relax * du[2]];
+    s = state(u);
+  }
+
+  // --- Skjaerfordeling ----------------------------------------------------
+  // EN 1992-4 6.2.2: er hullklaringen fylt / bolten sveist, tar alle boltene
+  // skjaer. Torsjon Mz fordeles med polart treghetsmoment om boltegruppas tp.
+  const nA = pos.length;
+  const cx = pos.reduce((a, p) => a + p.x, 0) / nA;
+  const cy = pos.reduce((a, p) => a + p.y, 0) / nA;
+  const Ip = pos.reduce((a, p) => a + (p.x - cx) ** 2 + (p.y - cy) ** 2, 0);
+  const nShear = m.code.holeClearanceFilled ? nA : Math.max(1, Math.ceil(nA / 2));
+
+  const anchors = s.aF.map((a, i) => {
+    let vx = L.Vx / nShear, vy = L.Vy / nShear;
+    if (Ip > 0 && L.Mz) { vx += -L.Mz * (a.y - cy) / Ip; vy += L.Mz * (a.x - cx) / Ip; }
+    return {
+      id: a.id, x: a.x, y: a.y,
+      N: Math.max(0, a.N),            // strekk (negativ = trykk tas av betong)
+      Ncomp: Math.min(0, a.N),
+      Vx: vx, Vy: vy, V: Math.hypot(vx, vy),
+      delta: a.delta,
+    };
+  });
+
+  // --- Trykkresultant og kontakttrykk ------------------------------------
+  let C = 0, Cx = 0, Cy = 0, sigMax = 0, Acontact = 0;
+  for (const c of s.cF) {
+    if (c.F < 0) {
+      const f = -c.F;
+      C += f; Cx += f * c.x; Cy += f * c.y; Acontact += c.A;
+      sigMax = Math.max(sigMax, f / c.A);
+    }
+  }
+  const compression = C > 1e-9
+    ? { C, x: Cx / C, y: Cy / C, sigmaMax: sigMax, area: Acontact }
+    : null;
+
+  // --- Strekkgruppa: resultant og eksentrisitet ---------------------------
+  const tens = anchors.filter(a => a.N > 1e-6);
+  const Ntot = tens.reduce((a, t) => a + t.N, 0);
+  let eNx = 0, eNy = 0;
+  if (Ntot > 0) {
+    const rx = tens.reduce((a, t) => a + t.N * t.x, 0) / Ntot;
+    const ry = tens.reduce((a, t) => a + t.N * t.y, 0) / Ntot;
+    const gx = tens.reduce((a, t) => a + t.x, 0) / tens.length;
+    const gy = tens.reduce((a, t) => a + t.y, 0) / tens.length;
+    eNx = rx - gx; eNy = ry - gy;
+  }
+
+  const Vres = Math.hypot(L.Vx, L.Vy);
+
+  return {
+    converged, iter,
+    u: { w: u[0], thx: u[1], thy: u[2] },
+    anchors,
+    tension: { anchors: tens, Ntot, eNx: Math.abs(eNx), eNy: Math.abs(eNy) },
+    shear: { Vres, Vx: L.Vx, Vy: L.Vy, nShear },
+    compression,
+    contact,
+    mounting: mnt,
+    leverArm: mnt.leverArm,
+  };
+}
+
+// 3x3 loeser med delvis pivotering
+function solve3(A, b) {
+  const M = [[A[0][0], A[0][1], A[0][2], b[0]],
+             [A[1][0], A[1][1], A[1][2], b[1]],
+             [A[2][0], A[2][1], A[2][2], b[2]]];
+  for (let i = 0; i < 3; i++) {
+    let p = i;
+    for (let r = i + 1; r < 3; r++) if (Math.abs(M[r][i]) > Math.abs(M[p][i])) p = r;
+    if (Math.abs(M[p][i]) < 1e-12) return null;
+    [M[i], M[p]] = [M[p], M[i]];
+    for (let r = 0; r < 3; r++) {
+      if (r === i) continue;
+      const f = M[r][i] / M[i][i];
+      for (let c = i; c < 4; c++) M[r][c] -= f * M[i][c];
+    }
+  }
+  return [M[0][3] / M[0][0], M[1][3] / M[1][1], M[2][3] / M[2][2]];
+}
+
+// ===== src/engine/en1992-4.js ======================================
+// ---------------------------------------------------------------------------
+//  NS-EN 1992-4:2018 - forankring i betong.
+//  Prototypen dekker INNSTØPTE HODEBOLTER (headed fasteners), gruppe på
+//  stiv forankringsplate.
+//
+//  Hver kontroll registrerer utregninga si i et Calc-objekt: inndata med kilde,
+//  hvert mellomledd symbolsk og med tall, og punktet i standarden. Det er den
+//  registreringa resultatruta viser fram.
+//
+//  VIKTIG: alle tallkonstanter ligger samlet i K nedenfor, med henvisning til
+//  punkt i standarden. De må kontrolleres mot trykt utgave av NS-EN 1992-4 +
+//  norsk NA før verktøyet brukes i prosjektering.
+// ---------------------------------------------------------------------------
+
+const K = {
+  // Betongkjegle, strekk - 7.2.1.4 (7.2)
+  k1_cracked: 8.9, k1_uncracked: 12.7,     // innstøpt hodebolt
+  // Uttrekk (pull-out) - 7.2.1.5 (7.6)
+  k2_cracked: 7.5, k2_uncracked: 10.5,
+  // Utblåsing (blow-out) - 7.2.1.9 (7.15)
+  k5_cracked: 8.7, k5_uncracked: 12.2,
+  // Stålbrudd skjær - 7.2.2.3.1
+  k6: 0.6,
+  k7_ductile: 1.0, k7_brittle: 0.8,
+  // Betongutstøting (pry-out) - 7.2.2.4 (7.39)
+  k8_short: 1.0, k8_long: 2.0,             // h_ef < 60 mm / >= 60 mm
+  // Kantbrudd skjær - 7.2.2.5 (7.42)
+  k9_cracked: 1.7, k9_uncracked: 2.4,
+};
+
+const EDGE_LABEL = { xNeg: '−x', xPos: '+x', yNeg: '−y', yPos: '+y' };
+const nz = v => (Number.isFinite(v) ? v : 1e9);
+
+// ---------------------------------------------------------------------------
+//  Materialfaktorer, 4.4.3.1 + NA
+// ---------------------------------------------------------------------------
+function partialFactors(m) {
+  const { fuk, fyk } = m.anchors;
+  const gMsN = Math.max(1.2 * fuk / fyk, 1.4);
+  const mild = fuk <= 800 && fyk / fuk <= 0.8;
+  const gMsV = mild ? Math.max(1.0 * fuk / fyk, 1.25) : 1.5;
+  const gMc = m.code.gammaC * m.code.gammaInst;
+  return { gMsN, gMsV, gMc, gMp: gMc, gMsp: gMc, gMcb: gMc, mild };
+}
+
+// Prosjektert areal for betongkjegle, 7.2.1.4 - union av rektangler klippet
+// mot betongdelens frie kanter.
+function coneArea(m, pts, ccr) {
+  const c = m.concrete;
+  const lim = {
+    x0: c.freeEdges.xNeg ? -(c.Lx / 2 + c.ex) : -1e9,
+    x1: c.freeEdges.xPos ? (c.Lx / 2 - c.ex) : 1e9,
+    y0: c.freeEdges.yNeg ? -(c.Ly / 2 + c.ey) : -1e9,
+    y1: c.freeEdges.yPos ? (c.Ly / 2 - c.ey) : 1e9,
+  };
+  return unionRectArea(pts.map(p => ({
+    x0: Math.max(p.x - ccr, lim.x0), x1: Math.min(p.x + ccr, lim.x1),
+    y0: Math.max(p.y - ccr, lim.y0), y1: Math.min(p.y + ccr, lim.y1),
+  })));
+}
+
+function minEdge(m, pts) {
+  let c = Infinity;
+  for (const p of pts) {
+    const e = edgeDistances(m, p.x, p.y);
+    c = Math.min(c, e.xNeg, e.xPos, e.yNeg, e.yPos);
+  }
+  return c;
+}
+
+// ===========================================================================
+//  STREKK
+// ===========================================================================
+
+// 7.2.1.3 Stålbrudd - pr. bolt
+function tensionSteel(m, res, g) {
+  const c = new Calc('7.2.1.3');
+  const d = c.in('⌀', m.anchors.d, 'mm', 'Bolter');
+  const fuk = c.in('f_uk', m.anchors.fuk, 'N/mm²', `Bolter · ${m.anchors.steel}`);
+  const gM = c.in('γ_Ms,N', g.gMsN, '–', 'maks(1,2·f_uk/f_yk ; 1,4) – 4.4.3.1');
+  const NEd = Math.max(0, ...res.anchors.map(a => a.N));
+  c.in('N_Ed', NEd, 'N', 'Største boltestrekk fra kraftfordelinga');
+
+  const As = c.step({
+    sym: 'A_s', desc: 'Spenningstverrsnitt i boltskaftet',
+    formula: 'π · ⌀² / 4', subst: `π · ${n(d, 0)}² / 4`,
+    value: shaftArea(d), unit: 'mm²',
+  });
+  const NRk = c.res({
+    sym: 'N_Rk,s', formula: 'A_s · f_uk',
+    subst: `${n(As)} · ${n(fuk, 0)}`, value: As * fuk, unit: 'N', ref: '(7.1)',
+  });
+  const NRd = NRk / gM;
+  c.step({
+    sym: 'N_Rd,s', desc: 'Dimensjonerende kapasitet',
+    formula: 'N_Rk,s / γ_Ms,N', subst: `${n(NRk)} / ${n(gM)}`,
+    value: NRd, unit: 'N',
+  });
+  c.util({ formula: 'N_Ed / N_Rd,s', subst: `${n(NEd)} / ${n(NRd)}`, value: NEd / NRd });
+
+  return { id: 'N-steel', mode: 'Stålbrudd, strekk', clause: '7.2.1.3', scope: 'bolt',
+           NRk, NRd, NEd, util: NEd / NRd, calc: c };
+}
+
+// 7.2.1.5 Uttrekk (hodetrykk) - pr. bolt
+function tensionPullout(m, res, g) {
+  const c = new Calc('7.2.1.5');
+  const d = c.in('⌀', m.anchors.d, 'mm', 'Bolter');
+  const dh = c.in('⌀_h', m.anchors.dh, 'mm', 'Bolter · hodediameter (EN ISO 13918)');
+  const fck = c.in('f_ck', m.concrete.fck, 'N/mm²', `Betongdel · ${m.concrete.grade}`);
+  const cracked = m.code.cracked;
+  const k2 = c.in('k_2', cracked ? K.k2_cracked : K.k2_uncracked, '–',
+    `Regelverk · ${cracked ? 'opprisset' : 'uopprisset'} betong`);
+  const gM = c.in('γ_Mp', g.gMp, '–', 'γ_c · γ_inst – 4.4.3.1');
+  const NEd = Math.max(0, ...res.anchors.map(a => a.N));
+  c.in('N_Ed', NEd, 'N', 'Største boltestrekk fra kraftfordelinga');
+
+  const Ah = c.step({
+    sym: 'A_h', desc: 'Lastopptakende areal under boltehodet',
+    formula: 'π · (⌀_h² − ⌀²) / 4', subst: `π · (${n(dh, 0)}² − ${n(d, 0)}²) / 4`,
+    value: headArea(d, dh), unit: 'mm²',
+  });
+  const NRk = c.res({
+    sym: 'N_Rk,p', formula: 'k_2 · A_h · f_ck',
+    subst: `${n(k2)} · ${n(Ah)} · ${n(fck, 0)}`, value: k2 * Ah * fck, unit: 'N', ref: '(7.6)',
+  });
+  const NRd = NRk / gM;
+  c.step({ sym: 'N_Rd,p', desc: 'Dimensjonerende kapasitet',
+    formula: 'N_Rk,p / γ_Mp', subst: `${n(NRk)} / ${n(gM)}`, value: NRd, unit: 'N' });
+  c.util({ formula: 'N_Ed / N_Rd,p', subst: `${n(NEd)} / ${n(NRd)}`, value: NEd / NRd });
+
+  return { id: 'N-pullout', mode: 'Uttrekk (hodetrykk)', clause: '7.2.1.5', scope: 'bolt',
+           NRk, NRd, NEd, util: NEd / NRd, calc: c };
+}
+
+// 7.2.1.4 Betongkjegle - gruppe av strekkbolter
+function tensionConcreteCone(m, res, g) {
+  const pts = res.tension.anchors;
+  if (!pts.length) {
+    return { id: 'N-cone', mode: 'Betongkjegle', clause: '7.2.1.4', scope: 'gruppe',
+             NRk: Infinity, NRd: Infinity, NEd: 0, util: 0,
+             calc: skipped('7.2.1.4', 'Ingen bolter i strekk.'),
+             note: 'Ingen bolter i strekk.' };
+  }
+  const c = new Calc('7.2.1.4');
+  const hef = c.in('h_ef', m.anchors.hef, 'mm', 'Bolter · effektiv forankringsdybde');
+  const fck = c.in('f_ck', m.concrete.fck, 'N/mm²', `Betongdel · ${m.concrete.grade}`);
+  const cracked = m.code.cracked;
+  const k1 = c.in('k_1', cracked ? K.k1_cracked : K.k1_uncracked, '–',
+    `Regelverk · ${cracked ? 'opprisset' : 'uopprisset'}, innstøpt hodebolt`);
+  const gM = c.in('γ_Mc', g.gMc, '–', 'γ_c · γ_inst – 4.4.3.1');
+  const nt = c.in('n_strekk', pts.length, 'stk', 'Bolter i strekk fra kraftfordelinga');
+  const NEd = c.in('N_Ed,g', res.tension.Ntot, 'N', 'Sum strekk i boltegruppa');
+
+  const scr = c.step({ sym: 's_cr,N', desc: 'Karakteristisk senteravstand',
+    formula: '3 · h_ef', subst: `3 · ${n(hef, 0)}`, value: 3 * hef, unit: 'mm', ref: '(7.4)' });
+  const ccr = c.step({ sym: 'c_cr,N', desc: 'Karakteristisk kantavstand',
+    formula: 's_cr,N / 2 = 1,5 · h_ef', subst: `1,5 · ${n(hef, 0)}`,
+    value: 1.5 * hef, unit: 'mm' });
+
+  const N0 = c.step({
+    sym: 'N⁰_Rk,c', desc: 'Kjeglekapasitet, én bolt uten kant- eller gruppevirkning',
+    formula: 'k_1 · √f_ck · h_ef^1,5',
+    subst: `${n(k1)} · √${n(fck, 0)} · ${n(hef, 0)}^1,5`,
+    value: k1 * Math.sqrt(fck) * Math.pow(hef, 1.5), unit: 'N', ref: '(7.2)',
+  });
+  const A0 = c.step({ sym: 'A⁰_c,N', desc: 'Referanseareal for én bolt',
+    formula: 's_cr,N²', subst: `${n(scr, 0)}²`, value: scr * scr, unit: 'mm²' });
+  const Ac = c.step({
+    sym: 'A_c,N', desc: 'Faktisk utbruddsareal for gruppa',
+    formula: 'union av (⌀ ± c_cr,N) for strekkboltene, klippet mot frie kanter',
+    subst: `${nt} bolter, c_cr,N = ${n(ccr, 0)} mm`,
+    value: coneArea(m, pts, 1.5 * hef), unit: 'mm²', ref: '(7.3)',
+  });
+
+  const cmin = minEdge(m, pts);
+  const psi_s = c.step({
+    sym: 'ψ_s,N', desc: 'Kanteffekt – trykkspenningene forstyrres nær en fri kant',
+    formula: '0,7 + 0,3 · c / c_cr,N ≤ 1,0',
+    subst: Number.isFinite(cmin)
+      ? `0,7 + 0,3 · ${n(cmin, 0)} / ${n(ccr, 0)}` : 'ingen fri kant innenfor c_cr,N',
+    value: Number.isFinite(cmin) ? clamp(0.7 + 0.3 * cmin / ccr, 0, 1) : 1.0,
+    unit: '–', ref: '(7.4)',
+  });
+  const psi_re = c.step({
+    sym: 'ψ_re,N', desc: 'Tett armering gir finere oppsprekking',
+    formula: m.code.denseReinf ? '0,5 + h_ef / 200 ≤ 1,0' : '1,0 (ikke tett armering)',
+    subst: m.code.denseReinf ? `0,5 + ${n(hef, 0)} / 200` : '–',
+    value: m.code.denseReinf ? clamp(0.5 + hef / 200, 0, 1) : 1.0, unit: '–', ref: '(7.5)',
+  });
+  const psi_ecx = clamp(1 / (1 + 2 * res.tension.eNx / scr), 0, 1);
+  const psi_ecy = clamp(1 / (1 + 2 * res.tension.eNy / scr), 0, 1);
+  const psi_ec = c.step({
+    sym: 'ψ_ec,N', desc: 'Eksentrisk strekkresultant, regnet hver retning for seg',
+    formula: '1 / (1 + 2·e_N/s_cr,N) ≤ 1,0   (x-retning · y-retning)',
+    subst: `e_N,x = ${n(res.tension.eNx, 1)} mm → ${n(psi_ecx)} · ` +
+           `e_N,y = ${n(res.tension.eNy, 1)} mm → ${n(psi_ecy)}`,
+    value: psi_ecx * psi_ecy, unit: '–', ref: '(7.3)',
+  });
+
+  const NRk = c.res({
+    sym: 'N_Rk,c', formula: 'N⁰_Rk,c · (A_c,N / A⁰_c,N) · ψ_s,N · ψ_re,N · ψ_ec,N',
+    subst: `${n(N0)} · (${n(Ac, 0)}/${n(A0, 0)}) · ${n(psi_s)} · ${n(psi_re)} · ${n(psi_ec)}`,
+    value: N0 * (Ac / A0) * psi_s * psi_re * psi_ec, unit: 'N', ref: '(7.1)',
+  });
+  const NRd = NRk / gM;
+  c.step({ sym: 'N_Rd,c', desc: 'Dimensjonerende kapasitet',
+    formula: 'N_Rk,c / γ_Mc', subst: `${n(NRk)} / ${n(gM)}`, value: NRd, unit: 'N' });
+  c.util({ formula: 'N_Ed,g / N_Rd,c', subst: `${n(NEd)} / ${n(NRd)}`, value: NEd / NRd });
+
+  return { id: 'N-cone', mode: 'Betongkjegle', clause: '7.2.1.4', scope: 'gruppe',
+           NRk, NRd, NEd, util: NEd / NRd, calc: c };
+}
+
+// 7.2.1.9 Utblåsing ved kant - kun når c <= 0,5·h_ef
+function tensionBlowout(m, res, g) {
+  const hef = m.anchors.hef;
+  const Ah = headArea(m.anchors.d, m.anchors.dh);
+  const cracked = m.code.cracked;
+  const k5 = cracked ? K.k5_cracked : K.k5_uncracked;
+
+  let worst = null;
+  for (const p of res.tension.anchors) {
+    const e = edgeDistances(m, p.x, p.y);
+    const c1 = Math.min(e.xNeg, e.xPos, e.yNeg, e.yPos);
+    if (!Number.isFinite(c1) || c1 > 0.5 * hef) continue;
+    const perp = (c1 === e.xNeg || c1 === e.xPos)
+      ? Math.min(e.yNeg, e.yPos) : Math.min(e.xNeg, e.xPos);
+    const psi_s = clamp(0.7 + 0.3 * nz(perp) / (2 * c1), 0, 1);
+    const N0 = k5 * c1 * Math.sqrt(Ah) * Math.sqrt(m.concrete.fck);
+    const NRk = N0 * psi_s, NRd = NRk / g.gMcb;
+    const cand = { c1, perp, psi_s, N0, NRk, NRd, NEd: p.N, util: p.N / NRd };
+    if (!worst || cand.util > worst.util) worst = cand;
+  }
+  if (!worst) {
+    const why = `Ikke aktuell: c > 0,5·h_ef = ${n(0.5 * hef, 0)} mm for alle bolter i strekk.`;
+    return { id: 'N-blowout', mode: 'Utblåsing ved kant', clause: '7.2.1.9', scope: 'bolt',
+             NRk: Infinity, NRd: Infinity, NEd: 0, util: 0,
+             calc: skipped('7.2.1.9', why), note: why };
+  }
+  const c = new Calc('7.2.1.9');
+  c.in('c_1', worst.c1, 'mm', 'Minste kantavstand for bolt i strekk');
+  c.in('A_h', Ah, 'mm²', 'Hodeareal, se uttrekkskontrollen');
+  c.in('f_ck', m.concrete.fck, 'N/mm²', `Betongdel · ${m.concrete.grade}`);
+  c.in('k_5', k5, '–', `Regelverk · ${cracked ? 'opprisset' : 'uopprisset'}`);
+  c.in('γ_Mcb', g.gMcb, '–', '4.4.3.1');
+  c.in('N_Ed', worst.NEd, 'N', 'Strekk i den styrende bolten');
+  c.step({ sym: 'gyldighet', desc: 'Kontrollen er bare aktuell nær en kant',
+    formula: 'c_1 ≤ 0,5 · h_ef',
+    subst: `${n(worst.c1, 0)} ≤ ${n(0.5 * hef, 0)}`, value: 1, unit: '✓' });
+  c.step({ sym: 'N⁰_Rk,cb', desc: 'Grunnverdi utblåsing',
+    formula: 'k_5 · c_1 · √A_h · √f_ck',
+    subst: `${n(k5)} · ${n(worst.c1, 0)} · √${n(Ah)} · √${n(m.concrete.fck, 0)}`,
+    value: worst.N0, unit: 'N', ref: '(7.15)' });
+  c.step({ sym: 'ψ_s,Nb', desc: 'Sidekant vinkelrett på c_1',
+    formula: '0,7 + 0,3 · c_2 / (2·c_1) ≤ 1,0',
+    subst: Number.isFinite(worst.perp)
+      ? `0,7 + 0,3 · ${n(worst.perp, 0)} / (2·${n(worst.c1, 0)})` : 'ingen sidekant',
+    value: worst.psi_s, unit: '–' });
+  c.res({ sym: 'N_Rk,cb', formula: 'N⁰_Rk,cb · ψ_s,Nb',
+    subst: `${n(worst.N0)} · ${n(worst.psi_s)}`, value: worst.NRk, unit: 'N' });
+  c.step({ sym: 'N_Rd,cb', desc: 'Dimensjonerende kapasitet',
+    formula: 'N_Rk,cb / γ_Mcb', subst: `${n(worst.NRk)} / ${n(g.gMcb)}`,
+    value: worst.NRd, unit: 'N' });
+  c.util({ formula: 'N_Ed / N_Rd,cb',
+    subst: `${n(worst.NEd)} / ${n(worst.NRd)}`, value: worst.util });
+
+  return { id: 'N-blowout', mode: 'Utblåsing ved kant', clause: '7.2.1.9', scope: 'bolt',
+           NRk: worst.NRk, NRd: worst.NRd, NEd: worst.NEd, util: worst.util, calc: c };
+}
+
+// 7.2.1.7 Spalting under last (forenklet)
+function tensionSplitting(m, res, g, cone) {
+  const hef = m.anchors.hef;
+  const ccr_sp = 2 * hef, hmin = 2 * hef;
+  const cmin = minEdge(m, res.tension.anchors);
+  const dekket = m.code.supplementaryReinf;
+  const geomOk = (Number.isFinite(cmin) ? cmin >= ccr_sp : true) && m.concrete.h >= hmin;
+
+  if (dekket || geomOk) {
+    const why = dekket
+      ? 'Dekket av spaltearmering – 7.2.1.7(1).'
+      : `Ikke nødvendig: c ≥ c_cr,sp = ${n(ccr_sp, 0)} mm og h ≥ h_min = ${n(hmin, 0)} mm.`;
+    return { id: 'N-split', mode: 'Spalting', clause: '7.2.1.7', scope: 'gruppe',
+             NRk: Infinity, NRd: Infinity, NEd: res.tension.Ntot, util: 0,
+             calc: skipped('7.2.1.7', why), note: why };
+  }
+  const c = new Calc('7.2.1.7');
+  c.in('h', m.concrete.h, 'mm', 'Betongdel · tykkelse');
+  c.in('h_min', hmin, 'mm', 'Forenklet: 2·h_ef (skal hentes fra ETA)');
+  c.in('c_cr,sp', ccr_sp, 'mm', 'Forenklet: 2·h_ef (skal hentes fra ETA)');
+  c.in('N_Rk,c', cone.NRk, 'N', 'Fra betongkjeglekontrollen');
+  c.in('γ_Msp', g.gMsp, '–', '4.4.3.1');
+  const psi_h = c.step({ sym: 'ψ_h,sp', desc: 'Tynn betongdel gir redusert spaltekapasitet',
+    formula: '(h / h_min)^(2/3) ≤ 1,0',
+    subst: `(${n(m.concrete.h, 0)} / ${n(hmin, 0)})^(2/3)`,
+    value: clamp(Math.pow(m.concrete.h / hmin, 2 / 3), 0, 1), unit: '–' });
+  const NRk = c.res({ sym: 'N_Rk,sp', formula: 'N_Rk,c · ψ_h,sp',
+    subst: `${n(cone.NRk)} · ${n(psi_h)}`, value: cone.NRk * psi_h, unit: 'N' });
+  const NRd = NRk / g.gMsp;
+  c.step({ sym: 'N_Rd,sp', desc: 'Dimensjonerende kapasitet',
+    formula: 'N_Rk,sp / γ_Msp', subst: `${n(NRk)} / ${n(g.gMsp)}`, value: NRd, unit: 'N' });
+  const NEd = res.tension.Ntot;
+  c.util({ formula: 'N_Ed,g / N_Rd,sp', subst: `${n(NEd)} / ${n(NRd)}`, value: NEd / NRd });
+
+  return { id: 'N-split', mode: 'Spalting', clause: '7.2.1.7', scope: 'gruppe',
+           NRk, NRd, NEd, util: NEd / NRd, calc: c,
+           note: 'Forenklet: c_cr,sp = 2·h_ef antatt. Skal hentes fra ETA/produktdata.' };
+}
+
+// ===========================================================================
+//  SKJÆR
+// ===========================================================================
+
+// 7.2.2.3 Stålbrudd
+function shearSteel(m, res, g) {
+  const VEd = Math.max(0, ...res.anchors.map(a => a.V));
+  const d = m.anchors.d, fuk = m.anchors.fuk;
+  const As = shaftArea(d);
+
+  if (res.leverArm > 0) {
+    const c = new Calc('7.2.2.3.2');
+    c.in('⌀', d, 'mm', 'Bolter');
+    c.in('f_uk', fuk, 'N/mm²', `Bolter · ${m.anchors.steel}`);
+    c.in('l_a', res.leverArm, 'mm', 'Plate · avstand fra betong + t/2');
+    c.in('γ_Ms,V', g.gMsV, '–', '4.4.3.1');
+    c.in('V_Ed', VEd, 'N', 'Største boltskjær fra kraftfordelinga');
+    const Wel = c.step({ sym: 'W_el', desc: 'Elastisk motstandsmoment i skaftet',
+      formula: 'π · ⌀³ / 32', subst: `π · ${n(d, 0)}³ / 32`,
+      value: Math.PI * Math.pow(d, 3) / 32, unit: 'mm³' });
+    const M0 = c.step({ sym: 'M⁰_Rk,s', desc: 'Momentkapasitet uten samtidig strekk',
+      formula: '1,2 · W_el · f_uk', subst: `1,2 · ${n(Wel)} · ${n(fuk, 0)}`,
+      value: 1.2 * Wel * fuk, unit: 'Nmm', ref: '(7.37)' });
+    const NRds = As * fuk / g.gMsN;
+    const NEd = Math.max(0, ...res.anchors.map(a => a.N));
+    const MRk = c.step({ sym: 'M_Rk,s', desc: 'Redusert av samtidig strekk i bolten',
+      formula: 'M⁰_Rk,s · (1 − N_Ed/N_Rd,s)',
+      subst: `${n(M0)} · (1 − ${n(NEd)}/${n(NRds)})`,
+      value: M0 * Math.max(0, 1 - NEd / NRds), unit: 'Nmm', ref: '(7.36)' });
+    const alphaM = c.in('α_M', 1.0, '–', 'Fritt dreibar plate (2,0 ved full innspenning)');
+    const VRk = c.res({ sym: 'V_Rk,s,M', formula: 'α_M · M_Rk,s / l_a',
+      subst: `${n(alphaM)} · ${n(MRk)} / ${n(res.leverArm, 0)}`,
+      value: alphaM * MRk / res.leverArm, unit: 'N', ref: '(7.35)' });
+    const VRd = VRk / g.gMsV;
+    c.step({ sym: 'V_Rd,s', desc: 'Dimensjonerende kapasitet',
+      formula: 'V_Rk,s,M / γ_Ms,V', subst: `${n(VRk)} / ${n(g.gMsV)}`, value: VRd, unit: 'N' });
+    c.util({ formula: 'V_Ed / V_Rd,s', subst: `${n(VEd)} / ${n(VRd)}`, value: VEd / VRd });
+    return { id: 'V-steel', mode: 'Stålbrudd, skjær m/ momentarm', clause: '7.2.2.3.2',
+             scope: 'bolt', NRk: VRk, NRd: VRd, NEd: VEd, util: VEd / VRd, calc: c };
+  }
+
+  const c = new Calc('7.2.2.3.1');
+  c.in('⌀', d, 'mm', 'Bolter');
+  c.in('f_uk', fuk, 'N/mm²', `Bolter · ${m.anchors.steel}`);
+  const k6 = c.in('k_6', K.k6, '–', 'Innstøpt hodebolt – 7.2.2.3.1');
+  const k7 = c.in('k_7', m.anchors.ductile ? K.k7_ductile : K.k7_brittle, '–',
+    m.anchors.ductile ? 'Duktilt stål (A₅ ≥ 8 %)' : 'Ikke duktilt stål');
+  c.in('γ_Ms,V', g.gMsV, '–',
+    g.mild ? 'maks(f_uk/f_yk ; 1,25) – 4.4.3.1' : '1,5 – høyfast stål, 4.4.3.1');
+  c.in('V_Ed', VEd, 'N', 'Største boltskjær fra kraftfordelinga');
+  c.step({ sym: 'A_s', desc: 'Spenningstverrsnitt i boltskaftet',
+    formula: 'π · ⌀² / 4', subst: `π · ${n(d, 0)}² / 4`, value: As, unit: 'mm²' });
+  const VRk = c.res({ sym: 'V_Rk,s', formula: 'k_6 · k_7 · A_s · f_uk',
+    subst: `${n(k6)} · ${n(k7)} · ${n(As)} · ${n(fuk, 0)}`,
+    value: K.k6 * k7 * As * fuk, unit: 'N', ref: '(7.34)' });
+  const VRd = VRk / g.gMsV;
+  c.step({ sym: 'V_Rd,s', desc: 'Dimensjonerende kapasitet',
+    formula: 'V_Rk,s / γ_Ms,V', subst: `${n(VRk)} / ${n(g.gMsV)}`, value: VRd, unit: 'N' });
+  c.util({ formula: 'V_Ed / V_Rd,s', subst: `${n(VEd)} / ${n(VRd)}`, value: VEd / VRd });
+
+  return { id: 'V-steel', mode: 'Stålbrudd, skjær', clause: '7.2.2.3.1', scope: 'bolt',
+           NRk: VRk, NRd: VRd, NEd: VEd, util: VEd / VRd, calc: c };
+}
+
+// 7.2.2.4 Betongutstøting (pry-out)
+function shearPryout(m, res, g) {
+  const c = new Calc('7.2.2.4');
+  const hef = c.in('h_ef', m.anchors.hef, 'mm', 'Bolter');
+  const fck = c.in('f_ck', m.concrete.fck, 'N/mm²', `Betongdel · ${m.concrete.grade}`);
+  const k8 = c.in('k_8', hef < 60 ? K.k8_short : K.k8_long, '–',
+    hef < 60 ? 'h_ef < 60 mm' : 'h_ef ≥ 60 mm');
+  const gM = c.in('γ_Mc', g.gMc, '–', '4.4.3.1');
+  const VEd = c.in('V_Ed,g', res.shear.Vres, 'N', 'Resultant skjærkraft på gruppa');
+
+  const all = anchorPositions(m);
+  const ccr = 1.5 * hef, scr = 3 * hef;
+  const cracked = m.code.cracked;
+  const k1 = cracked ? K.k1_cracked : K.k1_uncracked;
+  const N0 = k1 * Math.sqrt(fck) * Math.pow(hef, 1.5);
+  const Ac = coneArea(m, all, ccr), A0 = scr * scr;
+  const cmin = minEdge(m, all);
+  const psi_s = Number.isFinite(cmin) ? clamp(0.7 + 0.3 * cmin / ccr, 0, 1) : 1.0;
+  const psi_re = m.code.denseReinf ? clamp(0.5 + hef / 200, 0, 1) : 1.0;
+
+  c.step({ sym: 'A_c,N', desc: 'Utbruddsareal for ALLE bolter som tar skjær, ikke bare strekkboltene',
+    formula: 'union av (⌀ ± c_cr,N), klippet mot frie kanter',
+    subst: `${all.length} bolter, c_cr,N = ${n(ccr, 0)} mm`, value: Ac, unit: 'mm²' });
+  const NRkc = c.step({
+    sym: 'N_Rk,c', desc: 'Kjeglekapasitet for hele boltegruppa',
+    formula: 'k_1·√f_ck·h_ef^1,5 · (A_c,N/A⁰_c,N) · ψ_s,N · ψ_re,N',
+    subst: `${n(N0)} · (${n(Ac, 0)}/${n(A0, 0)}) · ${n(psi_s)} · ${n(psi_re)}`,
+    value: N0 * (Ac / A0) * psi_s * psi_re, unit: 'N', ref: '7.2.1.4',
+  });
+  const VRk = c.res({ sym: 'V_Rk,cp', formula: 'k_8 · N_Rk,c',
+    subst: `${n(k8)} · ${n(NRkc)}`, value: k8 * NRkc, unit: 'N', ref: '(7.39)' });
+  const VRd = VRk / gM;
+  c.step({ sym: 'V_Rd,cp', desc: 'Dimensjonerende kapasitet',
+    formula: 'V_Rk,cp / γ_Mc', subst: `${n(VRk)} / ${n(gM)}`, value: VRd, unit: 'N' });
+  c.util({ formula: 'V_Ed,g / V_Rd,cp', subst: `${n(VEd)} / ${n(VRd)}`, value: VEd / VRd });
+
+  return { id: 'V-pryout', mode: 'Betongutstøting (pry-out)', clause: '7.2.2.4', scope: 'gruppe',
+           NRk: VRk, NRd: VRd, NEd: VEd, util: VEd / VRd, calc: c };
+}
+
+// 7.2.2.5 Kantbrudd i betong
+function shearConcreteEdge(m, res, g) {
+  const V = res.shear;
+  if (V.Vres < 1e-9) {
+    const why = 'Ingen skjærkraft på forbindelsen.';
+    return { id: 'V-edge', mode: 'Kantbrudd', clause: '7.2.2.5', scope: 'gruppe',
+             NRk: Infinity, NRd: Infinity, NEd: 0, util: 0,
+             calc: skipped('7.2.2.5', why), note: why };
+  }
+  const all = anchorPositions(m);
+  const cc = m.concrete, a = m.anchors;
+  const dnom = a.d;
+  const lf = Math.min(a.hef, Math.max(8 * dnom, 300));
+  const cracked = m.code.cracked;
+  const k9 = cracked ? K.k9_cracked : K.k9_uncracked;
+  const psi_re = { none: 1.0, bars: 1.2, 'bars+stirrups': 1.4 }[m.code.edgeReinf] ?? 1.0;
+
+  const cands = [];
+  if (V.Vx > 0 && cc.freeEdges.xPos) cands.push({ dir: 'xPos', axis: 'x' });
+  if (V.Vx < 0 && cc.freeEdges.xNeg) cands.push({ dir: 'xNeg', axis: 'x' });
+  if (V.Vy > 0 && cc.freeEdges.yPos) cands.push({ dir: 'yPos', axis: 'y' });
+  if (V.Vy < 0 && cc.freeEdges.yNeg) cands.push({ dir: 'yNeg', axis: 'y' });
+  if (!cands.length) {
+    const why = 'Ingen fri kant i skjærkraftas retning.';
+    return { id: 'V-edge', mode: 'Kantbrudd', clause: '7.2.2.5', scope: 'gruppe',
+             NRk: Infinity, NRd: Infinity, NEd: V.Vres, util: 0,
+             calc: skipped('7.2.2.5', why), note: why };
+  }
+
+  let worst = null;
+  for (const cd of cands) {
+    const ds = all.map(p => edgeDistances(m, p.x, p.y)[cd.dir]);
+    const c1 = Math.min(...ds);
+    if (!Number.isFinite(c1)) continue;
+    const front = all.filter((p, i) => Math.abs(ds[i] - c1) < 1e-6);
+    const axisX = cd.axis === 'x';
+    const t = p => (axisX ? p.y : p.x);
+    const sideNeg = axisX ? 'yNeg' : 'xNeg', sidePos = axisX ? 'yPos' : 'xPos';
+    const lo = cc.freeEdges[sideNeg] ? -(axisX ? cc.Ly / 2 + cc.ey : cc.Lx / 2 + cc.ex) : -1e9;
+    const hi = cc.freeEdges[sidePos] ? (axisX ? cc.Ly / 2 - cc.ey : cc.Lx / 2 - cc.ex) : 1e9;
+    const width = unionLength(front.map(p =>
+      [Math.max(t(p) - 1.5 * c1, lo), Math.min(t(p) + 1.5 * c1, hi)]));
+    const height = Math.min(1.5 * c1, cc.h);
+    const Ac = width * height, A0 = 4.5 * c1 * c1;
+    const alpha = 0.1 * Math.sqrt(lf / c1);
+    const beta = 0.1 * Math.pow(dnom / c1, 0.2);
+    const V0 = k9 * Math.pow(dnom, alpha) * Math.pow(lf, beta)
+             * Math.sqrt(cc.fck) * Math.pow(c1, 1.5);
+    const c2 = Math.min(...front.map(p => {
+      const e = edgeDistances(m, p.x, p.y); return Math.min(e[sideNeg], e[sidePos]); }));
+    const psi_s = Number.isFinite(c2) ? clamp(0.7 + 0.3 * c2 / (1.5 * c1), 0, 1) : 1.0;
+    const psi_h = Math.max(1, Math.sqrt(1.5 * c1 / cc.h));
+    const comp = axisX ? Math.abs(V.Vx) : Math.abs(V.Vy);
+    const cosA = clamp(comp / V.Vres, 0, 1);
+    const sinA = Math.sqrt(Math.max(0, 1 - cosA * cosA));
+    const psi_a = Math.max(1, Math.sqrt(1 / (cosA * cosA + Math.pow(0.5 * sinA, 2))));
+    const eV = Math.abs(front.reduce((s, p) => s + t(p), 0) / front.length);
+    const psi_ec = clamp(1 / (1 + 2 * eV / (3 * c1)), 0, 1);
+    const VRk = V0 * (Ac / A0) * psi_s * psi_h * psi_a * psi_ec * psi_re;
+    const VRd = VRk / g.gMc;
+    const cand = { dir: cd.dir, c1, c2, front, width, height, Ac, A0, alpha, beta, V0,
+                   psi_s, psi_h, psi_a, psi_ec, eV, VRk, VRd, util: V.Vres / VRd };
+    if (!worst || cand.util > worst.util) worst = cand;
+  }
+  if (!worst) {
+    const why = 'Ingen fri kant i skjærkraftas retning.';
+    return { id: 'V-edge', mode: 'Kantbrudd', clause: '7.2.2.5', scope: 'gruppe',
+             NRk: Infinity, NRd: Infinity, NEd: V.Vres, util: 0,
+             calc: skipped('7.2.2.5', why), note: why };
+  }
+
+  const w = worst;
+  const c = new Calc('7.2.2.5');
+  c.in('c_1', w.c1, 'mm', `Kantavstand til kant ${EDGE_LABEL[w.dir]}, forreste boltrad`);
+  c.in('⌀_nom', dnom, 'mm', 'Bolter');
+  c.in('h', cc.h, 'mm', 'Betongdel · tykkelse');
+  c.in('f_ck', cc.fck, 'N/mm²', `Betongdel · ${cc.grade}`);
+  c.in('k_9', k9, '–', `Regelverk · ${cracked ? 'opprisset' : 'uopprisset'}`);
+  c.in('γ_Mc', g.gMc, '–', '4.4.3.1');
+  c.in('V_Ed,g', V.Vres, 'N', 'Resultant skjærkraft på gruppa');
+
+  c.step({ sym: 'l_f', desc: 'Effektiv boltlengde i skjær',
+    formula: 'min(h_ef ; maks(8·⌀ ; 300))',
+    subst: `min(${n(a.hef, 0)} ; maks(${n(8 * dnom, 0)} ; 300))`, value: lf, unit: 'mm' });
+  c.step({ sym: 'α', desc: 'Eksponent for boltlengde',
+    formula: '0,1 · √(l_f / c_1)', subst: `0,1 · √(${n(lf, 0)}/${n(w.c1, 0)})`,
+    value: w.alpha, unit: '–' });
+  c.step({ sym: 'β', desc: 'Eksponent for boltdiameter',
+    formula: '0,1 · (⌀_nom / c_1)^0,2', subst: `0,1 · (${n(dnom, 0)}/${n(w.c1, 0)})^0,2`,
+    value: w.beta, unit: '–' });
+  c.step({ sym: 'V⁰_Rk,c', desc: 'Grunnverdi kantbrudd, én bolt ved rett kant',
+    formula: 'k_9 · ⌀_nom^α · l_f^β · √f_ck · c_1^1,5',
+    subst: `${n(k9)} · ${n(dnom, 0)}^${n(w.alpha)} · ${n(lf, 0)}^${n(w.beta)} · ` +
+           `√${n(cc.fck, 0)} · ${n(w.c1, 0)}^1,5`,
+    value: w.V0, unit: 'N', ref: '(7.42)' });
+  c.step({ sym: 'A⁰_c,V', desc: 'Referanseareal på kantflata for én bolt',
+    formula: '4,5 · c_1²', subst: `4,5 · ${n(w.c1, 0)}²`, value: w.A0, unit: 'mm²' });
+  c.step({ sym: 'A_c,V', desc: 'Faktisk bruddflate langs kanten',
+    formula: 'bredde · høyde,  bredde = union av 1,5·c_1 hver vei fra forreste bolter',
+    subst: `${n(w.width, 0)} · ${n(w.height, 0)}   ` +
+           `(høyde = min(1,5·c_1 ; h) = min(${n(1.5 * w.c1, 0)} ; ${n(cc.h, 0)}))`,
+    value: w.Ac, unit: 'mm²', ref: '(7.41)' });
+  c.step({ sym: 'ψ_s,V', desc: 'Sidekant vinkelrett på lastretninga',
+    formula: '0,7 + 0,3 · c_2 / (1,5·c_1) ≤ 1,0',
+    subst: Number.isFinite(w.c2)
+      ? `0,7 + 0,3 · ${n(w.c2, 0)} / (1,5·${n(w.c1, 0)})` : 'ingen sidekant',
+    value: w.psi_s, unit: '–' });
+  c.step({ sym: 'ψ_h,V', desc: 'Tynn betongdel – bruddflata får ikke utvikle seg fritt',
+    formula: '√(1,5·c_1 / h) ≥ 1,0',
+    subst: `√(${n(1.5 * w.c1, 0)} / ${n(cc.h, 0)})`, value: w.psi_h, unit: '–' });
+  c.step({ sym: 'ψ_α,V', desc: 'Skjærkraft på skrå mot kanten',
+    formula: '√(1 / (cos²α_V + (0,5·sin α_V)²)) ≥ 1,0',
+    subst: `V mot kant ${EDGE_LABEL[w.dir]}`, value: w.psi_a, unit: '–' });
+  c.step({ sym: 'ψ_ec,V', desc: 'Eksentrisk skjærresultant langs kanten',
+    formula: '1 / (1 + 2·e_V/(3·c_1)) ≤ 1,0',
+    subst: `e_V = ${n(w.eV, 1)} mm`, value: w.psi_ec, unit: '–' });
+  c.step({ sym: 'ψ_re,V', desc: 'Kantarmering',
+    formula: '1,0 uten · 1,2 med kantstenger · 1,4 med kantstenger og bøyler',
+    subst: `Regelverk · ${m.code.edgeReinf}`, value: psi_re, unit: '–' });
+  const VRk = c.res({ sym: 'V_Rk,c',
+    formula: 'V⁰_Rk,c · (A_c,V/A⁰_c,V) · ψ_s,V · ψ_h,V · ψ_α,V · ψ_ec,V · ψ_re,V',
+    subst: `${n(w.V0)} · (${n(w.Ac, 0)}/${n(w.A0, 0)}) · ${n(w.psi_s)} · ${n(w.psi_h)} · ` +
+           `${n(w.psi_a)} · ${n(w.psi_ec)} · ${n(psi_re)}`,
+    value: w.VRk, unit: 'N', ref: '(7.40)' });
+  c.step({ sym: 'V_Rd,c', desc: 'Dimensjonerende kapasitet',
+    formula: 'V_Rk,c / γ_Mc', subst: `${n(VRk)} / ${n(g.gMc)}`, value: w.VRd, unit: 'N' });
+  c.util({ formula: 'V_Ed,g / V_Rd,c', subst: `${n(V.Vres)} / ${n(w.VRd)}`, value: w.util });
+
+  return { id: 'V-edge', mode: `Kantbrudd mot ${EDGE_LABEL[w.dir]}`, clause: '7.2.2.5',
+           scope: 'gruppe', edgeDir: w.dir,
+           NRk: w.VRk, NRd: w.VRd, NEd: V.Vres, util: w.util, calc: c };
+}
+
+// ===========================================================================
+//  7.2.3 Kombinert strekk og skjær
+// ===========================================================================
+function interaction(checks) {
+  const get = id => checks.find(c => c.id === id);
+  const out = [];
+
+  const bNs = get('N-steel').util, bVs = get('V-steel').util;
+  const cs = new Calc('7.2.3');
+  cs.in('β_N', bNs, '–', 'Stålbrudd strekk – utnyttelse');
+  cs.in('β_V', bVs, '–', 'Stålbrudd skjær – utnyttelse');
+  cs.res({ sym: 'β_N² + β_V²', formula: '(β_N)² + (β_V)² ≤ 1,0',
+    subst: `${n(bNs)}² + ${n(bVs)}²`, value: bNs ** 2 + bVs ** 2, unit: '–', ref: '(7.54)' });
+  cs.util({ formula: '(β_N)² + (β_V)²', subst: `${n(bNs)}² + ${n(bVs)}²`,
+    value: bNs ** 2 + bVs ** 2 });
+  out.push({ id: 'IA-steel', mode: 'Samvirkning stål', clause: '7.2.3', scope: 'kombinasjon',
+    expr: '(β_N)² + (β_V)² ≤ 1', util: bNs ** 2 + bVs ** 2, calc: cs,
+    NRk: NaN, NRd: NaN, NEd: NaN });
+
+  const tension = ['N-cone', 'N-pullout', 'N-blowout', 'N-split'];
+  const shear = ['V-pryout', 'V-edge'];
+  const tw = tension.map(id => get(id)).filter(Boolean)
+    .reduce((a, b) => ((b.util || 0) > (a?.util || 0) ? b : a), null);
+  const sw = shear.map(id => get(id)).filter(Boolean)
+    .reduce((a, b) => ((b.util || 0) > (a?.util || 0) ? b : a), null);
+  const bN = tw?.util || 0, bV = sw?.util || 0;
+
+  const cc = new Calc('7.2.3');
+  cc.in('β_N', bN, '–', `Styrende betongbrudd i strekk: ${tw?.mode ?? '–'}`);
+  cc.in('β_V', bV, '–', `Styrende betongbrudd i skjær: ${sw?.mode ?? '–'}`);
+  cc.step({ sym: 'forenklet', desc: 'Alternativ, lineær samvirkning',
+    formula: 'β_N + β_V ≤ 1,2', subst: `${n(bN)} + ${n(bV)} = ${n(bN + bV)}`,
+    value: (bN + bV) / 1.2, unit: '–' });
+  cc.res({ sym: 'β_N^1,5 + β_V^1,5', formula: '(β_N)^1,5 + (β_V)^1,5 ≤ 1,0',
+    subst: `${n(bN)}^1,5 + ${n(bV)}^1,5`,
+    value: bN ** 1.5 + bV ** 1.5, unit: '–', ref: '(7.55)' });
+  cc.util({ formula: '(β_N)^1,5 + (β_V)^1,5', subst: `${n(bN)}^1,5 + ${n(bV)}^1,5`,
+    value: bN ** 1.5 + bV ** 1.5 });
+  out.push({ id: 'IA-conc', mode: 'Samvirkning betong', clause: '7.2.3', scope: 'kombinasjon',
+    expr: '(β_N)^1,5 + (β_V)^1,5 ≤ 1', util: bN ** 1.5 + bV ** 1.5, calc: cc,
+    NRk: NaN, NRd: NaN, NEd: NaN });
+
+  return out;
+}
+
+// ---------------------------------------------------------------------------
+function runEN1992_4(m, res) {
+  const g = partialFactors(m);
+  const cone = tensionConcreteCone(m, res, g);
+  const checks = [
+    tensionSteel(m, res, g),
+    tensionPullout(m, res, g),
+    cone,
+    tensionBlowout(m, res, g),
+    tensionSplitting(m, res, g, cone),
+    shearSteel(m, res, g),
+    shearPryout(m, res, g),
+    shearConcreteEdge(m, res, g),
+  ];
+  return { standard: 'NS-EN 1992-4:2018', gamma: g, checks: [...checks, ...interaction(checks)] };
+}
+
+// ===== src/engine/anchor-reinforcement.js ==========================
+// ---------------------------------------------------------------------------
+//  Forankringsarmering - NS-EN 1992-4 pkt. 7.2.1.8 / 7.2.2.6.
+//
+//  Legges det egen armering som krysser bruddkjegla, erstattes kontrollen av
+//  betongkjeglebrudd med to kontroller av armeringa:
+//     a) stålbrudd i armeringa
+//     b) forankringsbrudd - heft over lengden inne i kjegla
+//
+//  Dette er også mekanismen norsk praksis (Betongelementboka) bygger på når
+//  innstøpingsgods forankres med sløyfer eller skråstag.
+// ---------------------------------------------------------------------------
+
+const GAMMA_S = 1.15;
+
+// Heftfasthet f_bd etter NS-EN 1992-1-1 pkt. 8.4.2
+function fbd(fck, ds, goodBond = true) {
+  const fctk = 0.7 * 0.3 * Math.pow(fck, 2 / 3);   // f_ctk;0,05
+  const fctd = fctk / 1.5;
+  const eta1 = goodBond ? 1.0 : 0.7;
+  const eta2 = ds <= 32 ? 1.0 : (132 - ds) / 100;
+  return 2.25 * eta1 * eta2 * fctd;
+}
+
+function tensionReinforcement(m, res, r) {
+  const NEd = res.tension.Ntot;
+  const As = r.n * Math.PI * r.ds * r.ds / 4;
+
+  // --- a) stålbrudd i armeringa ---
+  const ca = new Calc('7.2.1.8');
+  ca.in('n', r.n, 'stk', 'Forankringsarmering · bein som krysser kjegla');
+  ca.in('⌀_s', r.ds, 'mm', 'Forankringsarmering');
+  ca.in('f_yk', r.fyk, 'N/mm²', 'Forankringsarmering');
+  ca.in('γ_Ms,re', GAMMA_S, '–', 'Armeringsstål – NS-EN 1992-1-1');
+  ca.in('N_Ed,g', NEd, 'N', 'Sum strekk i boltegruppa');
+  ca.step({ sym: 'A_s,re', desc: 'Samlet armeringsareal i bruddflata',
+    formula: 'n · π · ⌀_s² / 4', subst: `${r.n} · π · ${n(r.ds, 0)}² / 4`,
+    value: As, unit: 'mm²' });
+  const NRk_s = ca.res({ sym: 'N_Rk,re', formula: 'A_s,re · f_yk',
+    subst: `${n(As)} · ${n(r.fyk, 0)}`, value: As * r.fyk, unit: 'N' });
+  const NRd_s = NRk_s / GAMMA_S;
+  ca.step({ sym: 'N_Rd,re', desc: 'Dimensjonerende kapasitet',
+    formula: 'N_Rk,re / γ_Ms,re', subst: `${n(NRk_s)} / ${n(GAMMA_S)}`,
+    value: NRd_s, unit: 'N' });
+  ca.util({ formula: 'N_Ed,g / N_Rd,re', subst: `${n(NEd)} / ${n(NRd_s)}`,
+    value: NEd / NRd_s });
+
+  // --- b) heft ---
+  const cb = new Calc('7.2.1.8');
+  const f = fbd(m.concrete.fck, r.ds, r.goodBond);
+  const a1 = r.hooked ? 0.7 : 1.0;
+  cb.in('n', r.n, 'stk', 'Forankringsarmering');
+  cb.in('⌀_s', r.ds, 'mm', 'Forankringsarmering');
+  cb.in('l_1', r.l1, 'mm', 'Forankringsarmering · lengde inne i bruddkjegla');
+  cb.in('f_ck', m.concrete.fck, 'N/mm²', `Betongdel · ${m.concrete.grade}`);
+  cb.in('α_1', a1, '–', r.hooked ? 'Kroket/bøyd stang' : 'Rett stangende');
+  cb.in('N_Ed,g', NEd, 'N', 'Sum strekk i boltegruppa');
+  const fctk = 0.7 * 0.3 * Math.pow(m.concrete.fck, 2 / 3);
+  cb.step({ sym: 'f_ctk;0,05', desc: 'Nedre karakteristisk strekkfasthet',
+    formula: '0,7 · 0,3 · f_ck^(2/3)', subst: `0,7 · 0,3 · ${n(m.concrete.fck, 0)}^(2/3)`,
+    value: fctk, unit: 'N/mm²', ref: 'EN 1992-1-1 tab. 3.1' });
+  cb.step({ sym: 'f_bd', desc: 'Dimensjonerende heftfasthet',
+    formula: '2,25 · η_1 · η_2 · f_ctk;0,05 / γ_c',
+    subst: `2,25 · ${r.goodBond ? '1,0' : '0,7'} · ${r.ds <= 32 ? '1,0' : n((132 - r.ds) / 100)}` +
+           ` · ${n(fctk)} / 1,5`,
+    value: f, unit: 'N/mm²', ref: 'EN 1992-1-1 8.4.2' });
+  const NRk_a = cb.res({ sym: 'N_Rk,a', formula: 'n · π · ⌀_s · l_1 · f_bd / α_1',
+    subst: `${r.n} · π · ${n(r.ds, 0)} · ${n(r.l1, 0)} · ${n(f)} / ${n(a1)}`,
+    value: r.n * (r.l1 * Math.PI * r.ds * f) / a1, unit: 'N' });
+  cb.util({ formula: 'N_Ed,g / N_Rd,a', subst: `${n(NEd)} / ${n(NRk_a)}`,
+    value: NEd / NRk_a });
+
+  const lbmin = Math.max(10 * r.ds, 100);
+  const checks = [
+    { id: 'N-re-steel', mode: 'Forankringsarmering – stålbrudd', clause: '7.2.1.8 (a)',
+      scope: 'gruppe', NRk: NRk_s, NRd: NRd_s, NEd, util: NEd / NRd_s, calc: ca },
+    { id: 'N-re-anch', mode: 'Forankringsarmering – heft', clause: '7.2.1.8 (b)',
+      scope: 'gruppe', NRk: NRk_a, NRd: NRk_a, NEd, util: NEd / NRk_a, calc: cb,
+      note: r.l1 < lbmin
+        ? `l₁ < l_b,min = ${n(lbmin, 0)} mm – øk forankringslengden.` : undefined },
+  ];
+  return checks;
+}
+
+// 7.2.2.6 Kantarmering mot skjær - forenklet: armeringa tar hele skjærkrafta
+function shearReinforcement(m, res, r) {
+  const As = r.nV * Math.PI * r.dsV * r.dsV / 4;
+  const VEd = res.shear.Vres;
+  const c = new Calc('7.2.2.6');
+  c.in('n', r.nV, 'stk', 'Forankringsarmering · kantarmering');
+  c.in('⌀_s', r.dsV, 'mm', 'Forankringsarmering');
+  c.in('f_yk', r.fykV, 'N/mm²', 'Forankringsarmering');
+  c.in('γ_Ms,re', GAMMA_S, '–', 'Armeringsstål – NS-EN 1992-1-1');
+  c.in('V_Ed,g', VEd, 'N', 'Resultant skjærkraft på gruppa');
+  c.step({ sym: 'A_s,re', desc: 'Armeringsareal som krysser bruddflata',
+    formula: 'n · π · ⌀_s² / 4', subst: `${r.nV} · π · ${n(r.dsV, 0)}² / 4`,
+    value: As, unit: 'mm²' });
+  const VRk = c.res({ sym: 'V_Rk,re', formula: 'A_s,re · f_yk',
+    subst: `${n(As)} · ${n(r.fykV, 0)}`, value: As * r.fykV, unit: 'N' });
+  const VRd = VRk / GAMMA_S;
+  c.step({ sym: 'V_Rd,re', desc: 'Dimensjonerende kapasitet',
+    formula: 'V_Rk,re / γ_Ms,re', subst: `${n(VRk)} / ${n(GAMMA_S)}`, value: VRd, unit: 'N' });
+  c.util({ formula: 'V_Ed,g / V_Rd,re', subst: `${n(VEd)} / ${n(VRd)}`, value: VEd / VRd });
+
+  return [{ id: 'V-re-steel', mode: 'Kantarmering – stålbrudd', clause: '7.2.2.6',
+            scope: 'gruppe', NRk: VRk, NRd: VRd, NEd: VEd, util: VEd / VRd, calc: c,
+            note: 'Forutsetter at armeringa er forankret på begge sider av bruddflata.' }];
+}
+
+// ===== src/engine/b19.js ===========================================
+// ---------------------------------------------------------------------------
+//  Betongelementboka, bind B - kapittel B19.
+//
+//  STATUS: ikke implementert.  Modulen viser hvordan et regelverk kobles inn i
+//  motoren (samme grensesnitt som en1992-4.js), men formlene er IKKE lagt inn,
+//  fordi de maa hentes ordrett fra boka. Ingen tall er gjettet.
+//
+//  For aa fylle den ut trengs pr. kontroll:
+//    - formel med alle faktorer og gyldighetsomraade
+//    - materialfaktorer boka bruker
+//    - hvilke geometrigrenser som gjelder (kantavstand, senteravstand, tykkelse)
+//
+//  Grensesnitt en kontroll skal returnere:
+//    { id, mode, clause, scope, NRk, NRd, NEd, util, terms:[[navn,verdi,enhet]], note }
+// ---------------------------------------------------------------------------
+
+const B19_PLANNED_CHECKS = [
+  { id: 'B19-kjegle',   mode: 'Bruddkjegle i betong',            status: 'mangler formelgrunnlag' },
+  { id: 'B19-kant',     mode: 'Kantbrudd',                       status: 'mangler formelgrunnlag' },
+  { id: 'B19-armering', mode: 'Forankring med armeringssløyfer', status: 'mangler formelgrunnlag' },
+  { id: 'B19-sveis',    mode: 'Sveis bolt/plate',                 status: 'mangler formelgrunnlag' },
+  { id: 'B19-plate',    mode: 'Bøyning i forankringsplata',      status: 'mangler formelgrunnlag' },
+];
+
+function runB19(m, res) {
+  return {
+    standard: 'Betongelementboka bind B, kap. B19 (ikke implementert)',
+    gamma: {},
+    checks: B19_PLANNED_CHECKS.map(c => ({
+      id: c.id, mode: c.mode, clause: 'B19', scope: 'gruppe',
+      NRk: NaN, NRd: NaN, NEd: NaN, util: NaN,
+      calc: skipped('B19', c.status),
+      note: c.status,
+    })),
+  };
+}
+
+// ===== src/engine/validate.js ======================================
+// ---------------------------------------------------------------------------
+//  Inndatakontroll.  Fanger geometri som ikke gir mening, og minstekrav til
+//  kant-/senteravstand.  'error' stopper ikke beregningen, men resultatet skal
+//  ikke brukes.
+// ---------------------------------------------------------------------------
+
+function validate(m) {
+  const out = [];
+  const err = t => out.push({ level: 'error', text: t });
+  const warn = t => out.push({ level: 'warn', text: t });
+
+  const a = m.anchors, c = m.concrete, p = m.plate;
+  const pos = anchorPositions(m);
+
+  // --- entydig gal geometri ---------------------------------------------
+  for (const q of pos) {
+    const e = edgeDistances(m, q.x, q.y);
+    const cmin = Math.min(e.xNeg, e.xPos, e.yNeg, e.yPos);
+    if (cmin <= 0) {
+      err(`Bolt ${q.id} ligger utenfor betongdelen (kantavstand ${Math.round(cmin)} mm). ` +
+          `Øk L_x/L_y, eller reduser senteravstand/offset.`);
+      break;
+    }
+  }
+  if (a.hef >= c.h) err(`h_ef = ${a.hef} mm er ikke mindre enn tykkelsen h = ${c.h} mm.`);
+  else if (a.hef > 0.8 * c.h)
+    warn(`h_ef = ${a.hef} mm er over 80 % av tykkelsen (h = ${c.h} mm) – kontroller ` +
+         `gjennomlokking og plass til hodet.`);
+  if (p.bx > c.Lx || p.by > c.Ly) warn('Forankringsplata er større enn betongdelen.');
+  if (a.nx * a.ny < 1) err('Minst én bolt kreves.');
+
+  // --- minstekrav (veiledende, skal hentes fra ETA/produktdata) ----------
+  const sMin = 5 * a.d, cMin = 5 * a.d;
+  if (a.nx > 1 && a.sx < sMin)
+    warn(`Senteravstand s_x = ${a.sx} mm < veiledende s_min = ${sMin} mm (5·⌀).`);
+  if (a.ny > 1 && a.sy < sMin)
+    warn(`Senteravstand s_y = ${a.sy} mm < veiledende s_min = ${cMin} mm (5·⌀).`);
+  let cAbs = Infinity;
+  for (const q of pos) {
+    const e = edgeDistances(m, q.x, q.y);
+    cAbs = Math.min(cAbs, e.xNeg, e.xPos, e.yNeg, e.yPos);
+  }
+  if (Number.isFinite(cAbs) && cAbs > 0 && cAbs < cMin)
+    warn(`Minste kantavstand ${Math.round(cAbs)} mm < veiledende c_min = ${cMin} mm (5·⌀).`);
+
+  if (boltsOutside(m))
+    warn(`Boltene ligger nærmere platekanten enn ${EDGE_MIN} mm, eller utenfor ` +
+         `plata. Endre antallet for å sette senteravstanden automatisk.`);
+
+  // --- kontakttrykk mot betong ------------------------------------------
+  const mnt = mounting(m);
+  if (mnt.kind === 'standoff')
+    warn(`Plata står ${p.gap} mm fra betongen – skjær regnes med momentarm ` +
+         `og boltene tar også trykk.`);
+  if (mnt.kind === 'grout' && !mnt.groutOk)
+    warn(`Gytemassen (${p.fckGrout} N/mm²) er svakere enn betongen eller under ` +
+         `30 N/mm². Undergytingen regnes da ikke som fast anlegg, og skjæret ` +
+         `får momentarm gjennom gytesjiktet.`);
+
+  // --- forankringsarmering ----------------------------------------------
+  if (m.code.supplementaryReinf && m.reinf) {
+    if (!(m.reinf.n > 0)) err('Forankringsarmering er valgt, men antall bein er 0.');
+    if (m.reinf.l1 > a.hef)
+      warn(`l₁ = ${m.reinf.l1} mm er lengre enn h_ef = ${a.hef} mm.`);
+  }
+  return out;
+}
+
+// Kontakttrykk mot betongens dimensjonerende trykkfasthet
+function bearingCheck(m, res) {
+  if (!res.compression) return null;
+  const fcd = 0.85 * m.concrete.fck / m.code.gammaC;
+  return {
+    sigma: res.compression.sigmaMax, fcd,
+    util: res.compression.sigmaMax / fcd,
+    ok: res.compression.sigmaMax <= fcd,
+  };
+}
+
+// ===== src/engine/verify.js ========================================
+// Orkestrering: loes kraftfordeling, kjoer valgt regelverk, sorter resultat.
+
+const CODES = { 'EN1992-4': runEN1992_4, 'B19': runB19 };
+
+function verify(m) {
+  const issues = validate(m);
+  const res = solvePlate(m);
+  const run = CODES[m.code.standard] || runEN1992_4;
+  const out = run(m, res);
+
+  let checks = out.checks;
+  if (m.code.standard === 'EN1992-4' && m.code.supplementaryReinf && m.reinf) {
+    const extra = [
+      ...tensionReinforcement(m, res, m.reinf),
+      ...(m.reinf.nV > 0 ? shearReinforcement(m, res, m.reinf) : []),
+    ];
+    // Med forankringsarmering erstattes betongkjegla av armeringskontrollen
+    checks = checks.filter(c => c.id !== 'N-cone').concat(extra);
+  }
+
+  const valid = checks.filter(c => Number.isFinite(c.util));
+  const governing = valid.length
+    ? valid.reduce((a, b) => (b.util > a.util ? b : a)) : null;
+
+  return {
+    model: m, res, standard: out.standard, gamma: out.gamma,
+    issues, bearing: bearingCheck(m, res),
+    checks, governing,
+    maxUtil: governing ? governing.util : NaN,
+    ok: governing ? governing.util <= 1.0 : false,
+  };
+}
+
+// ===== src/viz/three-d-stage.js ====================================
+// ---------------------------------------------------------------------------
+//  <three-d-stage> - web component for 3D-visning.
+//  Three.js r0.184 (importmap), OrbitControls, eksport til OBJ/MTL og GLB.
+//
+//  API:
+//    stage.setContent(object3d)      bytt ut modellen
+//    stage.frameAll()                zoom til modellen
+//    stage.setView('iso'|'top'|'front'|'side')
+//    stage.exportOBJ(basename)       laster ned .obj + .mtl
+//    stage.exportGLB(basename)       laster ned .glb
+// ---------------------------------------------------------------------------
+
+// Slår om når verdien er tydelig negativ, tilbake når den er tydelig positiv,
+// og lar tilstanden stå i dødsonen imellom.
+function hyst(on, value, band) {
+  if (on) return value < band;
+  return value < -band;
+}
+
+const FLIP_Y = new THREE.Quaternion()
+  .setFromAxisAngle(new THREE.Vector3(0, 1, 0), Math.PI);
+const FLIP_Z = new THREE.Quaternion()
+  .setFromAxisAngle(new THREE.Vector3(0, 0, 1), Math.PI);
+
+const CSS = `
+  :host { display:block; position:relative; width:100%; height:100%; }
+  canvas { display:block; width:100%; height:100%; outline:none; }
+  .bar { position:absolute; top:8px; right:8px; display:flex; gap:4px; flex-wrap:wrap;
+         justify-content:flex-end; max-width:calc(100% - 16px); z-index:2; }
+  .bar button {
+    font: 500 11px/1 "IBM Plex Sans", ui-sans-serif, system-ui, sans-serif;
+    padding:7px 10px; border-radius:6px; cursor:pointer;
+    border:1px solid #e3dfd6; background:rgba(255,255,255,.86);
+    color:#6b665c; backdrop-filter:blur(8px);
+    box-shadow:0 1px 3px rgba(43,41,36,.06);
+    transition:color .12s ease, border-color .12s ease;
+  }
+  .bar button:hover { color:#8a7448; border-color:#8a7448; }
+  .bar button:focus-visible { outline:2px solid #8a7448; outline-offset:2px; }
+  .msg { position:absolute; left:50%; transform:translateX(-50%); bottom:12px; z-index:2;
+         font:11px "IBM Plex Mono", ui-monospace, monospace; color:#6b665c;
+         background:rgba(255,255,255,.9); border:1px solid #e3dfd6;
+         border-radius:6px; padding:6px 11px; }
+  .msg:empty { display:none; }
+`;
+
+class ThreeDStage extends HTMLElement {
+  connectedCallback() {
+    if (this._init) return;
+    this._init = true;
+
+    const root = this.attachShadow({ mode: 'open' });
+    root.innerHTML = `<style>${CSS}</style>
+      <div class="bar">
+        <button data-v="iso">ISO</button><button data-v="top">Plan</button>
+        <button data-v="front">Front</button><button data-v="side">Side</button>
+        <button data-a="fit">Tilpass</button>
+        <button data-a="obj">OBJ</button><button data-a="glb">GLB</button>
+      </div>
+      <div class="msg"></div>`;
+    this._msg = root.querySelector('.msg');
+    // Verten kan levere sine egne, dokkede kontroller i stedet for den
+    // flytende lista - da skal ingenting ligge oppå selve visninga.
+    if (this.getAttribute('controls') === 'none')
+      root.querySelector('.bar').remove();
+
+    this.renderer = new THREE.WebGLRenderer({ antialias: true, alpha: false, preserveDrawingBuffer: true });
+    this.renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
+    // Nøytral tonemapping holder de lyse gråtonene der de skal være;
+    // ACES trekker et lyst motiv mot grått.
+    this.renderer.toneMapping = THREE.NeutralToneMapping;
+    this.renderer.toneMappingExposure = 1.0;
+    // Ingen skyggelegging: modellen leses tydeligere uten, og skyggen av en
+    // flat betongkloss ga lite igjen for kostnaden.
+    this.renderer.shadowMap.enabled = false;
+    root.appendChild(this.renderer.domElement);
+
+    this.scene = new THREE.Scene();
+    this.scene.background = new THREE.Color(this.getAttribute('background') || '#efede8');
+
+    // Miljøkart - uten dette blir metalliske materialer nesten svarte.
+    const pmrem = new THREE.PMREMGenerator(this.renderer);
+    this.scene.environment = pmrem.fromScene(new RoomEnvironment(), 0.04).texture;
+    this.scene.environmentIntensity = 0.35;
+    pmrem.dispose();
+
+    // To kameraer som deler posisjon og retning. Perspektiv gir dybdefølelse;
+    // parallellprojeksjon gjør at like store ting tegnes like store uansett
+    // avstand, slik at mål kan sammenliknes direkte i bildet.
+    this.perspCam = new THREE.PerspectiveCamera(38, 1, 1, 100000);
+    this.orthoCam = new THREE.OrthographicCamera(-1, 1, 1, -1, -100000, 100000);
+    this.camera = this.perspCam;
+    this.camera.position.set(1200, 900, 1200);
+    this._orthoSize = 1000;
+
+    this.controls = new OrbitControls(this.camera, this.renderer.domElement);
+    this.controls.enableDamping = true;
+    this.controls.dampingFactor = 0.08;
+
+    // Lys: ett mykt hovedlys som gir kontaktskyggen, pluss himmellys og et
+    // svakt motlys så baksidene ikke går i svart.
+    this.scene.add(new THREE.HemisphereLight(0xffffff, 0xcfcabe, 0.95));
+
+    this.key = new THREE.DirectionalLight(0xfff8ec, 1.55);
+    this.key.position.set(-1500, 2400, 1700);
+    this.scene.add(this.key, this.key.target);
+
+    const fill = new THREE.DirectionalLight(0xe8eef7, 0.3);
+    fill.position.set(1600, 900, -1400);
+    this.scene.add(fill);
+
+    this.content = new THREE.Group();
+    this.scene.add(this.content);
+
+    // Påskriftene er ekte DOM-elementer plassert med 3D-transformasjoner, så de
+    // ligger i modellens plan og følger den i både rotasjon og størrelse - og
+    // er likevel redigerbare felt. Laget legges i lys DOM av verten
+    // (attachLabelLayer), ellers når ikke sidas CSS inn til dem.
+    this.css = new CSS3DRenderer();
+    Object.assign(this.css.domElement.style,
+      { position: 'absolute', inset: '0', pointerEvents: 'none' });
+    this.cssScene = new THREE.Scene();
+    this._labels = [];
+
+    root.querySelectorAll('[data-v]').forEach(b =>
+      b.onclick = () => this.setView(b.dataset.v));
+    root.querySelector('[data-a="fit"]')?.addEventListener('click', () => this.frameAll());
+    root.querySelector('[data-a="obj"]')?.addEventListener('click', () => this.exportOBJ());
+    root.querySelector('[data-a="glb"]')?.addEventListener('click', () => this.exportGLB());
+
+    this._ro = new ResizeObserver(() => this._resize());
+    this._ro.observe(this);
+    this._resize();
+
+    const tick = () => {
+      this._raf = requestAnimationFrame(tick);
+      this.controls.update();
+      this.renderer.render(this.scene, this.camera);
+      this._faceLabels();
+      this.css.render(this.cssScene, this.camera);
+    };
+    tick();
+  }
+
+  disconnectedCallback() {
+    cancelAnimationFrame(this._raf);
+    this.setLabels([]);
+    this._ro?.disconnect();
+  }
+
+  _resize() {
+    const w = this.clientWidth || 800, h = this.clientHeight || 600;
+    this.renderer.setSize(w, h, false);
+    this.css?.setSize(w, h);
+
+    this.perspCam.aspect = w / h;
+    this.perspCam.updateProjectionMatrix();
+
+    const a = w / h, s = this._orthoSize;
+    Object.assign(this.orthoCam, { left: -s * a, right: s * a, top: s, bottom: -s });
+    this.orthoCam.updateProjectionMatrix();
+  }
+
+  get isOrtho() { return this.camera === this.orthoCam; }
+
+  // Bytter projeksjon uten at bildet hopper. Det nye kameraet arver posisjon og
+  // retning, og utsnittet regnes om slik at modellen har samme synlige
+  // størrelse ved målpunktet - i stedet for å ramme inn på nytt og kaste bort
+  // zoomen brukeren har stilt inn.
+  setProjection(kind) {
+    const want = kind === 'ortho';
+    if (want === this.isOrtho) return;
+    const from = this.camera, to = want ? this.orthoCam : this.perspCam;
+    const half = Math.tan(THREE.MathUtils.degToRad(this.perspCam.fov) / 2);
+    const dist = from.position.distanceTo(this.controls.target);
+
+    to.quaternion.copy(from.quaternion);
+    to.up.copy(from.up);
+
+    if (want) {
+      to.position.copy(from.position);
+      this._orthoSize = dist * half;      // halve bildehøyden ved målpunktet
+      to.zoom = 1;
+    } else {
+      const d = (this._orthoSize / (from.zoom || 1)) / half;
+      const dir = new THREE.Vector3()
+        .subVectors(from.position, this.controls.target).normalize();
+      to.position.copy(this.controls.target).addScaledVector(dir, d);
+      to.near = Math.max(1, d / 500);
+      to.far = d * 20;
+    }
+
+    this.camera = to;
+    this.controls.object = to;
+    this._resize();
+    this.dispatchEvent(new CustomEvent('projection', { detail: { ortho: want } }));
+  }
+
+  // Laget for påskrifter må ligge i vertens DOM for at CSS-en skal treffe.
+  attachLabelLayer(host) {
+    host.appendChild(this.css.domElement);
+    this._resize();
+  }
+
+  // items: [{ el, pos: Vector3, quat: Quaternion, scale: number }]
+  setLabels(items) {
+    for (const o of this._labels) {
+      this.cssScene.remove(o);
+      o.element.remove();
+    }
+    this._labels = [];
+    for (const it of items) {
+      it.el.style.pointerEvents = 'auto';
+      const o = new CSS3DObject(it.el);
+      o.position.copy(it.pos);
+      o.quaternion.copy(it.quat);
+      o.scale.setScalar(it.scale);
+      o.userData.front = it.quat.clone();
+      this.cssScene.add(o);
+      this._labels.push(o);
+    }
+  }
+
+  // Tekst som ligger i et plan kan bli ulesbar på to ulike måter, og de krever
+  // hver sin korreksjon:
+  //
+  //   speilvendt   kamera ser baksida av planet   -> snu 180° om lokal Y
+  //   opp ned      lesretninga peker mot venstre  -> snu 180° om lokal Z
+  //
+  // Begge testene bygger på et fortegn som går gjennom null når planet eller
+  // lesretninga står på kant mot kamera. Uten dødsone vipper påskrifta fram og
+  // tilbake for de minste kamerabevegelsene akkurat der. Derfor er hver test
+  // hysteresebasert: den slår om ved ±BAND og husker tilstanden imellom.
+  _faceLabels() {
+    if (!this._labels.length) return;
+    const q = this._q || (this._q = new THREE.Quaternion());
+    const n = this._n || (this._n = new THREE.Vector3());
+    const d = this._d || (this._d = new THREE.Vector3());
+    const x = this._x || (this._x = new THREE.Vector3());
+    const inv = this._iq || (this._iq = new THREE.Quaternion());
+    inv.copy(this.camera.quaternion).invert();
+
+    for (const o of this._labels) {
+      const u = o.userData;
+      q.copy(u.front);
+
+      n.set(0, 0, 1).applyQuaternion(q);
+      // I parallellprojeksjon går alle strålene samme vei, så retningen mot
+      // betrakteren er kameraets egen +z - ikke veien fra påskrifta til det.
+      if (this.isOrtho) d.set(0, 0, 1).applyQuaternion(this.camera.quaternion);
+      else d.subVectors(this.camera.position, o.position).normalize();
+      u.mirror = hyst(u.mirror, n.dot(d), 0.05);
+      if (u.mirror) q.multiply(FLIP_Y);
+
+      x.set(1, 0, 0).applyQuaternion(q).applyQuaternion(inv);
+      u.upside = hyst(u.upside, x.x, 0.12);
+      if (u.upside) q.multiply(FLIP_Z);
+
+      o.quaternion.copy(q);
+    }
+  }
+
+  setContent(obj) {
+    this.content.traverse(o => {
+      if (o.geometry) o.geometry.dispose();
+      if (o.material) [].concat(o.material).forEach(mm => mm.dispose());
+    });
+    this.content.clear();
+    this.content.add(obj);
+    if (!this._framed) { this.frameAll(); this._framed = true; }
+  }
+
+  _bounds() {
+    const box = new THREE.Box3().setFromObject(this.content);
+    if (box.isEmpty()) box.set(new THREE.Vector3(-500, -500, -500), new THREE.Vector3(500, 500, 500));
+    return box;
+  }
+
+  frameAll(factor = 1.5) {
+    const box = this._bounds();
+    const c = box.getCenter(new THREE.Vector3());
+    const r = box.getSize(new THREE.Vector3()).length() / 2;
+    const dist = (r / Math.sin(THREE.MathUtils.degToRad(this.perspCam.fov) / 2)) * factor * 0.6;
+    const dir = this._framed
+      ? this.camera.position.clone().sub(this.controls.target).normalize()
+      : new THREE.Vector3(1, 0.8, 1).normalize();   // fast startretning
+    if (!dir.lengthSq()) dir.set(1, 0.8, 1).normalize();
+    this.controls.target.copy(c);
+    this.camera.position.copy(c).addScaledVector(dir, dist);
+    this.perspCam.near = Math.max(1, dist / 500);
+    this.perspCam.far = dist * 20;
+    this.perspCam.updateProjectionMatrix();
+
+    // Parallellkameraet har ingen avstandsavhengighet, så «zoom» er høyden på
+    // bildeutsnittet. Den settes av modellens størrelse, ikke av avstanden.
+    this._orthoSize = r * factor * 0.62;
+    this.orthoCam.zoom = 1;
+    this._resize();
+
+    // Hovedlyset holdes i fast retning i forhold til modellen, så belysninga
+    // ikke endrer seg når du zoomer.
+    this.key.target.position.copy(c);
+    this.key.position.copy(c).add(new THREE.Vector3(-r * 1.8, r * 2.0, r * 1.4));
+  }
+
+  setView(v) {
+    const box = this._bounds();
+    const c = box.getCenter(new THREE.Vector3());
+    const dirs = {
+      iso: [1, 0.75, 1], top: [0.001, 1, 0.001], front: [0, 0.05, 1], side: [1, 0.05, 0],
+    };
+    const d = new THREE.Vector3(...(dirs[v] || dirs.iso)).normalize();
+    const dist = this.camera.position.distanceTo(this.controls.target);
+    this.controls.target.copy(c);
+    this.camera.position.copy(c).addScaledVector(d, dist);
+    this.frameAll();
+  }
+
+  // ---- Eksport ----------------------------------------------------------
+  //  Binær GLB kommer ikke gjennom vertens nedlasting, så der eksporteres
+  //  glTF (JSON) i stedet. Samme modell, samme materialer.
+  async exportGLB(name = 'forankring') {
+    const binary = !(await hostSaves());
+    this._note(binary ? 'Bygger GLB…' : 'Bygger glTF…');
+    try {
+      const data = await new Promise((ok, bad) =>
+        new GLTFExporter().parse(this.content, ok, bad, { binary }));
+      const file = binary
+        ? [new Blob([data], { type: 'model/gltf-binary' }), `${name}.glb`]
+        : [JSON.stringify(data), `${name}.gltf`];
+      this._note(saveMessage(await saveFile(file[0], file[1])));
+    } catch (e) { this._note(saveError(e)); }
+  }
+
+  async exportOBJ(name = 'forankring') {
+    const { obj, mtl } = objMtl(this.content, name);
+    try {
+      // Én forespørsel om gangen - MTL-fila må vente på svar på OBJ-fila.
+      const a = await saveFile(obj, `${name}.obj`);
+      const b = await saveFile(mtl, `${name}.mtl`);
+      this._note(a.renamed
+        ? `Lagret ${a.filename} + ${b.filename} – gi dem endelsene .obj og .mtl`
+        : `Lagret ${a.filename} + ${b.filename}`);
+    } catch (e) { this._note(saveError(e)); }
+  }
+
+  _note(t) {
+    this._msg.textContent = t;
+    clearTimeout(this._noteT);
+    this._noteT = setTimeout(() => (this._msg.textContent = ''), 7000);
+  }
+}
+
+// ---------------------------------------------------------------------------
+//  OBJ + MTL.  Egen skriver (ikke OBJExporter) fordi vi vil ha ekte
+//  usemtl-grupper og en MTL-fil med farger/gjennomsiktighet.
+// ---------------------------------------------------------------------------
+function objMtl(root, name = 'model') {
+  const O = [`# ${name} - eksportert fra Betong forankring`, `mtllib ${name}.mtl`];
+  const mats = new Map();
+  let vOff = 1, nOff = 1;
+
+  root.updateWorldMatrix(true, true);
+  const nm = new THREE.Matrix3();
+  const v = new THREE.Vector3();
+
+  root.traverse(o => {
+    if (!o.isMesh || !o.geometry?.attributes?.position || o.userData.noExport) return;
+    const g = o.geometry;
+    const pos = g.attributes.position, nor = g.attributes.normal;
+    const idx = g.index ? g.index.array
+      : Uint32Array.from({ length: pos.count }, (_, i) => i);
+
+    const mat = [].concat(o.material)[0];
+    const key = mat.name || `mat_${mat.uuid.slice(0, 8)}`;
+    if (!mats.has(key)) mats.set(key, mat);
+
+    O.push(`o ${(o.name || 'part').replace(/\s+/g, '_')}`);
+    for (let i = 0; i < pos.count; i++) {
+      v.fromBufferAttribute(pos, i).applyMatrix4(o.matrixWorld);
+      O.push(`v ${f(v.x)} ${f(v.y)} ${f(v.z)}`);
+    }
+    if (nor) {
+      nm.getNormalMatrix(o.matrixWorld);
+      for (let i = 0; i < nor.count; i++) {
+        v.fromBufferAttribute(nor, i).applyMatrix3(nm).normalize();
+        O.push(`vn ${f(v.x)} ${f(v.y)} ${f(v.z)}`);
+      }
+    }
+    O.push(`usemtl ${key}`);
+    for (let i = 0; i < idx.length; i += 3) {
+      const a = idx[i] + vOff, b = idx[i + 1] + vOff, c = idx[i + 2] + vOff;
+      O.push(nor
+        ? `f ${a}//${idx[i] + nOff} ${b}//${idx[i + 1] + nOff} ${c}//${idx[i + 2] + nOff}`
+        : `f ${a} ${b} ${c}`);
+    }
+    vOff += pos.count;
+    if (nor) nOff += nor.count;
+  });
+
+  const M = [`# ${name} materialer`];
+  for (const [key, mat] of mats) {
+    const c = mat.color || new THREE.Color(0xcccccc);
+    M.push(`newmtl ${key}`,
+      `Kd ${f(c.r)} ${f(c.g)} ${f(c.b)}`,
+      `Ka ${f(c.r * 0.2)} ${f(c.g * 0.2)} ${f(c.b * 0.2)}`,
+      `Ks 0.20 0.20 0.20`,
+      `Ns ${f(200 * (1 - (mat.roughness ?? 0.7)))}`,
+      `d ${f(mat.transparent ? (mat.opacity ?? 1) : 1)}`,
+      `illum 2`, '');
+  }
+  return { obj: O.join('\n'), mtl: M.join('\n') };
+}
+
+const f = n => (Math.round(n * 1e4) / 1e4).toString();
+
+if (!customElements.get('three-d-stage')) customElements.define('three-d-stage', ThreeDStage);
+
+// ===== src/viz/scene-builder.js ====================================
+// ---------------------------------------------------------------------------
+//  Bygger Three.js-scenen fra modellen + resultatet.
+//
+//  Alt bygges i INGENIOERKOORDINATER (x, y, z opp ut av betongen, mm).
+//  Rotgruppa roteres -90 grader om X slik at ingenioer-z blir Three sin Y.
+// ---------------------------------------------------------------------------
+
+// Betongkorn genereres i sida - ingen ekstern tekstur. Fin støy med noen få
+// mørkere luftporer, brukt både som farge- og ujevnhetskart, gir overflata en
+// støpt karakter i stedet for jevn plastgrå.
+// Fullt dekkende, men malt i den gjennomskinnelige passeringa så stålet
+// legger seg over betongen i stedet for å bli tonet ned av den.
+const OVER_CONCRETE = { transparent: true, opacity: 1, depthWrite: true };
+const ORDER = { body: 0, outline: 2, load: 3, steel: 4, tag: 10 };
+
+let GRAIN = null;
+function grainTexture() {
+  if (GRAIN) return GRAIN;
+  const S = 256, c = document.createElement('canvas');
+  c.width = c.height = S;
+  const g = c.getContext('2d');
+  const img = g.createImageData(S, S);
+  for (let i = 0; i < S * S; i++) {
+    let v = 224 + (Math.random() - 0.5) * 30;
+    if (Math.random() < 0.0045) v -= 45 + Math.random() * 45;   // luftporer
+    const k = i * 4;
+    img.data[k] = img.data[k + 1] = img.data[k + 2] = Math.max(0, Math.min(255, v));
+    img.data[k + 3] = 255;
+  }
+  g.putImageData(img, 0, 0);
+  // Litt utsmøring, ellers blir kornet ren pikselstøy når kamera går nær.
+  g.globalAlpha = 0.5;
+  g.filter = 'blur(1px)';
+  g.drawImage(c, 0, 0);
+  g.filter = 'none'; g.globalAlpha = 1;
+
+  GRAIN = new THREE.CanvasTexture(c);
+  GRAIN.wrapS = GRAIN.wrapT = THREE.RepeatWrapping;
+  GRAIN.colorSpace = THREE.SRGBColorSpace;
+  GRAIN.anisotropy = 8;
+  return GRAIN;
+}
+
+// Ekte materialfarger: grå betong, blåaktig konstruksjonsstål, rustrød armering.
+// De semantiske fargene (grønn/gul/rød) brukes bare når visningen settes til
+// utnyttelse - ellers holder modellen seg til materialene.
+const MAT = {
+  concrete: (Lx, Ly) => {
+    const t = grainTexture().clone();
+    t.needsUpdate = true;
+    t.repeat.set(Math.max(1, Lx / 350), Math.max(1, Ly / 350));  // ~1 flis pr. 350 mm
+    return new THREE.MeshStandardMaterial({
+      name: 'betong', color: 0xc3c0b8, map: t, bumpMap: t, bumpScale: 0.5,
+      roughness: 1.0, metalness: 0.0,
+      transparent: true, opacity: 0.5, side: THREE.DoubleSide,
+      depthWrite: false,
+    });
+  },
+  // Valset konstruksjonsstål er matt, ikke forkrommet: lav metalness og høy
+  // ruhet, ellers får plata speilglans som ikke finnes i virkeligheten.
+  plate: () => new THREE.MeshStandardMaterial({
+    name: 'staalplate', color: 0x54606e, roughness: 0.72, metalness: 0.3,
+    ...OVER_CONCRETE,
+  }),
+  steel: () => new THREE.MeshStandardMaterial({
+    name: 'bolt', color: 0xaeb6bd, roughness: 0.55, metalness: 0.45,
+    ...OVER_CONCRETE,
+  }),
+  cone: () => new THREE.MeshStandardMaterial({
+    name: 'bruddkjegle', color: 0xd99a2b, roughness: 0.9, metalness: 0,
+    transparent: true, opacity: 0.26, side: THREE.DoubleSide, depthWrite: false,
+  }),
+  wedge: () => new THREE.MeshStandardMaterial({
+    name: 'kantbrudd', color: 0xc0524a, roughness: 0.9, metalness: 0,
+    transparent: true, opacity: 0.24, side: THREE.DoubleSide, depthWrite: false,
+  }),
+  grout: () => new THREE.MeshStandardMaterial({
+    name: 'gytemasse', color: 0xc2baa8, roughness: 0.96, metalness: 0.0,
+  }),
+  rebar: () => new THREE.MeshStandardMaterial({
+    name: 'armering', color: 0x9e5232, roughness: 0.82, metalness: 0.15,
+    ...OVER_CONCRETE,
+  }),
+};
+
+// Utnyttelsesfarger stemt for lys bakgrunn - samme tre som i resultatpanelet.
+function utilColor(u) {
+  if (!Number.isFinite(u)) return new THREE.Color(0x9b958a);
+  if (u <= 0.7) return new THREE.Color(0x6e9e4f);
+  if (u <= 1.0) return new THREE.Color(0xc79030);
+  return new THREE.Color(0xc0524a);
+}
+
+// --- smaa hjelpere ---------------------------------------------------------
+function boxMesh(w, d, h, mat, name) {
+  const m = new THREE.Mesh(new THREE.BoxGeometry(w, d, h), mat);
+  m.name = name; return m;
+}
+
+function polyMesh(verts, faces, mat, name) {
+  const g = new THREE.BufferGeometry();
+  g.setAttribute('position', new THREE.Float32BufferAttribute(verts.flat(), 3));
+  g.setIndex(faces.flat());
+  g.computeVertexNormals();
+  const m = new THREE.Mesh(g, mat); m.name = name; return m;
+}
+
+// Konturlinjer gjør de gjennomsiktige bruddlegemene lesbare gjennom betongen.
+function outline(mesh, hex, opacity = 0.85) {
+  const l = new THREE.LineSegments(
+    new THREE.EdgesGeometry(mesh.geometry, 1),
+    new THREE.LineBasicMaterial({ color: hex, transparent: true, opacity, depthTest: false }));
+  l.userData.noExport = true;
+  l.renderOrder = ORDER.outline;
+  return l;
+}
+
+// Ingeniørkoordinat -> verdenskoordinat. Rotgruppa er rotert -90° om X,
+// så (x, y, z) blir (x, z, -y). Påskriftene trenger punktet i verdensrommet
+// for å kunne projiseres til skjerm.
+const toW = (x, y, z) => new THREE.Vector3(x, z, -y);
+const toWv = v => new THREE.Vector3(v.x, v.z, -v.y);
+
+// Orientering for en påskrift som skal ligge i modellen. xA er lesretninga og
+// yA er «opp» i tekstens eget plan; begge oppgis i ingeniørkoordinater.
+function planeQuat(xA, yA) {
+  const X = toWv(xA).normalize();
+  const Y = toWv(yA).normalize();
+  Y.addScaledVector(X, -Y.dot(X)).normalize();      // gjør Y vinkelrett på X
+  const Z = new THREE.Vector3().crossVectors(X, Y);
+  return new THREE.Quaternion().setFromRotationMatrix(
+    new THREE.Matrix4().makeBasis(X, Y, Z));
+}
+const UP = new THREE.Vector3(0, 0, 1);
+
+// --- målsetting ---------------------------------------------------------
+// Målelinjene er geometri i modellen; selve verdien er en HTML-påskrift som
+// verten plasserer, slik at den holder fast skriftstørrelse, står rett på
+// skjermen uansett kameravinkel, og kan redigeres direkte.
+const DIM_COLOR = 0x14120f;
+
+// Skala for påskriftene: 1 CSS-piksel = 1 mm i modellen ved skala 1.
+const HUD_SCALE = m => Math.max(m.concrete.Lx, m.concrete.Ly, 400) * 0.0026;
+// Teksthøyden i modellens enheter (13 px skrift, linjehøyde 1,25, se style.css).
+const TEXT_H = m => HUD_SCALE(m) * 16.25;
+
+function dimension(group, hud, a0, b0, off, path, value, opts = {}) {
+  // Snu målet så lesretninga alltid går mot +x, +y eller +z. Ellers står
+  // teksten opp ned på halvparten av målene.
+  const dv0 = b0.clone().sub(a0);
+  const dom = Math.abs(dv0.x) >= Math.abs(dv0.y) && Math.abs(dv0.x) >= Math.abs(dv0.z)
+    ? 'x' : Math.abs(dv0.y) >= Math.abs(dv0.z) ? 'y' : 'z';
+  const [a, b] = dv0[dom] < 0 ? [b0, a0] : [a0, b0];
+
+  const o = off.clone();
+  const oN = o.clone().normalize();
+  const L = o.length();
+  const A2 = a.clone().add(o), B2 = b.clone().add(o);
+  const dir = B2.clone().sub(A2).normalize();
+  const span = B2.distanceTo(A2);
+  const ah = opts.arrow;                       // pilspisslengde
+
+  // Hjelpelinjer, fra litt utenfor målpunktet til litt forbi målelinja.
+  const over = oN.clone().multiplyScalar(ah * 0.9);
+  const gap = oN.clone().multiplyScalar(ah * 0.35);
+  const pts = [
+    a.clone().add(gap), A2.clone().add(over),
+    b.clone().add(gap), B2.clone().add(over),
+    A2, B2,
+  ];
+  const seg = new THREE.LineSegments(
+    new THREE.BufferGeometry().setFromPoints(pts),
+    new THREE.LineBasicMaterial({ color: DIM_COLOR, transparent: true, opacity: 0.85 }));
+  seg.userData.noExport = true;
+  seg.renderOrder = ORDER.tag - 1;
+  group.add(seg);
+
+  // Fylte pilspisser i målets eget plan, som på en arbeidstegning. Er målet
+  // kortere enn to pilspisser, snus de utover slik at de får plass.
+  const inn = span > ah * 2.6 ? 1 : -1;
+  const w = ah * 0.32;
+  const tri = [];
+  for (const [tip, s] of [[A2, 1], [B2, -1]]) {
+    const base = tip.clone().addScaledVector(dir, s * inn * ah);
+    tri.push(tip.clone(),
+             base.clone().addScaledVector(oN, w),
+             base.clone().addScaledVector(oN, -w));
+  }
+  const head = new THREE.Mesh(
+    new THREE.BufferGeometry().setAttribute('position',
+      new THREE.Float32BufferAttribute(tri.flatMap(v => [v.x, v.y, v.z]), 3)),
+    new THREE.MeshBasicMaterial({ color: DIM_COLOR, side: THREE.DoubleSide }));
+  head.name = 'maalpil';
+  head.renderOrder = ORDER.tag - 1;
+  group.add(head);
+
+  // Teksten står midt på målelinja - eksakt, ingen forskyvning langs den - og
+  // løftes vinkelrett klar av streken. Avstanden regnes fra teksthøyden, ikke
+  // fra pilspissen: påskrifta er festet i midten, så den må minst ut halve
+  // høyden sin før den slipper linja.
+  const mid = A2.clone().add(B2).multiplyScalar(0.5)
+    .addScaledVector(oN, opts.textOff);
+  hud.push({ kind: 'dim', p: toW(mid.x, mid.y, mid.z),
+             quat: planeQuat(dir, oN),
+             path, value: Math.round(value * 10) / 10,
+             step: opts.step ?? 10, min: opts.min ?? 1 });
+}
+
+function buildDimensions(m, mnt, zTop, hud) {
+  const g = new THREE.Group();
+  g.name = 'maal';
+  const c = m.concrete, p = m.plate, a = m.anchors;
+  const V = (x, y, z) => new THREE.Vector3(x, y, z);
+  const S = Math.max(c.Lx, c.Ly);
+  const arrow = S * 0.011;
+  const textOff = TEXT_H(m) * 0.88;      // halve teksthøyden + et lite mellomrom
+  const opt = extra => ({ arrow, textOff, ...extra });
+
+  const x0 = -(c.Lx / 2 + c.ex), x1 = c.Lx / 2 - c.ex;
+  const y0 = -(c.Ly / 2 + c.ey), y1 = c.Ly / 2 - c.ey;
+  const zc = -c.h, D = S * 0.085;
+
+  // Betongdelen måles for seg, ved underkant.
+  dimension(g, hud, V(x0, y0, zc), V(x1, y0, zc), V(0, -D, 0),
+    'concrete.Lx', c.Lx, opt());
+  dimension(g, hud, V(x1, y0, zc), V(x1, y1, zc), V(D, 0, 0),
+    'concrete.Ly', c.Ly, opt());
+  dimension(g, hud, V(x1, y0, 0), V(x1, y0, zc), V(D * 0.75, -D * 0.75, 0),
+    'concrete.h', c.h, opt());
+
+  // Plata og boltavstandene hører sammen og måles i samme område, i platas
+  // plan: plata innerst, boltkjeden like utenfor.
+  const pos = anchorPositions(m);
+  const bxs = [...new Set(pos.map(q => q.x))].sort((u, w) => u - w);
+  const bys = [...new Set(pos.map(q => q.y))].sort((u, w) => u - w);
+  const P = Math.max(p.bx, p.by);
+  const g1 = P * 0.30, g2 = P * 0.68;
+
+  dimension(g, hud, V(-p.bx / 2, -p.by / 2, zTop), V(p.bx / 2, -p.by / 2, zTop),
+    V(0, -g1, 0), 'plate.bx', p.bx, opt());
+  dimension(g, hud, V(p.bx / 2, -p.by / 2, zTop), V(p.bx / 2, p.by / 2, zTop),
+    V(g1, 0, 0), 'plate.by', p.by, opt());
+
+  // Kjede fra platekant til platekant. Segmentet mellom to bolter er selve
+  // senteravstanden og kan redigeres; kantsegmentene er avledet.
+  const chain = (vals, boltSet, along, path, n) => {
+    const c2 = [...new Set(vals)].sort((u, w) => u - w);
+    for (let i = 0; i < c2.length - 1; i++) {
+      const bolts = boltSet.includes(c2[i]) && boltSet.includes(c2[i + 1]);
+      along(c2[i], c2[i + 1], (bolts && n > 1) ? path : null, c2[i + 1] - c2[i]);
+    }
+  };
+  chain([-p.bx / 2, ...bxs, p.bx / 2], bxs,
+    (u, w, path, val) => dimension(g, hud,
+      V(u, -p.by / 2, zTop), V(w, -p.by / 2, zTop), V(0, -g2, 0), path, val, opt()),
+    'anchors.sx', a.nx);
+  chain([-p.by / 2, ...bys, p.by / 2], bys,
+    (u, w, path, val) => dimension(g, hud,
+      V(p.bx / 2, u, zTop), V(p.bx / 2, w, zTop), V(g2, 0, 0), path, val, opt()),
+    'anchors.sy', a.ny);
+
+  dimension(g, hud, V(-p.bx / 2, -p.by / 2, mnt.offset + p.t),
+    V(-p.bx / 2, -p.by / 2, mnt.offset), V(-g1 * 0.5, -g1 * 0.5, 0),
+    'plate.t', p.t, opt({ step: 1 }));
+
+  dimension(g, hud, V(bxs[0], bys[bys.length - 1], 0), V(bxs[0], bys[bys.length - 1], -a.hef),
+    V(-P * 0.55, P * 0.55, 0), 'anchors.hef', a.hef, opt({ step: 5 }));
+
+  return g;
+}
+
+function loadMat(hex, active) {
+  return new THREE.MeshStandardMaterial({
+    name: active ? 'last' : 'last_null', color: hex,
+    roughness: 0.55, metalness: 0.05,
+    transparent: !active, opacity: active ? 1 : 0.2, depthWrite: active,
+  });
+}
+
+function forceArrow(tail, dir, len, hex, active = true) {
+  const g = new THREE.Group();
+  g.name = active ? 'kraftpil' : 'kraftpil_null';
+  const mat = loadMat(hex, active);
+  const headL = len * 0.34, shaftL = len - headL;
+  const shaft = new THREE.Mesh(
+    new THREE.CylinderGeometry(len * 0.030, len * 0.030, shaftL, 16), mat);
+  shaft.position.y = shaftL / 2;
+  const head = new THREE.Mesh(new THREE.ConeGeometry(len * 0.095, headL, 20), mat);
+  head.position.y = shaftL + headL / 2;
+  shaft.renderOrder = head.renderOrder = ORDER.load;
+  g.add(shaft, head);
+  g.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), dir.clone().normalize());
+  g.position.copy(tail);
+  return g;
+}
+
+// Momentpil: bue rundt aksen med kjegle tangentielt i enden. Omløpsretninga
+// følger høyrehåndsregelen - negativt moment sendes inn som negativ akse.
+function momentArrow(pos, axis, R, tube, hex, active = true) {
+  const g = new THREE.Group();
+  g.name = active ? 'momentpil' : 'momentpil_null';
+  const mat = loadMat(hex, active);
+  const sweep = Math.PI * 1.45;
+  const arc = new THREE.Mesh(new THREE.TorusGeometry(R, tube, 12, 56, sweep), mat);
+  const head = new THREE.Mesh(new THREE.ConeGeometry(tube * 3.2, tube * 9, 18), mat);
+  head.position.set(R * Math.cos(sweep), R * Math.sin(sweep), 0);
+  head.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0),
+    new THREE.Vector3(-Math.sin(sweep), Math.cos(sweep), 0));
+  arc.renderOrder = head.renderOrder = ORDER.load;
+  g.add(arc, head);
+  g.quaternion.setFromUnitVectors(new THREE.Vector3(0, 0, 1), axis.clone().normalize());
+  g.position.copy(pos);
+  return g;
+}
+
+// Stiplet akse: tynn svart strek uten tykkelse. Aksene ligger nå utenfor
+// betongen, over lys bakgrunn, så en 1 px linje leses fint - og holder seg
+// diskret slik en hjelpelinje skal.
+function dashedAxis(origin, dir, len) {
+  const l = new THREE.Line(
+    new THREE.BufferGeometry().setFromPoints(
+      [origin.clone(), origin.clone().addScaledVector(dir, len)]),
+    new THREE.LineDashedMaterial({ color: 0x14120f, dashSize: len * 0.022,
+      gapSize: len * 0.018, transparent: true, opacity: 0.75 }));
+  l.computeLineDistances();
+  l.name = 'akse';
+  l.userData.noExport = true;
+  return l;
+}
+
+// Aksetriade for lastene. Én stiplet linje pr. akse ut fra platesenteret, med
+// kraft og moment for den aksen samlet ute ved enden - i stedet for store
+// piler oppå selve forbindelsen.
+const AXIS_COLOR = { x: 0x3f8f4a, y: 0xc0443c, z: 0x2f6fb5 };   // grønn, rød, blå
+const AXIS_TEXT = { x: '#2f7038', y: '#a33a33', z: '#255a94' };
+
+function loadTriad(m, zTop, hud) {
+  const g = new THREE.Group();
+  g.name = 'laster';
+  const L = m.load, c = m.concrete;
+  const S = Math.max(c.Lx, c.Ly);
+
+  // Aksene i x og y føres forbi betongkanten, slik at pil og momentbue står
+  // fritt utenfor klossen i stedet for å legge seg oppå den.
+  const margin = S * 0.10;
+  const lenX = (c.Lx / 2 - c.ex) + margin;
+  const lenY = (c.Ly / 2 - c.ey) + margin;
+  const lenZ = S * 0.30;
+
+  const aL = S * 0.11;        // pillengde
+  const R = S * 0.052;        // momentbuens radius
+  const tube = S * 0.0055;
+
+  const o = new THREE.Vector3(0, 0, zTop + Math.max(5, S * 0.006));
+
+  const axes = [
+    // mU/mV spenner ut planet momentbuen ligger i - det står vinkelrett på
+    // aksen, så momentverdien legges i samme plan som buen den hører til.
+    { k: 'x', dir: new THREE.Vector3(1, 0, 0), len: lenX,
+      mU: new THREE.Vector3(0, 1, 0), mV: new THREE.Vector3(0, 0, 1),
+      F: L.Vx, Fp: 'load.Vx', M: L.Mx, Mp: 'load.Mx' },
+    { k: 'y', dir: new THREE.Vector3(0, 1, 0), len: lenY,
+      mU: new THREE.Vector3(1, 0, 0), mV: new THREE.Vector3(0, 0, 1),
+      F: L.Vy, Fp: 'load.Vy', M: L.My, Mp: 'load.My' },
+    { k: 'z', dir: new THREE.Vector3(0, 0, 1), len: lenZ,
+      mU: new THREE.Vector3(1, 0, 0), mV: new THREE.Vector3(0, 1, 0),
+      F: L.N,  Fp: 'load.N',  M: L.Mz, Mp: 'load.Mz' },
+  ];
+
+  for (const a of axes) {
+    const col = AXIS_COLOR[a.k];
+    g.add(dashedAxis(o, a.dir, a.len));
+
+    // Moment om aksen, plassert der kraftpila starter. Omløpet følger
+    // høyrehåndsregelen; null vises bleknet i positiv retning.
+    const mOn = Math.abs(a.M) > 1;
+    g.add(momentArrow(o.clone().addScaledVector(a.dir, a.len),
+      a.dir.clone().multiplyScalar(mOn && a.M < 0 ? -1 : 1), R, tube, col, mOn));
+
+    const fOn = Math.abs(a.F) > 1;
+    const fwd = !fOn || a.F > 0;
+    g.add(forceArrow(o.clone().addScaledVector(a.dir, fwd ? a.len : a.len + aL),
+      a.dir.clone().multiplyScalar(fwd ? 1 : -1), aL, col, fOn));
+
+    // Bare tallet og enheten: hvilken komponent det er, framgår av hvor den
+    // står. Kraftverdien legges i planet langs aksen, ved kraftpila.
+    // Langs z ville lesretninga blitt loddrett. Da peker den nesten rett inn i
+    // skjermen sett ovenfra, og snuingen vipper fram og tilbake. Teksten legges
+    // derfor vannrett ved den loddrette pila.
+    const X = new THREE.Vector3(1, 0, 0);
+    const up = a.k === 'z' ? X : UP;
+    const fq = a.k === 'z' ? planeQuat(X, UP) : planeQuat(a.dir, UP);
+    const fp = o.clone().addScaledVector(a.dir, a.len + aL * 0.62)
+      .addScaledVector(up, R * 0.85);
+    hud.push({ kind: 'load', quat: fq, color: AXIS_TEXT[a.k],
+      p: toW(fp.x, fp.y, fp.z),
+      path: a.Fp, value: a.F, scale: 1000, unit: 'kN', dec: 2, step: 1 });
+
+    // Momentverdien legges i buens eget plan, like utenfor buen.
+    const mp = o.clone().addScaledVector(a.dir, a.len)
+      .addScaledVector(a.mV, R * 1.55);
+    hud.push({ kind: 'load', quat: planeQuat(a.mU, a.mV), color: AXIS_TEXT[a.k],
+      p: toW(mp.x, mp.y, mp.z),
+      path: a.Mp, value: a.M, scale: 1e6, unit: 'kNm', dec: 3, step: 0.5 });
+  }
+  return g;
+}
+
+// --- hovedbygger -----------------------------------------------------------
+function buildScene(v, opts = {}) {
+  const show = { concrete: true, cone: true, wedge: true, loads: true,
+                 labels: true, rebar: true, plate: true, dims: true,
+                 colorMode: 'material', ...opts };
+  const byUtil = show.colorMode === 'utilisation';
+  const m = v.model, res = v.res;
+  const hud = [];                     // HTML-påskrifter verten plasserer
+  const root = new THREE.Group();
+  root.name = 'forankring';
+  root.rotation.x = -Math.PI / 2;      // ingenioer-z -> Three-y
+
+  const c = m.concrete, p = m.plate, a = m.anchors;
+
+  // ---- betongdel --------------------------------------------------------
+  if (show.concrete) {
+    const bl = boxMesh(c.Lx, c.Ly, c.h, MAT.concrete(c.Lx, c.Ly), 'betong');
+    bl.position.set(-c.ex, -c.ey, -c.h / 2);
+    root.add(bl);
+    const eg = new THREE.LineSegments(
+      new THREE.EdgesGeometry(bl.geometry),
+      new THREE.LineBasicMaterial({ color: 0x8a857a, transparent: true, opacity: 0.55 }));
+    eg.position.copy(bl.position);
+    eg.userData.noExport = true;
+    root.add(eg);
+  }
+
+  // ---- undergyting ------------------------------------------------------
+  const mnt = mounting(m);
+  if (mnt.kind === 'grout' && mnt.offset > 0) {
+    const ov = 25;   // gytesjiktet stikker litt utenfor plata
+    const gr = boxMesh(p.bx + 2 * ov, p.by + 2 * ov, mnt.offset, MAT.grout(), 'gytemasse');
+    gr.position.set(0, 0, mnt.offset / 2);
+    root.add(gr);
+  }
+
+  // ---- stålplate --------------------------------------------------------
+  if (show.plate) {
+    const pl = boxMesh(p.bx, p.by, p.t, MAT.plate(), 'forankringsplate');
+    pl.position.set(0, 0, mnt.offset + p.t / 2);
+    pl.renderOrder = ORDER.steel;
+    root.add(pl);
+  }
+
+  // ---- bolter -----------------------------------------------------------
+  const utilByAnchor = anchorUtil(v);
+  const zTop = mnt.offset + p.t;
+  const steelMat = MAT.steel();
+  for (const an of res.anchors) {
+    const u = utilByAnchor.get(an.id) ?? 0;
+    const mat = byUtil
+      ? new THREE.MeshStandardMaterial({
+          name: `bolt_u${Math.round(u * 100)}`, color: utilColor(u),
+          roughness: 0.62, metalness: 0.2, ...OVER_CONCRETE })
+      : steelMat;
+    const g = new THREE.Group();
+    g.name = `bolt_${an.id}`;
+
+    // Sveist bolt slutter ved platas underside og har en sveisekrage der.
+    // Gjennomboltet bolt går gjennom plata og får skive og mutter over.
+    const welded = a.attachment !== 'bolted';
+    const nutH = 0.8 * a.d, nutR = 0.87 * a.d;      // sekskantmutter, ca. M-serie
+    const washT = 0.16 * a.d, washR = 1.1 * a.d;
+    const shaftTop = welded ? mnt.offset
+                            : zTop + washT + nutH + 0.3 * a.d;
+    const zBot = -a.hef + a.k;                      // underkant skaft = overkant hode
+    const shaftLen = shaftTop - zBot;
+
+    const cyl = (r, h, seg = 24) => new THREE.CylinderGeometry(r, r, h, seg);
+    const put = (mesh, z, name) => {
+      mesh.rotation.x = Math.PI / 2;
+      mesh.position.set(an.x, an.y, z);
+      mesh.renderOrder = ORDER.steel;
+      mesh.name = `${name}_${an.id}`;
+      g.add(mesh);
+      return mesh;
+    };
+
+    put(new THREE.Mesh(cyl(a.d / 2, shaftLen), mat), zBot + shaftLen / 2, 'skaft');
+    // Hodet tegnes fra modellens egne verdier, ikke fra standardtabellen,
+    // slik at en redigert hodediameter faktisk vises.
+    put(new THREE.Mesh(cyl(a.dh / 2, a.k), mat), -a.hef + a.k / 2, 'hode');
+
+    if (welded) {
+      // Sveisekrage: videst inntil plata, smalner av nedover.
+      const wh = 0.35 * a.d;
+      put(new THREE.Mesh(
+        new THREE.CylinderGeometry(0.85 * a.d, 0.55 * a.d, wh, 20), mat),
+        mnt.offset - wh / 2, 'sveis');
+    } else {
+      put(new THREE.Mesh(cyl(washR, washT), mat), zTop + washT / 2, 'skive');
+      put(new THREE.Mesh(cyl(nutR, nutH, 6), mat), zTop + washT + nutH / 2, 'mutter');
+      // Ved avstandsmontasje står plata på justeringsmuttere.
+      if (mnt.kind === 'standoff' && mnt.offset > nutH) {
+        put(new THREE.Mesh(cyl(nutR, nutH, 6), mat), mnt.offset - nutH / 2, 'justermutter');
+        put(new THREE.Mesh(cyl(washR, washT), mat),
+          mnt.offset - nutH - washT / 2, 'justerskive');
+      }
+    }
+
+    if (show.labels) {
+      hud.push({ kind: 'value', p: toW(an.x, an.y, zTop + Math.max(70, p.bx * 0.30)),
+        quat: planeQuat(new THREE.Vector3(1, 0, 0), UP),
+        text: `${an.N > 1 ? n(an.N / 1000, 1) + ' kN' : '–'} │ ${n(an.V / 1000, 1)} kN`,
+        color: byUtil ? '#' + utilColor(u).getHexString() : '#2b2924' });
+    }
+    root.add(g);
+  }
+
+  // ---- bruddkjegle i strekk --------------------------------------------
+  const cone = v.checks.find(k => k.id === 'N-cone');
+  if (show.cone && res.tension.anchors.length && cone && Number.isFinite(cone.NRd)) {
+    const ccr = 1.5 * a.hef;
+    const xs = res.tension.anchors.map(t => t.x), ys = res.tension.anchors.map(t => t.y);
+    const b = { x0: Math.min(...xs), x1: Math.max(...xs), y0: Math.min(...ys), y1: Math.max(...ys) };
+    const lim = memberLimits(m);
+    const t = {
+      x0: Math.max(b.x0 - ccr, lim.x0), x1: Math.min(b.x1 + ccr, lim.x1),
+      y0: Math.max(b.y0 - ccr, lim.y0), y1: Math.min(b.y1 + ccr, lim.y1),
+    };
+    const zB = -a.hef, zT = 0;
+    const V = [
+      [b.x0, b.y0, zB], [b.x1, b.y0, zB], [b.x1, b.y1, zB], [b.x0, b.y1, zB],
+      [t.x0, t.y0, zT], [t.x1, t.y0, zT], [t.x1, t.y1, zT], [t.x0, t.y1, zT],
+    ];
+    const F = [[0,1,5],[0,5,4],[1,2,6],[1,6,5],[2,3,7],[2,7,6],[3,0,4],[3,4,7],
+               [4,5,6],[4,6,7]];
+    const cm = polyMesh(V, F, MAT.cone(), 'bruddkjegle');
+    cm.renderOrder = 3;
+    root.add(cm, outline(cm, 0xffa53d));
+  }
+
+  // ---- kantbrudd-kile ---------------------------------------------------
+  const edge = v.checks.find(k => k.id?.startsWith('V-edge'));
+  if (show.wedge && edge && Number.isFinite(edge.NRd) && edge.util > 0) {
+    const w = edgeWedge(m, res, edge.edgeDir);
+    if (w) {
+      const wm = polyMesh(w.V, w.F, MAT.wedge(), 'kantbrudd');
+      wm.renderOrder = 3;
+      root.add(wm, outline(wm, 0xff5f56));
+    }
+  }
+
+  // ---- forankringsarmering ---------------------------------------------
+  if (show.rebar && m.code.supplementaryReinf && m.reinf) {
+    const r = m.reinf, rm = MAT.rebar();
+    const pts = anchorPositions(m);
+    const per = Math.max(1, Math.round(r.n / pts.length));
+    for (const pt of pts) {
+      for (let i = 0; i < per; i++) {
+        const ang = (i / per) * Math.PI * 2;
+        const off = a.d / 2 + r.ds / 2 + 6;
+        const bar = new THREE.Mesh(
+          new THREE.CylinderGeometry(r.ds / 2, r.ds / 2, r.l1, 12), rm);
+        bar.rotation.x = Math.PI / 2;
+        bar.position.set(pt.x + Math.cos(ang) * off, pt.y + Math.sin(ang) * off,
+          -a.hef + r.l1 / 2);
+        bar.name = 'armering';
+        bar.renderOrder = ORDER.steel;
+        root.add(bar);
+      }
+    }
+  }
+
+  // ---- laster -----------------------------------------------------------
+  if (show.loads) root.add(loadTriad(m, zTop, hud));
+
+  // ---- målsetting -------------------------------------------------------
+  if (show.dims) root.add(buildDimensions(m, mnt, zTop, hud));
+
+  // 1 CSS-piksel = 1 mm i modellen ved skala 1. Skalaen settes slik at
+  // teksten holder samme andel av modellen uansett hvor stor den er.
+  const hudScale = HUD_SCALE(m);
+  return { root, hud, hudScale };
+}
+
+function memberLimits(m) {
+  const c = m.concrete;
+  return {
+    x0: c.freeEdges.xNeg ? -(c.Lx / 2 + c.ex) : -1e6,
+    x1: c.freeEdges.xPos ? (c.Lx / 2 - c.ex) : 1e6,
+    y0: c.freeEdges.yNeg ? -(c.Ly / 2 + c.ey) : -1e6,
+    y1: c.freeEdges.yPos ? (c.Ly / 2 - c.ey) : 1e6,
+  };
+}
+
+// Kantbruddlegemet: kile fra forreste boltrad ut til kantflata.
+function edgeWedge(m, res, dir) {
+  if (!dir) return null;
+  const all = anchorPositions(m);
+  const ds = all.map(p => edgeDistances(m, p.x, p.y)[dir]);
+  const c1 = Math.min(...ds);
+  if (!Number.isFinite(c1)) return null;
+  const front = all.filter((p, i) => Math.abs(ds[i] - c1) < 1e-6);
+  const lim = memberLimits(m);
+  const hv = -Math.min(1.5 * c1, m.concrete.h);
+  const axisX = dir.startsWith('x');
+  const face = dir === 'xPos' ? lim.x1 : dir === 'xNeg' ? lim.x0
+             : dir === 'yPos' ? lim.y1 : lim.y0;
+  const t = p => (axisX ? p.y : p.x);
+  const tl = Math.max(Math.min(...front.map(t)) - 1.5 * c1, axisX ? lim.y0 : lim.x0);
+  const th = Math.min(Math.max(...front.map(t)) + 1.5 * c1, axisX ? lim.y1 : lim.x1);
+  const al = Math.min(...front.map(t)), ah = Math.max(...front.map(t));
+  const ax = axisX ? front[0].x : front[0].y;    // boltradens posisjon i lastretning
+
+  const P = (u, w, z) => axisX ? [u, w, z] : [w, u, z];
+  const V = [
+    P(face, tl, 0), P(face, th, 0), P(face, th, hv), P(face, tl, hv),   // kantflata
+    P(ax, al, 0), P(ax, ah, 0), P(ax, ah, hv), P(ax, al, hv),           // boltlinja
+  ];
+  const F = [[0,1,5],[0,5,4],[3,7,6],[3,6,2],[0,4,7],[0,7,3],[1,2,6],[1,6,5],
+             [4,5,6],[4,6,7],[0,3,2],[0,2,1]];
+  return { V, F };
+}
+
+// Utnyttelse pr. bolt (staal + uttrekk, det verste)
+function anchorUtil(v) {
+  const map = new Map();
+  const perAnchor = v.checks.filter(c => c.scope === 'bolt' && Number.isFinite(c.NRd));
+  const grp = v.checks.filter(c => c.scope === 'gruppe' && Number.isFinite(c.util));
+  const gmax = grp.length ? Math.max(...grp.map(c => c.util)) : 0;
+  for (const a of v.res.anchors) {
+    let u = gmax;
+    for (const c of perAnchor) {
+      const Ed = c.id.startsWith('N') ? a.N : a.V;
+      u = Math.max(u, Ed / c.NRd);
+    }
+    map.set(a.id, u);
+  }
+  return map;
+}
+
+// ===== src/ui/fields.js ============================================
+// Datadrevet inndatadefinisjon. Nye parametre legges til her - ikke i HTML.
+
+const FIELDS = [
+  { group: 'Regelverk', items: [
+    { p: 'code.standard', l: 'Regelverk', t: 'select', o: [
+      ['EN1992-4', 'NS-EN 1992-4:2018'], ['B19', 'Betongelementboka B19']] },
+    { p: 'code.cracked', l: 'Opprisset betong', t: 'bool' },
+    { p: 'code.gammaC', l: 'γ_c', t: 'num', step: 0.05 },
+    { p: 'code.denseReinf', l: 'Tett armering (c/c < 150)', t: 'bool' },
+    { p: 'code.supplementaryReinf', l: 'Forankringsarmering', t: 'bool' },
+    { p: 'code.edgeReinf', l: 'Kantarmering (ψ_re,V)', t: 'select', o: [
+      ['none', 'Ingen'], ['bars', 'Kantjern ⌀ ≥ 12'], ['bars+stirrups', 'Kantjern + bøyler']] },
+    { p: 'code.holeClearanceFilled', l: 'Alle bolter tar skjær', t: 'bool',
+      when: m => m.anchors.attachment === 'bolted',
+      hint: 'Krever at hullklaringen er fylt. Sveiste bolter har ingen klaring ' +
+            'og tar alltid skjær.' },
+  ] },
+
+  { group: 'Betongdel', items: [
+    { p: 'concrete.grade', l: 'Fasthetsklasse', t: 'select',
+      o: CONCRETE_GRADES.map(g => [g.id, `${g.id}  (f_ck = ${g.fck})`]) },
+    { p: 'concrete.Lx', l: 'Lengde L_x', t: 'num', u: 'mm', step: 50 },
+    { p: 'concrete.Ly', l: 'Lengde L_y', t: 'num', u: 'mm', step: 50 },
+    { p: 'concrete.h', l: 'Tykkelse h', t: 'num', u: 'mm', step: 10 },
+    { p: 'concrete.ex', l: 'Plate offset e_x', t: 'num', u: 'mm', step: 10 },
+    { p: 'concrete.ey', l: 'Plate offset e_y', t: 'num', u: 'mm', step: 10 },
+    { p: 'concrete.freeEdges.xNeg', l: 'Fri kant −x', t: 'bool' },
+    { p: 'concrete.freeEdges.xPos', l: 'Fri kant +x', t: 'bool' },
+    { p: 'concrete.freeEdges.yNeg', l: 'Fri kant −y', t: 'bool' },
+    { p: 'concrete.freeEdges.yPos', l: 'Fri kant +y', t: 'bool' },
+  ] },
+
+  { group: 'Forankringsplate', items: [
+    { p: 'plate.bx', l: 'Bredde b_x', t: 'num', u: 'mm', step: 10 },
+    { p: 'plate.by', l: 'Bredde b_y', t: 'num', u: 'mm', step: 10 },
+    { p: 'plate.t', l: 'Tykkelse t', t: 'num', u: 'mm', step: 1 },
+    { p: 'plate.mount', l: 'Montasje', t: 'select', o: [
+      ['direct', 'Direkte mot betong'],
+      ['grout', 'Undergyting'],
+      ['standoff', 'Avstandsmontert'],
+    ] },
+    { p: 'plate.tGrout', l: 'Gytetykkelse', t: 'num', u: 'mm', step: 5,
+      when: m => m.plate.mount === 'grout' },
+    { p: 'plate.fckGrout', l: 'Gytemasse f_ck', t: 'num', u: 'MPa', step: 5,
+      when: m => m.plate.mount === 'grout',
+      hint: 'Må være minst like fast som betongen, og minst 30 N/mm², for at ' +
+            'undergytingen skal regnes som fast anlegg.' },
+    { p: 'plate.gap', l: 'Fri avstand', t: 'num', u: 'mm', step: 5,
+      when: m => m.plate.mount === 'standoff' },
+  ] },
+
+  { group: 'Bolter', items: [
+    { p: 'anchors.d', l: 'Diameter', t: 'select',
+      o: STUD_SIZES.map(s => [s.d, `⌀${s.d}  (hode ⌀${s.dh})`]), num: true },
+    { p: 'anchors.attachment', l: 'Innfesting til plate', t: 'select', o: [
+      ['welded', 'Sveist til plata'],
+      ['bolted', 'Gjennomboltet (skive + mutter)'],
+    ] },
+    { p: 'anchors.hef', l: 'h_ef', t: 'num', u: 'mm', step: 5 },
+    { p: 'anchors.dh', l: 'Hodediameter ⌀_h', t: 'num', u: 'mm', step: 1,
+      hint: 'Settes fra EN ISO 13918 når du velger boltdiameter. Egen verdi ' +
+            'står til du endrer diameteren igjen. Styrer uttrekkskapasiteten.' },
+    { p: 'anchors.k', l: 'Hodetykkelse k', t: 'num', u: 'mm', step: 1,
+      hint: 'Settes fra EN ISO 13918 når du velger boltdiameter.' },
+    { p: 'anchors.steel', l: 'Stålkvalitet', t: 'select', o: STUD_STEELS.map(s => [s.id, s.id]) },
+    { p: 'anchors.nx', l: 'Antall i x', t: 'num', step: 1, min: 1, auto: 'x' },
+    { p: 'anchors.ny', l: 'Antall i y', t: 'num', step: 1, min: 1, auto: 'y' },
+    { p: 'anchors.sx', l: 'c/c i x', t: 'num', u: 'mm', step: 10,
+      hint: 'Settes automatisk når antallet endres. Egen verdi står til du ' +
+            'endrer antallet igjen.' },
+    { p: 'anchors.sy', l: 'c/c i y', t: 'num', u: 'mm', step: 10,
+      hint: 'Settes automatisk når antallet endres. Egen verdi står til du ' +
+            'endrer antallet igjen.' },
+  ] },
+
+  { group: 'Forankringsarmering', when: m => m.code.supplementaryReinf, items: [
+    { p: 'reinf.ds', l: 'Diameter ⌀', t: 'num', u: 'mm', step: 2 },
+    { p: 'reinf.n', l: 'Antall bein', t: 'num', step: 1 },
+    { p: 'reinf.l1', l: 'Forankringslengde l₁', t: 'num', u: 'mm', step: 10 },
+    { p: 'reinf.fyk', l: 'f_yk', t: 'num', u: 'MPa', step: 50 },
+    { p: 'reinf.hooked', l: 'Kroket / bøyd ende', t: 'bool' },
+    { p: 'reinf.goodBond', l: 'Gode heftforhold', t: 'bool' },
+    { p: 'reinf.nV', l: 'Kantarmering, antall', t: 'num', step: 1 },
+    { p: 'reinf.dsV', l: 'Kantarmering ⌀', t: 'num', u: 'mm', step: 2 },
+  ] },
+
+];
+
+const get = (o, p) => p.split('.').reduce((a, k) => a?.[k], o);
+function set(o, p, v) {
+  const ks = p.split('.'), last = ks.pop();
+  const t = ks.reduce((a, k) => (a[k] ??= {}), o);
+  t[last] = v;
+}
+
+// ===== src/ui/app.js ===============================================
+// ---------------------------------------------------------------------------
+//  Applikasjonslag: skjema -> modell -> beregning -> 3D + resultat.
+//
+//  Tre ruter: inndata med gruppevelger, visning (3D eller utregningsark),
+//  og resultatlista som alltid står. Klikker du en kontroll, viser midtruta
+//  hele utregninga for den - resultatlista blir stående ved siden av.
+// ---------------------------------------------------------------------------
+
+const $ = s => document.querySelector(s);
+const el = (t, c, h) => { const e = document.createElement(t); if (c) e.className = c;
+                          if (h != null) e.innerHTML = h; return e; };
+const pct = u => Number.isFinite(u) ? Math.round(u * 100) + ' %' : '–';
+const esc = s => String(s).replace(/[&<>]/g, ch => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' }[ch]));
+
+const MOUNT_TXT = { direct: 'direkte mot betong', grout: 'undergyting',
+                    standoff: 'avstandsmontert' };
+
+const REINF_DEFAULT = () =>
+  ({ ds: 12, n: 4, l1: 300, hooked: true, goodBond: true, fyk: 500, nV: 0, dsV: 12, fykV: 500 });
+
+let model = Object.assign(defaultModel(), { reinf: REINF_DEFAULT() });
+let showOpts = { cone: true, wedge: true, loads: true, labels: false, concrete: true,
+                 rebar: true, dims: true, colorMode: 'material' };
+let hudItems = [];        // {el, pos, quat, scale} – sendes til stage.setLabels
+let activeGroup = 'Betongdel';
+let activeCheck = null;
+let viewTab = '3d';
+
+// Kort sammendrag pr. gruppe, så velgeren viser tilstanden uten at du åpner den.
+const SUMMARY = {
+  'Regelverk': m => m.code.standard === 'EN1992-4' ? 'EN 1992-4' : 'B19',
+  'Betongdel': m => m.concrete.grade,
+  'Forankringsplate': m => `${m.plate.bx}×${m.plate.by}`,
+  'Bolter': m => `${m.anchors.nx * m.anchors.ny} × ⌀${m.anchors.d}`,
+  'Forankringsarmering': m => `${m.reinf.n} × ⌀${m.reinf.ds}`,
+  'Laster': m => `N ${kN(m.load.N)} kN`,
+};
+
+function sync(m) {
+  const g = CONCRETE_GRADES.find(x => x.id === m.concrete.grade);
+  if (g) m.concrete.fck = g.fck;
+  const s = STUD_STEELS.find(x => x.id === m.anchors.steel);
+  if (s) { m.anchors.fyk = s.fyk; m.anchors.fuk = s.fuk; m.anchors.ductile = s.ductile; }
+  // Hodet settes fra standardtabellen når boltdiameteren endres, men en verdi
+  // brukeren selv har skrevet får stå til diameteren endres igjen.
+  if (m.anchors._dLast !== m.anchors.d) {
+    const ss = studSize(m.anchors.d);
+    m.anchors.dh = ss.dh; m.anchors.k = ss.k;
+    m.anchors._dLast = m.anchors.d;
+  }
+  m.reinf.fykV = m.reinf.fyk;
+  syncLoad(m);                  // `load` peker på den aktive kombinasjonen
+  // Sveiste bolter har ingen hullklaring, så alle tar skjær.
+  if (m.anchors.attachment === 'welded') m.code.holeClearanceFilled = true;
+  return m;
+}
+
+// Slår ei lagra prosjektfil sammen med standardmodellen, ett nivå djupt, så
+// felt som er lagt til etter fila blei lagra likevel får ein fornuftig verdi.
+function mergeModel(loaded) {
+  const base = Object.assign(defaultModel(), { reinf: REINF_DEFAULT() });
+  for (const k of Object.keys(base)) {
+    const v = loaded[k];
+    if (v && typeof v === 'object' && !Array.isArray(v)) Object.assign(base[k], v);
+    else if (v !== undefined) base[k] = v;
+  }
+  return base;
+}
+
+// Antall bolter er endret: velg en senteravstand som holder dem innenfor plata
+// med jevn deling og kantavstand i [30, 50] mm. Skriver brukeren en egen verdi
+// etterpå, står den - til antallet endres igjen.
+function applyAutoSpacing(axis) {
+  const a = model.anchors, p = model.plate;
+  if (axis === 'x') a.sx = autoSpacing(p.bx, a.nx) || a.sx;
+  else a.sy = autoSpacing(p.by, a.ny) || a.sy;
+}
+
+const visibleGroups = () => FIELDS.filter(g => !g.when || g.when(model));
+
+// === inndata ==============================================================
+function renderGroups() {
+  const host = $('#groups');
+  host.innerHTML = '';
+  const groups = visibleGroups();
+  if (!groups.some(g => g.group === activeGroup)) activeGroup = groups[0].group;
+  for (const g of groups) {
+    const b = el('button', null,
+      `${g.group}<i>${SUMMARY[g.group] ? esc(SUMMARY[g.group](model)) : ''}</i>`);
+    b.setAttribute('aria-current', String(g.group === activeGroup));
+    b.onclick = () => { activeGroup = g.group; renderGroups(); renderForm(); };
+    host.appendChild(b);
+  }
+}
+
+function renderForm() {
+  const host = $('#form');
+  host.innerHTML = '';
+  const grp = visibleGroups().find(g => g.group === activeGroup);
+  if (!grp) return;
+  host.appendChild(el('h3', null, grp.group));
+  for (const f of grp.items) {
+    if (f.when && !f.when(model)) continue;
+    host.appendChild(field(f));
+  }
+
+  if (activeGroup === 'Bolter' && !model.code.supplementaryReinf)
+    host.appendChild(el('p', 'hint',
+      'Forankringsarmering slås på under Regelverk. Da erstatter armerings­kontrollen ' +
+      'betongkjeglebruddet.'));
+  if (activeGroup === 'Regelverk' && model.code.standard === 'B19')
+    host.appendChild(el('p', 'hint',
+      'B19-modulen er en tom plugin – formlene fra Betongelementboka er ikke lagt inn.'));
+}
+
+function field(f) {
+  const wrap = el('label', 'fld');
+  wrap.appendChild(el('span', 'lbl', esc(f.l) + (f.u ? ` <i>${esc(f.u)}</i>` : '')));
+  let input;
+  if (f.t === 'bool') {
+    input = el('input'); input.type = 'checkbox'; input.checked = !!get(model, f.p);
+    wrap.classList.add('bool');
+    input.onchange = () => { set(model, f.p, input.checked); refresh(true); };
+  } else if (f.t === 'select') {
+    input = el('select');
+    for (const [v, t] of f.o) { const o = el('option', null, esc(t)); o.value = v; input.appendChild(o); }
+    input.value = String(get(model, f.p));
+    input.onchange = () => { set(model, f.p, f.num ? +input.value : input.value); refresh(true); };
+  } else {
+    input = el('input'); input.type = 'number'; input.step = f.step ?? 1;
+    if (f.min != null) input.min = f.min;
+    const raw = get(model, f.p);
+    input.value = f.t === 'kn' ? raw / 1000 : f.t === 'knm' ? raw / 1e6 : raw;
+    const commit = () => {
+      const v = parseFloat(input.value);
+      if (!Number.isFinite(v)) return;
+      set(model, f.p, f.t === 'kn' ? v * 1000 : f.t === 'knm' ? v * 1e6 : v);
+      if (f.auto) applyAutoSpacing(f.auto);
+      refresh(!!f.auto);
+    };
+    // Felt som bygger om skjemaet må vente til du er ferdig å skrive, ellers
+    // rives feltet vekk under fingrene på deg midt i et tall.
+    if (f.auto) input.onchange = commit; else input.oninput = commit;
+  }
+  input.autocomplete = 'off';
+  if (f.hint) input.title = f.hint;
+  wrap.appendChild(input);
+  return wrap;
+}
+
+// === resultat =============================================================
+const utilCss = u => !Number.isFinite(u) ? 'var(--tx3)'
+  : u > 1 ? 'var(--bad)' : u > 0.7 ? 'var(--warn)' : 'var(--ok)';
+
+const family = c => c.id.startsWith('IA') ? 'Samvirkning'
+  : c.id.startsWith('N') ? 'Strekk' : 'Skjær';
+
+const applicable = c => c.expr ? Number.isFinite(c.util)
+  : Number.isFinite(c.util) && Number.isFinite(c.NRd);
+
+function bar(u, cls = '') {
+  const w = Number.isFinite(u) ? Math.min(100, u * 100) : 0;
+  return `<div class="track ${u > 1 ? 'full' : ''} ${cls}">` +
+         `<i style="width:${w}%;background:${utilCss(u)}"></i></div>`;
+}
+
+function renderResults(v) {
+  const m = model, a = m.anchors, g = v.gamma;
+  $('#verdict').innerHTML = Number.isFinite(v.maxUtil)
+    ? `<span style="color:${utilCss(v.maxUtil)}">maks ${pct(v.maxUtil)}</span> · ${esc(v.governing.mode)}`
+    : 'ingen kontroller';
+
+  const host = $('#results');
+  host.innerHTML = '';
+
+  const rows = [
+    ['Lastkombinasjon', `${model.load.name} · ${
+      model.load.limit === 'uls' ? 'bruddgrense' : 'bruksgrense'}`],
+    ['Regelverk', v.standard],
+    ['Betong', `${m.concrete.grade} · f_ck ${m.concrete.fck} N/mm²`],
+    ['Tilstand', m.code.cracked ? 'Opprisset' : 'Uopprisset'],
+    ['Bolter', `${a.nx}×${a.ny} ⌀${a.d} · h_ef ${a.hef} mm`],
+    ['Stål', `${a.steel}`],
+    ['Plate', `${m.plate.bx}×${m.plate.by}×${m.plate.t} mm · ${MOUNT_TXT[m.plate.mount]}`],
+    ['Innfesting', m.anchors.attachment === 'welded' ? 'Sveist til plata' : 'Gjennomboltet'],
+    ['Materialfaktorer', g.gMsN
+      ? `γ_Ms,N ${n(g.gMsN, 2)} · γ_Ms,V ${n(g.gMsV, 2)} · γ_Mc ${n(g.gMc, 2)}` : '–'],
+  ];
+  const ass = el('div', 'assump');
+  for (const [k, val] of rows)
+    ass.appendChild(el('div', 'row', `<span class="k">${esc(k)}</span><span class="v">${esc(val)}</span>`));
+  host.appendChild(ass);
+
+  for (const i of v.issues)
+    host.appendChild(el('div', 'msg ' + (i.level === 'error' ? 'err' : 'warn'), esc(i.text)));
+  if (v.bearing && !v.bearing.ok)
+    host.appendChild(el('div', 'msg warn',
+      `Kontakttrykk ${n(v.bearing.sigma, 2)} N/mm² > f_cd ${n(v.bearing.fcd, 2)} N/mm². ` +
+      'Øk plata eller betongfastheten.'));
+  if (m.code.standard === 'B19')
+    host.appendChild(el('div', 'msg warn',
+      'B19-modulen er en tom plugin. Formlene fra Betongelementboka er ikke lagt inn – ' +
+      'ingen tall er gjettet. Se <code>src/engine/b19.js</code>.'));
+
+  for (const fam of ['Strekk', 'Skjær', 'Samvirkning']) {
+    const list = v.checks.filter(c => family(c) === fam)
+      .sort((x, y) => (applicable(y) ? y.util : -1) - (applicable(x) ? x.util : -1));
+    if (!list.length) continue;
+    host.appendChild(el('h3', 'sect', fam));
+    for (const c of list) host.appendChild(checkRow(c));
+  }
+
+  host.appendChild(el('h3', 'sect', 'Kraftfordeling i boltegruppa'));
+  const wrap = el('div', 'pad');
+  const t = el('table', 'anchors');
+  t.innerHTML = '<thead><tr><th>Bolt</th><th>x</th><th>y</th><th>N</th><th>V</th></tr></thead>' +
+    '<tbody>' + v.res.anchors.map(an =>
+      `<tr><td>${an.id}</td><td>${an.x}</td><td>${an.y}</td>` +
+      `<td>${an.N > 1 ? kN(an.N) : '–'}</td><td>${kN(an.V)}</td></tr>`).join('') + '</tbody>';
+  wrap.appendChild(t);
+  wrap.appendChild(el('p', 'hint', 'x, y i mm fra platesenter. N, V i kN.'));
+  const cp = v.res.compression;
+  wrap.appendChild(el('p', 'hint', cp
+    ? `Trykkresultant ${kN(cp.C)} kN i (${n(cp.x, 0)}, ${n(cp.y, 0)}) mm, ` +
+      `maks kontakttrykk ${n(cp.sigmaMax, 2)} N/mm².`
+    : 'Ingen kontakt mot betongen – plata er avstivet, og boltene tar trykk i bøyning.'));
+  host.appendChild(wrap);
+}
+
+function checkRow(c) {
+  const ok = applicable(c);
+  const row = el('button', 'chk' + (ok ? (c.util > 1 ? ' over' : '') : ' na'));
+  row.setAttribute('aria-current', String(activeCheck === c.id));
+  const sub = !ok ? esc(c.note || 'Ikke aktuell for denne geometrien')
+    : c.expr ? `<b>${n(c.util, 2)}</b> / 1,00 · ${esc(c.expr)}`
+    : `<b>${kN(c.NEd)} kN</b> / ${kN(c.NRd)} kN · pkt. ${esc(c.clause)}`;
+  row.innerHTML =
+    `<div class="top"><span class="name">${esc(c.mode)}</span>` +
+    `<span class="pc">${ok ? pct(c.util) : '–'}</span></div>` +
+    (ok ? bar(c.util) : '<div style="height:8px"></div>') +
+    `<div class="sub">${sub}</div>`;
+  row.onclick = () => { activeCheck = c.id; setViewTab('calc'); refresh(false); };
+  return row;
+}
+
+// === lastkombinasjoner ====================================================
+// Tabellen er hele grensesnittet for lastene: én rad pr. kombinasjon, med
+// grensetilstand, de seks komponentene og utnyttelsen. Radioknappen velger
+// hvilken som vises i 3D og regnes ut i kontrollruta.
+const LOAD_COLS = [
+  ['N', 'N', 1000, 'kN'], ['Vx', 'V_x', 1000, 'kN'], ['Vy', 'V_y', 1000, 'kN'],
+  ['Mx', 'M_x', 1e6, 'kNm'], ['My', 'M_y', 1e6, 'kNm'], ['Mz', 'M_z', 1e6, 'kNm'],
+];
+
+function renderCombos() {
+  const host = $('#combos');
+  host.innerHTML =
+    '<thead><tr><th></th><th class="l">Navn</th><th class="l">Grensetilstand</th>' +
+    LOAD_COLS.map(([, sym, , u]) => `<th>${esc(sym)}<i>${u}</i></th>`).join('') +
+    '<th>Utnyttelse</th><th></th></tr></thead>';
+  const body = el('tbody');
+
+  for (const c of model.combos) {
+    const tr = el('tr');
+    if (c.id === model.activeCombo) tr.className = 'on';
+
+    const pick = el('input');
+    pick.type = 'radio'; pick.name = 'combo'; pick.checked = c.id === model.activeCombo;
+    pick.title = 'Vis denne i 3D og regn den ut';
+    pick.onchange = () => { model.activeCombo = c.id; refresh(false, true); };
+    tr.appendChild(el('td')).appendChild(pick);
+
+    const nm = el('input');
+    nm.type = 'text'; nm.value = c.name;
+    nm.oninput = () => { c.name = nm.value; refresh(false); };
+    tr.appendChild(el('td', 'l')).appendChild(nm);
+
+    const lim = el('select');
+    for (const [v, t] of LIMIT_STATES) {
+      const o = el('option', null, t); o.value = v; lim.appendChild(o);
+    }
+    lim.value = c.limit;
+    lim.onchange = () => { c.limit = lim.value; refresh(false, true); };
+    tr.appendChild(el('td', 'l')).appendChild(lim);
+
+    for (const [key, , scale] of LOAD_COLS) {
+      const inp = el('input');
+      inp.type = 'number'; inp.step = scale === 1000 ? 1 : 0.5;
+      inp.value = String(+(c[key] / scale).toFixed(scale === 1000 ? 2 : 3));
+      inp.oninput = () => {
+        const v = parseFloat(inp.value);
+        if (!Number.isFinite(v)) return;
+        c[key] = v * scale;
+        refresh(false);
+      };
+      tr.appendChild(el('td')).appendChild(inp);
+    }
+
+    const u = el('td');
+    u.appendChild(el('span', 'util', '–'));
+    u.dataset.combo = c.id;
+    tr.appendChild(u);
+
+    const del = el('button', 'del', '✕');
+    del.title = 'Slett kombinasjonen';
+    del.disabled = model.combos.length < 2;
+    del.onclick = () => {
+      model.combos = model.combos.filter(x => x.id !== c.id);
+      refresh(false, true);
+    };
+    tr.appendChild(el('td')).appendChild(del);
+
+    body.appendChild(tr);
+  }
+  host.appendChild(body);
+}
+
+// Kjører alle kombinasjonene, ikke bare den aktive, så tabellen viser hvilken
+// som styrer. Bruksgrense kontrolleres ikke: NS-EN 1992-4 dekker bruddgrense.
+function utilForCombos() {
+  const out = new Map();
+  for (const c of model.combos) {
+    if (c.limit !== 'uls') { out.set(c.id, null); continue; }
+    try { out.set(c.id, verify({ ...model, load: c })); }
+    catch { out.set(c.id, undefined); }
+  }
+  return out;
+}
+
+function paintComboUtils(res) {
+  let govId = null, govU = -1;
+  for (const [id, v] of res)
+    if (v && Number.isFinite(v.maxUtil) && v.maxUtil > govU) { govU = v.maxUtil; govId = id; }
+
+  for (const td of document.querySelectorAll('#combos td[data-combo]')) {
+    const v = res.get(td.dataset.combo);
+    const span = td.querySelector('.util');
+    if (!v) {
+      span.className = 'util na'; span.textContent = '–';
+      span.title = 'Bruksgrense kontrolleres ikke – NS-EN 1992-4 dekker bruddgrense.';
+      continue;
+    }
+    span.className = 'util';
+    span.style.color = utilCss(v.maxUtil);
+    span.textContent = pct(v.maxUtil);
+    span.title = v.governing?.mode ?? '';
+  }
+  const gov = model.combos.find(c => c.id === govId);
+  $('#combo-note').textContent = gov
+    ? `styrende: ${gov.name} · ${pct(govU)}`
+    : 'ingen bruddgrensekombinasjon';
+}
+
+// === utregningsark ========================================================
+function renderSheet(v) {
+  const host = $('#sheet');
+  const c = v.checks.find(x => x.id === activeCheck);
+  if (!c) {
+    host.innerHTML = '<p class="empty">Velg en kontroll i resultatlista for å se hele utregninga.</p>';
+    return;
+  }
+  const cal = c.calc, ok = applicable(c);
+  const H = [];
+  H.push(`<div class="hdr"><h2>${esc(c.mode)}</h2>` +
+    `<div class="ref">${esc(v.standard)}<br>pkt. ${esc(c.clause)}</div></div>`);
+
+  if (ok) {
+    H.push(`<div class="verdict"><span class="pc" style="color:${utilCss(c.util)}">` +
+      `${pct(c.util)}</span>${bar(c.util)}</div>`);
+  }
+  if (cal?.skipped) {
+    H.push(`<p class="note">${esc(cal.skipped)}</p>`);
+    host.innerHTML = H.join('');
+    return;
+  }
+  if (!cal) { host.innerHTML = H.join('') + '<p class="empty">Ingen utregning registrert.</p>'; return; }
+
+  if (cal.inputs.length) {
+    H.push('<h3>Inndata</h3><table class="io"><thead><tr>' +
+      '<th>Symbol</th><th style="text-align:right">Verdi</th><th></th><th>Hentet fra</th>' +
+      '</tr></thead><tbody>');
+    for (const i of cal.inputs)
+      H.push(`<tr><td class="sym">${esc(i.sym)}</td>` +
+        `<td class="num">${esc(n(i.value))}</td>` +
+        `<td class="unit">${esc(i.unit)}</td><td class="src">${esc(i.source)}</td></tr>`);
+    H.push('</tbody></table>');
+  }
+
+  if (cal.steps.length) {
+    H.push('<h3>Utregning</h3>');
+    for (const s of cal.steps) H.push(stepHtml(s));
+  }
+
+  if (cal.result) {
+    H.push('<h3>Kapasitet</h3>');
+    H.push(stepHtml(cal.result, 'res'));
+  }
+
+  if (cal.check) {
+    H.push('<h3>Kontroll</h3>');
+    const pass = cal.check.value <= 1;
+    H.push(`<div class="step final ${pass ? 'ok' : 'bad'}">` +
+      `<div class="l1"><span class="sym">Utnyttelse</span>` +
+      `<span class="ref">${pass ? '✓ Kapasiteten holder' : '✕ Kapasiteten er overskredet'}</span></div>` +
+      `<div class="eq"><span>=</span><span class="f">${esc(cal.check.formula)} ≤ 1,0</span>` +
+      `<span>=</span><span class="s">${esc(cal.check.subst)}</span>` +
+      `<span>=</span><span class="v" style="color:${utilCss(cal.check.value)}">` +
+      `${esc(n(cal.check.value, 3))}   (${pct(cal.check.value)})</span></div></div>`);
+  }
+  if (c.note) H.push(`<p class="note">${esc(c.note)}</p>`);
+  host.innerHTML = H.join('');
+}
+
+function stepHtml(s, cls = '') {
+  const val = `${esc(n(s.value))}${s.unit ? ' ' + esc(s.unit) : ''}`;
+  return `<div class="step ${cls}">` +
+    `<div class="l1"><span class="sym">${esc(s.sym)}</span>` +
+    `<span class="desc">${esc(s.desc || '')}</span>` +
+    `<span class="ref">${s.ref ? esc(s.ref) : ''}</span></div>` +
+    `<div class="eq">` +
+    `<span>=</span><span class="f">${esc(s.formula)}</span>` +
+    (s.subst && s.subst !== '–'
+      ? `<span>=</span><span class="s">${esc(s.subst)}</span>` : '') +
+    `<span>=</span><span class="v">${val}</span></div>` +
+    (s.note ? `<p class="note">${esc(s.note)}</p>` : '') + '</div>';
+}
+
+// === påskrifter i 3D ======================================================
+// Mål og lastverdier tegnes som HTML over lerretet, ikke som sprites i scenen.
+// Da holder de fast skriftstørrelse, står alltid rett på skjermen uansett
+// kameravinkel, og verdiene kan redigeres direkte i modellen.
+function buildHud(items, scale) {
+  hudItems = [];
+  for (const it of items) {
+    let node;
+    if (it.kind === 'dim') {
+      node = el('div', 'dim');
+      if (it.path) {
+        // Mål som styrer modellen kan skrives i; de øvrige er avledet og vises
+        // som tall, slik at det er tydelig hva du faktisk kan endre.
+        const inp = el('input');
+        inp.type = 'number'; inp.step = it.step; inp.min = it.min;
+        inp.value = it.value;
+        inp.onchange = () => {
+          const val = parseFloat(inp.value);
+          if (!Number.isFinite(val) || val < it.min) { inp.value = it.value; return; }
+          set(model, it.path, val);
+          refresh(true);
+        };
+        node.appendChild(inp);
+      } else {
+        node.classList.add('ro');
+        node.textContent = it.value;
+      }
+    } else if (it.kind === 'load') {
+      // Bare tallet og enheten - hvilken komponent det er, framgår av hvor
+      // verdien står i forhold til pila.
+      node = el('div', 'hload');
+      node.style.color = it.color;
+      const inp = el('input');
+      inp.type = 'number'; inp.step = it.step;
+      // Ingen etterhengte nuller: 25 blir «25», ikke «25,0». Skriver brukeren
+      // desimaler, blir de stående - dec setter bare øvre presisjon.
+      inp.value = String(+(it.value / it.scale).toFixed(it.dec));
+      inp.onchange = () => {
+        const val = parseFloat(inp.value);
+        if (!Number.isFinite(val)) return;
+        set(model, it.path, val * it.scale);
+        refresh(true);
+      };
+      node.append(inp, el('span', 'u', it.unit));
+    } else {
+      node = el('div', 'hval', esc(it.text));
+      node.style.color = it.color;
+    }
+    hudItems.push({ el: node, pos: it.p, quat: it.quat, scale });
+  }
+  $('#stage').setLabels(hudItems);
+}
+
+// === visning ==============================================================
+function setViewTab(t) {
+  viewTab = t;
+  $('#tab-3d').setAttribute('aria-pressed', String(t === '3d'));
+  $('#tab-calc').setAttribute('aria-pressed', String(t === 'calc'));
+  $('#wrap-3d').hidden = t !== '3d';
+  $('#hud').hidden = t !== '3d';
+  $('#wrap-calc').hidden = t !== 'calc';
+  $('#viewsub').hidden = t !== '3d';
+  for (const b of document.querySelectorAll('#viewbtns .btn, #exportbtns .btn'))
+    b.disabled = t !== '3d';
+  $('#ortho').disabled = t !== '3d';
+  if (t === '3d') $('#stage').frameAll?.();
+}
+
+// === draghåndtak ==========================================================
+// Hver rute kan dras i én kant: venstre rute i høyre kant, høyre rute i
+// venstre, lastruta i overkant. Størrelsene ligger i CSS-variabler, så selve
+// dragingen bare skriver et tall - resten følger av oppsettet, og 3D-ruta
+// oppdaterer seg selv gjennom sin egen ResizeObserver.
+const SPLITS = {
+  left:  { v: '--w-left',  axis: 'x', sign:  1, min: 210, def: 300, other: '--w-right' },
+  right: { v: '--w-right', axis: 'x', sign: -1, min: 260, def: 404, other: '--w-left' },
+  loads: { v: '--h-loads', axis: 'y', sign: -1, min: 84,  def: 206 },
+};
+const MID_MIN = 340;      // minste bredde på visninga
+const STAGE_MIN = 200;    // minste høyde på visninga
+
+function splitLimit(s) {
+  const cs = getComputedStyle(document.documentElement);
+  const num = k => parseFloat(cs.getPropertyValue(k)) || 0;
+  if (s.axis === 'x') return window.innerWidth - num(s.other) - MID_MIN;
+  const chrome = num('--h-top') + num('--h-status');
+  return window.innerHeight - chrome - STAGE_MIN;
+}
+
+function setSplit(s, value) {
+  const v = Math.min(splitLimit(s), Math.max(s.min, value));
+  document.documentElement.style.setProperty(s.v, Math.round(v) + 'px');
+}
+
+function initSplitters() {
+  const cs = () => getComputedStyle(document.documentElement);
+  for (const el of document.querySelectorAll('[data-split]')) {
+    const s = SPLITS[el.dataset.split];
+    if (!s) continue;
+
+    el.addEventListener('pointerdown', e => {
+      e.preventDefault();
+      const start = s.axis === 'x' ? e.clientX : e.clientY;
+      const base = parseFloat(cs().getPropertyValue(s.v));
+      el.classList.add('on');
+      document.body.classList.add(s.axis === 'x' ? 'rs-col' : 'rs-row');
+
+      const move = ev =>
+        setSplit(s, base + s.sign * ((s.axis === 'x' ? ev.clientX : ev.clientY) - start));
+      const up = () => {
+        el.classList.remove('on');
+        document.body.classList.remove('rs-col', 'rs-row');
+        window.removeEventListener('pointermove', move);
+        window.removeEventListener('pointerup', up);
+        window.removeEventListener('pointercancel', up);
+      };
+      window.addEventListener('pointermove', move);
+      window.addEventListener('pointerup', up);
+      window.addEventListener('pointercancel', up);
+    });
+
+    el.ondblclick = () => setSplit(s, s.def);
+
+    el.onkeydown = ev => {
+      const step = ev.shiftKey ? 40 : 10;
+      const d = { ArrowLeft: -1, ArrowRight: 1, ArrowUp: -1, ArrowDown: 1 }[ev.key];
+      if (d === undefined) return;
+      const horiz = ev.key.startsWith('ArrowL') || ev.key.startsWith('ArrowR');
+      if (horiz !== (s.axis === 'x')) return;
+      ev.preventDefault();
+      setSplit(s, parseFloat(cs().getPropertyValue(s.v)) + s.sign * d * step);
+    };
+  }
+  // Krymper vinduet, kan en rute bli for bred - klem dem inn igjen.
+  addEventListener('resize', () => {
+    for (const s of Object.values(SPLITS))
+      setSplit(s, parseFloat(cs().getPropertyValue(s.v)));
+  });
+}
+
+// === oppdatering ==========================================================
+let t0;
+function refresh(rebuildForm, rebuildCombos) {
+  sync(model);
+  if (rebuildForm) { renderGroups(); renderForm(); } else { renderGroups(); }
+  if (rebuildCombos) renderCombos();
+  const v = verify(model);
+  window.__v = v;
+  renderResults(v);
+  renderSheet(v);
+  paintComboUtils(utilForCombos());
+  $('#st-anchors').textContent = `${model.anchors.nx * model.anchors.ny} bolter`;
+  $('#st-solver').textContent = v.res.converged
+    ? `løst · ${v.res.iter} iterasjoner` : 'løseren konvergerte ikke';
+  $('#st-max').innerHTML = Number.isFinite(v.maxUtil)
+    ? `maks utnyttelse <span style="color:${utilCss(v.maxUtil)}">${pct(v.maxUtil)}</span>` : '–';
+  clearTimeout(t0);
+  t0 = setTimeout(() => {
+    const { root, hud, hudScale } = buildScene(v, showOpts);
+    $('#stage').setContent(root);
+    buildHud(hud, hudScale);
+  }, 30);
+}
+
+function boot() {
+  for (const cb of document.querySelectorAll('[data-show]')) {
+    cb.checked = showOpts[cb.dataset.show];
+    cb.onchange = () => { showOpts[cb.dataset.show] = cb.checked; refresh(false); };
+  }
+  const cm = $('#colormode');
+  cm.checked = false;
+  cm.onchange = () => {
+    showOpts.colorMode = cm.checked ? 'utilisation' : 'material';
+    const l = $('#legend');
+    l.hidden = !cm.checked;
+    l.innerHTML = '&lt; 70 % · 70–100 % · &gt; 100 %';
+    refresh(false);
+  };
+  for (const b of document.querySelectorAll('#viewbtns .btn'))
+    b.onclick = () => b.dataset.view === 'fit'
+      ? $('#stage').frameAll() : $('#stage').setView(b.dataset.view);
+  for (const b of document.querySelectorAll('#exportbtns .btn'))
+    b.onclick = () => b.dataset.exp === 'obj'
+      ? $('#stage').exportOBJ('forankring') : $('#stage').exportGLB('forankring');
+
+  $('#add-combo').onclick = () => {
+    const n = model.combos.length + 1;
+    model.combos.push(combo(nextComboId(model), `ULS ${n}`, 'uls'));
+    model.activeCombo = model.combos[model.combos.length - 1].id;
+    refresh(false, true);
+  };
+
+  const ortho = $('#ortho');
+  ortho.onclick = () => {
+    const on = !($('#stage').isOrtho);
+    $('#stage').setProjection(on ? 'ortho' : 'persp');
+    ortho.setAttribute('aria-pressed', String(on));
+  };
+
+  $('#tab-3d').onclick = () => setViewTab('3d');
+  $('#tab-calc').onclick = () => setViewTab('calc');
+
+  const code = $('#code');
+  code.value = model.code.standard;
+  code.onchange = () => { model.code.standard = code.value; refresh(true); };
+
+  $('#reset').onclick = () => {
+    model = Object.assign(defaultModel(), { reinf: REINF_DEFAULT() });
+    activeCheck = null; activeGroup = 'Betongdel';
+    $('#code').value = model.code.standard;
+    setViewTab('3d');
+    refresh(true, true);
+  };
+  $('#save-project').onclick = async (e) => {
+    const b = e.currentTarget, old = b.textContent;
+    const navn = (model.meta.prosjekt || 'prosjekt').trim() || 'prosjekt';
+    const filnavn = navn.replace(/[^\p{L}\p{N}._ -]/gu, '').replace(/\s+/g, '-') + '.json';
+    try {
+      const r = await saveFile(JSON.stringify(model, null, 2), filnavn);
+      b.textContent = r.renamed ? 'Lagret – se filnavn' : 'Lagret';
+    } catch (err) { b.textContent = saveError(err); }
+    setTimeout(() => (b.textContent = old), 3000);
+  };
+  $('#open-project').onclick = () => $('#open-project-file').click();
+  $('#open-project-file').onchange = async (e) => {
+    const file = e.target.files[0];
+    e.target.value = '';
+    if (!file) return;
+    try {
+      const loaded = JSON.parse(await file.text());
+      model = mergeModel(loaded);
+      activeCheck = null; activeGroup = 'Betongdel';
+      $('#code').value = model.code.standard;
+      setViewTab('3d');
+      refresh(true, true);
+    } catch (err) {
+      alert('Kunne ikke åpne prosjektfila: ' + (err?.message || err));
+    }
+  };
+  $('#report').onclick = async (e) => {
+    const b = e.currentTarget, old = b.textContent;
+    try {
+      const r = await saveFile(buildReport(window.__v), 'forankring-beregning.txt');
+      b.textContent = r.renamed ? 'Lagret – se filnavn' : 'Lagret';
+    } catch (err) { b.textContent = saveError(err); }
+    setTimeout(() => (b.textContent = old), 3000);
+  };
+
+  initSplitters();
+  $('#stage').attachLabelLayer($('#hud'));
+  setViewTab('3d');
+  refresh(true, true);
+}
+
+// === rapport ==============================================================
+function buildReport(v) {
+  const L = [], line = ch => ch.repeat(72);
+  const m = model;
+  L.push('BEREGNING – FORANKRING I BETONG', line('='), '',
+    `Regelverk:  ${v.standard}`,
+    `Dato:       ${new Date().toLocaleString('no-NO')}`, '');
+  L.push('GEOMETRI', line('-'));
+  L.push(`Betong ${m.concrete.grade} (f_ck = ${m.concrete.fck} N/mm²), ` +
+    `${m.concrete.Lx} × ${m.concrete.Ly} × ${m.concrete.h} mm`);
+  L.push(`Plate ${m.plate.bx} × ${m.plate.by} × ${m.plate.t} mm, ` +
+    `montasje: ${MOUNT_TXT[m.plate.mount]}`);
+  L.push(`Bolter ${m.anchors.nx}×${m.anchors.ny} ⌀${m.anchors.d} ${m.anchors.steel}, ` +
+    `h_ef = ${m.anchors.hef} mm, c/c ${m.anchors.sx} × ${m.anchors.sy} mm`, '');
+  L.push('LASTER', line('-'));
+  const l = m.load;
+  L.push(`N = ${kN(l.N)} kN    V_x = ${kN(l.Vx)} kN    V_y = ${kN(l.Vy)} kN`);
+  L.push(`M_x = ${n(l.Mx / 1e6, 2)} kNm    M_y = ${n(l.My / 1e6, 2)} kNm    ` +
+    `M_z = ${n(l.Mz / 1e6, 2)} kNm`, '');
+  L.push('KRAFTFORDELING I BOLTEGRUPPA', line('-'));
+  L.push('  # |      x |      y |     N [kN] |     V [kN]');
+  for (const an of v.res.anchors)
+    L.push(`${String(an.id).padStart(3)} | ${String(an.x).padStart(6)} | ` +
+      `${String(an.y).padStart(6)} | ${kN(an.N).padStart(10)} | ${kN(an.V).padStart(10)}`);
+  L.push('');
+
+  for (const c of v.checks) {
+    L.push(line('='), `${c.mode}   [pkt. ${c.clause}]`, line('='));
+    const cal = c.calc;
+    if (cal?.skipped) { L.push(`  ${cal.skipped}`, ''); continue; }
+    if (!cal) { L.push('  (ingen utregning registrert)', ''); continue; }
+    if (cal.inputs.length) {
+      L.push('', 'Inndata');
+      for (const i of cal.inputs)
+        L.push(`  ${i.sym.padEnd(12)} ${n(i.value).padStart(12)} ${i.unit.padEnd(7)} ${i.source}`);
+    }
+    if (cal.steps.length) {
+      L.push('', 'Utregning');
+      for (const s of cal.steps) {
+        L.push(`  ${s.sym}${s.desc ? '  – ' + s.desc : ''}${s.ref ? '   ' + s.ref : ''}`);
+        L.push(`      = ${s.formula}`);
+        if (s.subst && s.subst !== '–') L.push(`      = ${s.subst}`);
+        L.push(`      = ${n(s.value)} ${s.unit || ''}`);
+      }
+    }
+    if (cal.result) {
+      const r = cal.result;
+      L.push('', 'Kapasitet');
+      L.push(`  ${r.sym} = ${r.formula}${r.ref ? '   ' + r.ref : ''}`);
+      L.push(`      = ${r.subst}`);
+      L.push(`      = ${n(r.value)} ${r.unit}`);
+    }
+    if (cal.check) {
+      L.push('', 'Kontroll');
+      L.push(`  ${cal.check.formula} ≤ 1,0`);
+      L.push(`      = ${cal.check.subst}`);
+      L.push(`      = ${n(cal.check.value, 3)}   (${pct(cal.check.value)})   ` +
+        (cal.check.value <= 1 ? 'OK' : 'IKKE OK'));
+    }
+    if (c.note) L.push('', `  Merk: ${c.note}`);
+    L.push('');
+  }
+
+  if (v.issues.length) {
+    L.push('AVVIK I INNDATA', line('-'));
+    for (const i of v.issues) L.push(`  [${i.level}] ${i.text}`);
+    L.push('');
+  }
+  L.push(line('='));
+  L.push(`STYRENDE: ${v.governing?.mode} – ${pct(v.maxUtil)}`);
+  L.push(v.ok ? 'RESULTAT: OK' : 'RESULTAT: IKKE OK');
+  return L.join('\n');
+}
+
+boot();
+</script>
+
+</body>
+</html>

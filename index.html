@@ -1,0 +1,133 @@
+<!doctype html>
+<html lang="no">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Bruddkjegle</title>
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500;600&display=swap">
+<link rel="stylesheet" href="src/ui/style.css">
+<script type="importmap">
+{ "imports": {
+    "three": "https://cdn.jsdelivr.net/npm/three@0.184.0/build/three.module.js",
+    "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.184.0/examples/jsm/"
+} }
+</script>
+</head>
+<body>
+<div class="app">
+
+  <div class="topbar">
+    <span class="brand">Bruddkjegle</span>
+    <span class="sep"></span>
+    <label for="code">Regelverk</label>
+    <select id="code">
+      <option value="EN1992-4">NS-EN 1992-4:2018</option>
+      <option value="B19">Betongelementboka B19</option>
+    </select>
+    <span class="units">mm · kN · N/mm²</span>
+    <span class="grow"></span>
+    <button class="btn" id="save-project">Lagre prosjekt</button>
+    <button class="btn" id="open-project">Åpne prosjekt</button>
+    <input type="file" id="open-project-file" accept="application/json,.json" hidden>
+    <button class="btn" id="reset">Nullstill</button>
+    <button class="btn" id="report">Beregningsrapport</button>
+  </div>
+
+  <div class="body">
+
+    <!-- inndata -->
+    <aside class="pane inputs">
+      <div class="pane-head"><h2>Inndata</h2></div>
+      <nav class="groups" id="groups"></nav>
+      <div class="pane-body"><div class="form" id="form"></div></div>
+      <div class="split col" data-split="left" role="separator"
+           aria-orientation="vertical" tabindex="0"
+           title="Dra for å endre bredden. Dobbeltklikk nullstiller."></div>
+    </aside>
+
+    <!-- visning -->
+    <section class="pane view">
+      <div class="pane-head">
+        <div class="btn-row">
+          <button class="btn" id="tab-3d" aria-pressed="true">3D</button>
+          <button class="btn" id="tab-calc" aria-pressed="false">Utregning</button>
+        </div>
+        <span class="grow"></span>
+        <div class="btn-row" id="viewbtns">
+          <button class="btn ghost" data-view="iso">ISO</button>
+          <button class="btn ghost" data-view="top">Plan</button>
+          <button class="btn ghost" data-view="front">Front</button>
+          <button class="btn ghost" data-view="side">Side</button>
+          <button class="btn ghost" data-view="fit">Tilpass</button>
+        </div>
+        <span class="sep"></span>
+        <button class="btn ghost" id="ortho" aria-pressed="false"
+          title="Parallellprojeksjon: like store ting tegnes like store uansett avstand">Parallell</button>
+        <span class="sep"></span>
+        <div class="btn-row" id="exportbtns">
+          <button class="btn ghost" data-exp="obj">OBJ</button>
+          <button class="btn ghost" data-exp="glb">GLB</button>
+        </div>
+      </div>
+      <div class="pane-sub" id="viewsub">
+        <label class="tog"><input type="checkbox" data-show="concrete"> Betong</label>
+        <label class="tog"><input type="checkbox" data-show="cone"> Bruddkjegle</label>
+        <label class="tog"><input type="checkbox" data-show="wedge"> Kantbrudd</label>
+        <label class="tog"><input type="checkbox" data-show="rebar"> Armering</label>
+        <label class="tog"><input type="checkbox" data-show="loads"> Laster</label>
+        <label class="tog"><input type="checkbox" data-show="labels"> Boltkrefter</label>
+        <label class="tog"><input type="checkbox" data-show="dims"> Mål</label>
+        <label class="tog"><input type="checkbox" id="colormode"> Fargelegg utnyttelse</label>
+        <span class="stat" id="legend" hidden></span>
+      </div>
+      <div class="stage-wrap" id="wrap-3d">
+        <three-d-stage id="stage" background="#efede8" controls="none"></three-d-stage>
+        <div class="hud" id="hud"></div>
+      </div>
+      <div class="pane-body" id="wrap-calc" hidden><div class="sheet" id="sheet"></div></div>
+
+      <!-- lastene ligger under visninga, mellom venstre og høyre rute -->
+      <section class="loads">
+        <div class="pane-head">
+          <h2>Lastkombinasjoner</h2>
+          <span class="grow"></span>
+          <span class="stat" id="combo-note"></span>
+          <button class="btn" id="add-combo">Ny kombinasjon</button>
+        </div>
+        <div class="pane-body"><table class="combos" id="combos"></table></div>
+        <div class="split row" data-split="loads" role="separator"
+             aria-orientation="horizontal" tabindex="0"
+             title="Dra for å endre høyden. Dobbeltklikk nullstiller."></div>
+      </section>
+    </section>
+
+    <!-- resultat -->
+    <aside class="pane results">
+      <div class="pane-head">
+        <h2>Kontroll</h2><span class="grow"></span>
+        <span class="stat" id="verdict"></span>
+      </div>
+      <div class="pane-body" id="results"></div>
+      <div class="split col r" data-split="right" role="separator"
+           aria-orientation="vertical" tabindex="0"
+           title="Dra for å endre bredden. Dobbeltklikk nullstiller."></div>
+    </aside>
+
+  </div>
+
+  <div class="statusbar">
+    <span>mm · kN · N/mm²</span>
+    <span id="st-anchors">4 bolter</span>
+    <span id="st-solver">–</span>
+    <span class="grow"></span>
+    <span id="st-max">–</span>
+  </div>
+
+</div>
+<script type="module">
+  import { boot } from './src/ui/app.js';
+  boot();
+</script>
+</body>
+</html>
