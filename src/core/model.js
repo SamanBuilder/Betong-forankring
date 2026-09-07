@@ -79,8 +79,9 @@ export const defaultSteel = bar => steelsFor(bar)[0].id;
 //  Hvilke forankringsender som finnes for hver stangtype.
 //
 //   stud   sveisebolt: hodet er påsmidd i fabrikken og er ikke et valg.
-//   rebar  kamstål: heft langs kammene, med eller uten endemutter. En felles
-//          endeplate finnes ikke - kamstål gjenges ikke opp for platefeste.
+//   rebar  kamstål: heft langs kammene. Kamstål er ikke gjenget, så en
+//          endemutter må sveises på - eller enden bøyes til en krok.
+//          Ingen felles endeplate: kamstål gjenges ikke opp for platefeste.
 //   rod    gjengestang/bolt: gjengene tar mutter, felles endeplate eller
 //          ingenting (ren heftforankring langs gjengene).
 //
@@ -89,7 +90,7 @@ export const defaultSteel = bar => steelsFor(bar)[0].id;
 // ---------------------------------------------------------------------------
 export const END_TYPES = {
   stud:  ['nut'],
-  rebar: ['nut', 'none'],
+  rebar: ['nut', 'hook', 'none'],
   rod:   ['nut', 'plate', 'none'],
 };
 export const endsFor = bar => END_TYPES[bar] || END_TYPES.rod;
@@ -210,14 +211,19 @@ export function endPlate(m) {
 // ---------------------------------------------------------------------------
 //  Forankringsenden.
 //
-//   'nut'    endemutter / bolthode - rund for sveisebolt, sekskantet for
-//            gjengestang.  ⌀_h er hodediameter (rund) eller nøkkelvidde (mutter).
+//   'nut'    endemutter - rund og påsmidd for sveisebolt (bolthode), ellers
+//            sekskantet og påskrudd (gjengestang) eller påsveist (kamstål,
+//            som ikke er gjenget). ⌀_h er hodediameter eller nøkkelvidde.
 //   'plate'  felles innstøpt endeplate over hele gruppa (se endPlate).
 //            Plata må være stiv for å regnes med: utstikket u kan ikke være
 //            større enn tykkelsen, så bare et felt ⌀ + 2·t_p rundt hver bolt
 //            teller som trykkflate (B19 fig. B 19.18 og B 19.57). Ligger
 //            boltene tett, flyter feltene sammen til ett - unionen telles
 //            derfor én gang, og deles på antall bolter siden lasta deles likt.
+//   'hook'   bøyd endekrok på kamstål. Ingen trykkflate å regne kjeglebrudd
+//            fra - kroken regnes derfor konservativt som ren heftforankring,
+//            samme formel som 'none' (B19 pkt. 19.3.3 dekker ikke kroker
+//            eksplisitt, så det tas ikke kreditt for kroken utover heften).
 //   'none'   uten endemutter - forankringen er ren heftforankring langs
 //            kamstålet eller gjengestanga (B19 pkt. 19.3.3 og 19.3.4).
 //
@@ -228,6 +234,8 @@ export function anchorFoot(m) {
   const core = Math.PI * sh.d * sh.d / 4;
   if (a.endType === 'none')
     return { kind: 'none', hasFoot: false, Ah: 0, t: 0, shape: 'none' };
+  if (a.endType === 'hook')
+    return { kind: 'hook', hasFoot: false, Ah: 0, t: 0, shape: 'hook' };
 
   if (a.endType === 'plate') {
     const pl = endPlate(m);
@@ -243,7 +251,7 @@ export function anchorFoot(m) {
              limited: Aeff < pl.bx * pl.by,
              Agross: per, Aeff, Ah: Math.max(0, per - core) };
   }
-  if (a.barType === 'rod') {                        // sekskantet endemutter
+  if (a.barType === 'rod' || a.barType === 'rebar') {  // sekskantet endemutter
     const A = 0.866 * a.dh * a.dh;                  // NV over nøkkelvidde
     return { kind: 'nut', hasFoot: true, shape: 'hex', size: a.dh, eff: a.dh,
              t: a.k, limited: false, Agross: A, Aeff: A, Ah: A - core };

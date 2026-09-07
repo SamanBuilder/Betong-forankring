@@ -14,11 +14,14 @@ export function barSizes(m) {
   return STUD_SIZES.map(s => [s.d, `⌀${s.d}  (hode ⌀${s.dh})`]);
 }
 
-// Navnet på forankringsenden. Hodet på en sveisebolt er påsmidd, mens
-// gjengestang og kamstål får en mutter skrudd på - samme virkemåte, ulikt navn.
+// Navnet på forankringsenden. Hodet på en sveisebolt er påsmidd. Gjengestang
+// får en mutter skrudd på gjengene. Kamstål er ikke gjenget, så mutteren må
+// sveises på i stedet - eller enden bøyes til en krok.
 const END_LABEL = {
-  nut: m => m.anchors.barType === 'stud' ? 'Påsmidd bolthode' : 'Endemutter',
+  nut: m => m.anchors.barType === 'stud' ? 'Påsmidd bolthode'
+       : m.anchors.barType === 'rebar' ? 'Sveist endemutter' : 'Endemutter',
   plate: () => 'Felles endeplate over hele gruppa',
+  hook: () => 'Endekrok',
   none: () => 'Uten endemutter (heftforankring)',
 };
 
@@ -108,10 +111,12 @@ export const FIELDS = [
             'heftforankring (19.3.3 / 19.3.4). Har stanga både fot og heft, ' +
             'bruker B19 den modellen som gir størst kapasitet (19.3.1.2).' },
     { p: 'anchors.hef',
-      l: m => m.anchors.endType === 'none' ? 'Innstøpt lengde' : 'h_ef',
+      l: m => m.anchors.endType === 'nut' || m.anchors.endType === 'plate'
+        ? 'h_ef' : 'Innstøpt lengde',
       t: 'num', u: 'mm', step: 5,
       hint: 'Med fot: dybden ned til underkant fot. Uten fot: hele den ' +
-            'innstøpte lengda. Heftlengda l_b er den gjengede delen av den.' },
+            'innstøpte lengda. Heftlengda l_b er den delen som faktisk ' +
+            'utvikler heft – for gjengestang: den gjengede delen.' },
     // Bolter er sjelden gjenget helt opp: skaftet er glatt fra hodet, og
     // gjengene begynner et stykke nede. Det flytter både heften og skjæret.
     { p: 'anchors.lSmooth', l: 'Glatt skaft', t: 'num', u: 'mm', step: 5, min: 0,
@@ -120,12 +125,12 @@ export const FIELDS = [
             'gjengene begynner. 0 = gjenget hele veien. Det glatte skaftet ' +
             'utvikler ingen heft, så heftlengda blir kortere – men det er ' +
             'grovere enn gjengene, så skjærkapasiteten øker.' },
-    { p: 'anchors.dh', l: m => m.anchors.barType === 'rod'
-        ? 'Nøkkelvidde NV' : 'Hodediameter ⌀_h',
+    { p: 'anchors.dh', l: m => m.anchors.barType === 'stud'
+        ? 'Hodediameter ⌀_h' : 'Nøkkelvidde NV',
       t: 'num', u: 'mm', step: 1, when: m => m.anchors.endType === 'nut',
       hint: 'Settes fra EN ISO 13918 (sveisebolt) eller mutter­tabellen ' +
-            '(gjengestang) når du velger diameter. Egen verdi står til du ' +
-            'endrer diameteren igjen. Styrer trykket mot foten.' },
+            '(gjengestang/kamstål) når du velger diameter. Egen verdi står ' +
+            'til du endrer diameteren igjen. Styrer trykket mot foten.' },
     { p: 'anchors.k', l: 'Høyde på fot', t: 'num', u: 'mm', step: 1,
       when: m => m.anchors.endType === 'nut',
       hint: 'Hode- eller mutterhøyde. Settes fra tabell når du velger diameter.' },

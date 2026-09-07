@@ -8,6 +8,7 @@
 import * as THREE from 'three';
 import { anchorPositions, edgeDistances, anchorFoot, mounting,
          memberLimits, shaftProps } from '../core/model.js';
+import { n } from '../engine/calc.js';
 
 // ---------------------------------------------------------------------------
 //  Gjenger.
@@ -32,6 +33,63 @@ function threadHelix(d, z0, z1, pitch, x, y) {
     return target.set(x + r * Math.cos(ang), y + r * Math.sin(ang), z0 + len * t);
   };
   return new THREE.TubeGeometry(curve, seg, Math.max(0.3, 0.3 * pitch), 5, false);
+}
+
+// ---------------------------------------------------------------------------
+//  Kamstål-kammer.
+//
+//  Ikke et forsøk på å tegne det virkelige valsemønsteret (skrå kam-par i to
+//  retninger) - bare et sett med smale ringer med jevne mellomrom, nok til at
+//  stanga leses som kamstål og ikke glatt rundstål. Ringradiusen stikker
+//  utenpå skaftet, som de virkelige kammene gjør.
+// ---------------------------------------------------------------------------
+function rebarRibs(d, z0, z1, x, y) {
+  const len = z1 - z0;
+  if (!(len > 0)) return [];
+  const spacing = 0.7 * d;                 // omtrentlig kamavstand
+  const count = Math.max(1, Math.min(40, Math.round(len / spacing)));
+  const rings = [];
+  for (let i = 0; i < count; i++) {
+    const z = z0 + (i + 0.5) * len / count;
+    const g = new THREE.TorusGeometry(0.55 * d, 0.09 * d, 5, 14);
+    g.translate(x, y, z);
+    rings.push(g);
+  }
+  return rings;
+}
+
+// ---------------------------------------------------------------------------
+//  Endekrok på kamstål - halvsirkel med en rett hale, samme prinsipp som en
+//  180°-krok på arbeidstegning. Bøyeradien og halelengden er antydninger for
+//  bildet, ikke detaljering - kroken er verken dimensjonert eller kvantifisert
+//  i beregninga (se anchorFoot()).
+// ---------------------------------------------------------------------------
+function rebarHook(d, zBot, x, y, mat) {
+  // Bøyeradius og halelengde er en tegneskikk, ikke en dimensjonert detalj -
+  // se merknaden i anchorFoot() om at kroken ikke gir tillegg i beregninga.
+  const rb = 2.5 * d, tail = 4 * d;
+
+  // Halvsirkelen: fra enden av hovedstanga (0, 0, zBot), et dropp under den
+  // og tilbake opp til (2·rb, 0, zBot) - den klassiske krokformen på en
+  // arbeidstegning. Bygd som skruelinjefunksjonen: én parametrisert kurve.
+  const curve = new THREE.Curve();
+  curve.getPoint = (t, target = new THREE.Vector3()) => {
+    const phi = Math.PI * (1 - t);
+    return target.set(x + rb + rb * Math.cos(phi), y, zBot - rb * Math.sin(phi));
+  };
+  const arc = new THREE.Mesh(
+    new THREE.TubeGeometry(curve, 24, d / 2, 10, false), mat);
+  arc.name = 'krok_bue';
+
+  const tailMesh = new THREE.Mesh(
+    new THREE.CylinderGeometry(d / 2, d / 2, tail), mat);
+  tailMesh.rotation.x = Math.PI / 2;
+  tailMesh.position.set(x + 2 * rb, y, zBot + tail / 2);
+  tailMesh.name = 'krok_hale';
+
+  const g = new THREE.Group();
+  g.add(arc, tailMesh);
+  return g;
 }
 
 // Betongkorn genereres i sida - ingen ekstern tekstur. Fin støy med noen få
@@ -108,6 +166,12 @@ const MAT = {
   }),
   rebar: () => new THREE.MeshStandardMaterial({
     name: 'armering', color: 0x9e5232, roughness: 0.82, metalness: 0.15,
+    ...OVER_CONCRETE,
+  }),
+  // Kamstål som forankringsstang: lysbrun valsehud, skilt fra den rustrøde
+  // forankringsarmeringa (reinf) så de to kamstål-elementene ikke blandes.
+  rebarAnchor: () => new THREE.MeshStandardMaterial({
+    name: 'kamstaal', color: 0xc19a6b, roughness: 0.85, metalness: 0.1,
     ...OVER_CONCRETE,
   }),
 };
@@ -494,6 +558,7 @@ export function buildScene(v, opts = {}) {
   const utilByAnchor = anchorUtil(v);
   const zTop = p.present ? mnt.offset + p.t : mnt.offset + Math.max(p.e, 0);
   const steelMat = MAT.steel();
+  const rebarMat = MAT.rebarAnchor();
   const foot = anchorFoot(m);
   const sh = shaftProps(m);
   for (const an of res.anchors) {
@@ -502,7 +567,7 @@ export function buildScene(v, opts = {}) {
       ? new THREE.MeshStandardMaterial({
           name: `bolt_u${Math.round(u * 100)}`, color: utilColor(u),
           roughness: 0.62, metalness: 0.2, ...OVER_CONCRETE })
-      : steelMat;
+      : a.barType === 'rebar' ? rebarMat : steelMat;
     const g = new THREE.Group();
     g.name = `bolt_${an.id}`;
 
@@ -549,11 +614,21 @@ export function buildScene(v, opts = {}) {
         g.add(th);
       }
     }
+    // Kamstål er ikke glatt: kammer langs hele stanga gjør at den leses som
+    // kamstål og ikke som gjengestang eller sveisebolt.
+    if (a.barType === 'rebar') {
+      for (const geo of rebarRibs(a.d, zBot, shaftTop, an.x, an.y)) {
+        const rb = new THREE.Mesh(geo, mat);
+        rb.renderOrder = ORDER.steel;
+        rb.name = `kammer_${an.id}`;
+        g.add(rb);
+      }
+    }
     // Foten tegnes fra modellens egne verdier, ikke fra standardtabellen, slik
     // at et redigert mål faktisk vises: rundt hode for sveisebolt, sekskantet
-    // mutter for gjengestang, og firkantet plate for innstøpt endeplate.
-    // Den felles endeplata hører til gruppa, ikke til den enkelte bolten, og
-    // tegnes derfor én gang etter løkka.
+    // mutter for gjengestang/kamstål, krok for kamstål, og firkantet plate for
+    // innstøpt endeplate. Den felles endeplata hører til gruppa, ikke til den
+    // enkelte bolten, og tegnes derfor én gang etter løkka.
     if (foot.kind === 'nut') {
       // Sekskantmutter: nøkkelvidden er avstanden mellom flatene, altså
       // 2 * innskrevet radius. Sylinderradiusen er den omskrevne.
@@ -561,6 +636,10 @@ export function buildScene(v, opts = {}) {
         -a.hef + foot.t / 2, 'endemutter');
     } else if (foot.kind === 'head') {
       put(new THREE.Mesh(cyl(a.dh / 2, foot.t), mat), -a.hef + foot.t / 2, 'hode');
+    } else if (foot.kind === 'hook') {
+      const hook = rebarHook(a.d, zBot, an.x, an.y, mat);
+      hook.name = `krok_${an.id}`;
+      g.add(hook);
     }
 
     if (!p.present) {

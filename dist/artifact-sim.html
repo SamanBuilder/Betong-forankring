@@ -800,8 +800,9 @@ const defaultSteel = bar => steelsFor(bar)[0].id;
 //  Hvilke forankringsender som finnes for hver stangtype.
 //
 //   stud   sveisebolt: hodet er påsmidd i fabrikken og er ikke et valg.
-//   rebar  kamstål: heft langs kammene, med eller uten endemutter. En felles
-//          endeplate finnes ikke - kamstål gjenges ikke opp for platefeste.
+//   rebar  kamstål: heft langs kammene. Kamstål er ikke gjenget, så en
+//          endemutter må sveises på - eller enden bøyes til en krok.
+//          Ingen felles endeplate: kamstål gjenges ikke opp for platefeste.
 //   rod    gjengestang/bolt: gjengene tar mutter, felles endeplate eller
 //          ingenting (ren heftforankring langs gjengene).
 //
@@ -810,7 +811,7 @@ const defaultSteel = bar => steelsFor(bar)[0].id;
 // ---------------------------------------------------------------------------
 const END_TYPES = {
   stud:  ['nut'],
-  rebar: ['nut', 'none'],
+  rebar: ['nut', 'hook', 'none'],
   rod:   ['nut', 'plate', 'none'],
 };
 const endsFor = bar => END_TYPES[bar] || END_TYPES.rod;
@@ -931,14 +932,19 @@ function endPlate(m) {
 // ---------------------------------------------------------------------------
 //  Forankringsenden.
 //
-//   'nut'    endemutter / bolthode - rund for sveisebolt, sekskantet for
-//            gjengestang.  ⌀_h er hodediameter (rund) eller nøkkelvidde (mutter).
+//   'nut'    endemutter - rund og påsmidd for sveisebolt (bolthode), ellers
+//            sekskantet og påskrudd (gjengestang) eller påsveist (kamstål,
+//            som ikke er gjenget). ⌀_h er hodediameter eller nøkkelvidde.
 //   'plate'  felles innstøpt endeplate over hele gruppa (se endPlate).
 //            Plata må være stiv for å regnes med: utstikket u kan ikke være
 //            større enn tykkelsen, så bare et felt ⌀ + 2·t_p rundt hver bolt
 //            teller som trykkflate (B19 fig. B 19.18 og B 19.57). Ligger
 //            boltene tett, flyter feltene sammen til ett - unionen telles
 //            derfor én gang, og deles på antall bolter siden lasta deles likt.
+//   'hook'   bøyd endekrok på kamstål. Ingen trykkflate å regne kjeglebrudd
+//            fra - kroken regnes derfor konservativt som ren heftforankring,
+//            samme formel som 'none' (B19 pkt. 19.3.3 dekker ikke kroker
+//            eksplisitt, så det tas ikke kreditt for kroken utover heften).
 //   'none'   uten endemutter - forankringen er ren heftforankring langs
 //            kamstålet eller gjengestanga (B19 pkt. 19.3.3 og 19.3.4).
 //
@@ -949,6 +955,8 @@ function anchorFoot(m) {
   const core = Math.PI * sh.d * sh.d / 4;
   if (a.endType === 'none')
     return { kind: 'none', hasFoot: false, Ah: 0, t: 0, shape: 'none' };
+  if (a.endType === 'hook')
+    return { kind: 'hook', hasFoot: false, Ah: 0, t: 0, shape: 'hook' };
 
   if (a.endType === 'plate') {
     const pl = endPlate(m);
@@ -964,7 +972,7 @@ function anchorFoot(m) {
              limited: Aeff < pl.bx * pl.by,
              Agross: per, Aeff, Ah: Math.max(0, per - core) };
   }
-  if (a.barType === 'rod') {                        // sekskantet endemutter
+  if (a.barType === 'rod' || a.barType === 'rebar') {  // sekskantet endemutter
     const A = 0.866 * a.dh * a.dh;                  // NV over nøkkelvidde
     return { kind: 'nut', hasFoot: true, shape: 'hex', size: a.dh, eff: a.dh,
              t: a.k, limited: false, Agross: A, Aeff: A, Ah: A - core };
@@ -2471,8 +2479,17 @@ function b19BondBranch(m, res, c) {
     value: NRd, unit: 'N', ref: '19.7.2.1' });
 
   const NEd = Math.max(0, ...res.anchors.map(x => x.N));
+  const hook = a.endType === 'hook';
+  if (hook)
+    c.step({ sym: '–', desc: 'Endekrok', formula: '',
+      subst: 'Kroken er ikke kvantifisert utover heften over l_b – B19 gir ' +
+             'ingen bæreflateformel for kroker (bare hode/mutter, 19.3.2). ' +
+             'Konservativt: samme kapasitet som rett stang uten krok.',
+      value: null, unit: '' });
   return { name: 'Heftforankring', clause: rebar ? '19.3.3' : '19.3.4',
-           scope: 'bolt', NRd, NEd, util: NEd / NRd, R };
+           scope: 'bolt', NRd, NEd, util: NEd / NRd, R,
+           note: hook ? 'Konservativt: kroken gir ingen tillegg utover heften.'
+                       : undefined };
 }
 
 // Utrivning av betongen: kjeglebrudd og/eller heftforankring.
@@ -3574,6 +3591,63 @@ function threadHelix(d, z0, z1, pitch, x, y) {
   return new THREE.TubeGeometry(curve, seg, Math.max(0.3, 0.3 * pitch), 5, false);
 }
 
+// ---------------------------------------------------------------------------
+//  Kamstål-kammer.
+//
+//  Ikke et forsøk på å tegne det virkelige valsemønsteret (skrå kam-par i to
+//  retninger) - bare et sett med smale ringer med jevne mellomrom, nok til at
+//  stanga leses som kamstål og ikke glatt rundstål. Ringradiusen stikker
+//  utenpå skaftet, som de virkelige kammene gjør.
+// ---------------------------------------------------------------------------
+function rebarRibs(d, z0, z1, x, y) {
+  const len = z1 - z0;
+  if (!(len > 0)) return [];
+  const spacing = 0.7 * d;                 // omtrentlig kamavstand
+  const count = Math.max(1, Math.min(40, Math.round(len / spacing)));
+  const rings = [];
+  for (let i = 0; i < count; i++) {
+    const z = z0 + (i + 0.5) * len / count;
+    const g = new THREE.TorusGeometry(0.55 * d, 0.09 * d, 5, 14);
+    g.translate(x, y, z);
+    rings.push(g);
+  }
+  return rings;
+}
+
+// ---------------------------------------------------------------------------
+//  Endekrok på kamstål - halvsirkel med en rett hale, samme prinsipp som en
+//  180°-krok på arbeidstegning. Bøyeradien og halelengden er antydninger for
+//  bildet, ikke detaljering - kroken er verken dimensjonert eller kvantifisert
+//  i beregninga (se anchorFoot()).
+// ---------------------------------------------------------------------------
+function rebarHook(d, zBot, x, y, mat) {
+  // Bøyeradius og halelengde er en tegneskikk, ikke en dimensjonert detalj -
+  // se merknaden i anchorFoot() om at kroken ikke gir tillegg i beregninga.
+  const rb = 2.5 * d, tail = 4 * d;
+
+  // Halvsirkelen: fra enden av hovedstanga (0, 0, zBot), et dropp under den
+  // og tilbake opp til (2·rb, 0, zBot) - den klassiske krokformen på en
+  // arbeidstegning. Bygd som skruelinjefunksjonen: én parametrisert kurve.
+  const curve = new THREE.Curve();
+  curve.getPoint = (t, target = new THREE.Vector3()) => {
+    const phi = Math.PI * (1 - t);
+    return target.set(x + rb + rb * Math.cos(phi), y, zBot - rb * Math.sin(phi));
+  };
+  const arc = new THREE.Mesh(
+    new THREE.TubeGeometry(curve, 24, d / 2, 10, false), mat);
+  arc.name = 'krok_bue';
+
+  const tailMesh = new THREE.Mesh(
+    new THREE.CylinderGeometry(d / 2, d / 2, tail), mat);
+  tailMesh.rotation.x = Math.PI / 2;
+  tailMesh.position.set(x + 2 * rb, y, zBot + tail / 2);
+  tailMesh.name = 'krok_hale';
+
+  const g = new THREE.Group();
+  g.add(arc, tailMesh);
+  return g;
+}
+
 // Betongkorn genereres i sida - ingen ekstern tekstur. Fin støy med noen få
 // mørkere luftporer, brukt både som farge- og ujevnhetskart, gir overflata en
 // støpt karakter i stedet for jevn plastgrå.
@@ -3648,6 +3722,12 @@ const MAT = {
   }),
   rebar: () => new THREE.MeshStandardMaterial({
     name: 'armering', color: 0x9e5232, roughness: 0.82, metalness: 0.15,
+    ...OVER_CONCRETE,
+  }),
+  // Kamstål som forankringsstang: lysbrun valsehud, skilt fra den rustrøde
+  // forankringsarmeringa (reinf) så de to kamstål-elementene ikke blandes.
+  rebarAnchor: () => new THREE.MeshStandardMaterial({
+    name: 'kamstaal', color: 0xc19a6b, roughness: 0.85, metalness: 0.1,
     ...OVER_CONCRETE,
   }),
 };
@@ -4034,6 +4114,7 @@ function buildScene(v, opts = {}) {
   const utilByAnchor = anchorUtil(v);
   const zTop = p.present ? mnt.offset + p.t : mnt.offset + Math.max(p.e, 0);
   const steelMat = MAT.steel();
+  const rebarMat = MAT.rebarAnchor();
   const foot = anchorFoot(m);
   const sh = shaftProps(m);
   for (const an of res.anchors) {
@@ -4042,7 +4123,7 @@ function buildScene(v, opts = {}) {
       ? new THREE.MeshStandardMaterial({
           name: `bolt_u${Math.round(u * 100)}`, color: utilColor(u),
           roughness: 0.62, metalness: 0.2, ...OVER_CONCRETE })
-      : steelMat;
+      : a.barType === 'rebar' ? rebarMat : steelMat;
     const g = new THREE.Group();
     g.name = `bolt_${an.id}`;
 
@@ -4089,11 +4170,21 @@ function buildScene(v, opts = {}) {
         g.add(th);
       }
     }
+    // Kamstål er ikke glatt: kammer langs hele stanga gjør at den leses som
+    // kamstål og ikke som gjengestang eller sveisebolt.
+    if (a.barType === 'rebar') {
+      for (const geo of rebarRibs(a.d, zBot, shaftTop, an.x, an.y)) {
+        const rb = new THREE.Mesh(geo, mat);
+        rb.renderOrder = ORDER.steel;
+        rb.name = `kammer_${an.id}`;
+        g.add(rb);
+      }
+    }
     // Foten tegnes fra modellens egne verdier, ikke fra standardtabellen, slik
     // at et redigert mål faktisk vises: rundt hode for sveisebolt, sekskantet
-    // mutter for gjengestang, og firkantet plate for innstøpt endeplate.
-    // Den felles endeplata hører til gruppa, ikke til den enkelte bolten, og
-    // tegnes derfor én gang etter løkka.
+    // mutter for gjengestang/kamstål, krok for kamstål, og firkantet plate for
+    // innstøpt endeplate. Den felles endeplata hører til gruppa, ikke til den
+    // enkelte bolten, og tegnes derfor én gang etter løkka.
     if (foot.kind === 'nut') {
       // Sekskantmutter: nøkkelvidden er avstanden mellom flatene, altså
       // 2 * innskrevet radius. Sylinderradiusen er den omskrevne.
@@ -4101,6 +4192,10 @@ function buildScene(v, opts = {}) {
         -a.hef + foot.t / 2, 'endemutter');
     } else if (foot.kind === 'head') {
       put(new THREE.Mesh(cyl(a.dh / 2, foot.t), mat), -a.hef + foot.t / 2, 'hode');
+    } else if (foot.kind === 'hook') {
+      const hook = rebarHook(a.d, zBot, an.x, an.y, mat);
+      hook.name = `krok_${an.id}`;
+      g.add(hook);
     }
 
     if (!p.present) {
@@ -4286,11 +4381,14 @@ function barSizes(m) {
   return STUD_SIZES.map(s => [s.d, `⌀${s.d}  (hode ⌀${s.dh})`]);
 }
 
-// Navnet på forankringsenden. Hodet på en sveisebolt er påsmidd, mens
-// gjengestang og kamstål får en mutter skrudd på - samme virkemåte, ulikt navn.
+// Navnet på forankringsenden. Hodet på en sveisebolt er påsmidd. Gjengestang
+// får en mutter skrudd på gjengene. Kamstål er ikke gjenget, så mutteren må
+// sveises på i stedet - eller enden bøyes til en krok.
 const END_LABEL = {
-  nut: m => m.anchors.barType === 'stud' ? 'Påsmidd bolthode' : 'Endemutter',
+  nut: m => m.anchors.barType === 'stud' ? 'Påsmidd bolthode'
+       : m.anchors.barType === 'rebar' ? 'Sveist endemutter' : 'Endemutter',
   plate: () => 'Felles endeplate over hele gruppa',
+  hook: () => 'Endekrok',
   none: () => 'Uten endemutter (heftforankring)',
 };
 
@@ -4380,10 +4478,12 @@ const FIELDS = [
             'heftforankring (19.3.3 / 19.3.4). Har stanga både fot og heft, ' +
             'bruker B19 den modellen som gir størst kapasitet (19.3.1.2).' },
     { p: 'anchors.hef',
-      l: m => m.anchors.endType === 'none' ? 'Innstøpt lengde' : 'h_ef',
+      l: m => m.anchors.endType === 'nut' || m.anchors.endType === 'plate'
+        ? 'h_ef' : 'Innstøpt lengde',
       t: 'num', u: 'mm', step: 5,
       hint: 'Med fot: dybden ned til underkant fot. Uten fot: hele den ' +
-            'innstøpte lengda. Heftlengda l_b er den gjengede delen av den.' },
+            'innstøpte lengda. Heftlengda l_b er den delen som faktisk ' +
+            'utvikler heft – for gjengestang: den gjengede delen.' },
     // Bolter er sjelden gjenget helt opp: skaftet er glatt fra hodet, og
     // gjengene begynner et stykke nede. Det flytter både heften og skjæret.
     { p: 'anchors.lSmooth', l: 'Glatt skaft', t: 'num', u: 'mm', step: 5, min: 0,
@@ -4392,12 +4492,12 @@ const FIELDS = [
             'gjengene begynner. 0 = gjenget hele veien. Det glatte skaftet ' +
             'utvikler ingen heft, så heftlengda blir kortere – men det er ' +
             'grovere enn gjengene, så skjærkapasiteten øker.' },
-    { p: 'anchors.dh', l: m => m.anchors.barType === 'rod'
-        ? 'Nøkkelvidde NV' : 'Hodediameter ⌀_h',
+    { p: 'anchors.dh', l: m => m.anchors.barType === 'stud'
+        ? 'Hodediameter ⌀_h' : 'Nøkkelvidde NV',
       t: 'num', u: 'mm', step: 1, when: m => m.anchors.endType === 'nut',
       hint: 'Settes fra EN ISO 13918 (sveisebolt) eller mutter­tabellen ' +
-            '(gjengestang) når du velger diameter. Egen verdi står til du ' +
-            'endrer diameteren igjen. Styrer trykket mot foten.' },
+            '(gjengestang/kamstål) når du velger diameter. Egen verdi står ' +
+            'til du endrer diameteren igjen. Styrer trykket mot foten.' },
     { p: 'anchors.k', l: 'Høyde på fot', t: 'num', u: 'mm', step: 1,
       when: m => m.anchors.endType === 'nut',
       hint: 'Hode- eller mutterhøyde. Settes fra tabell når du velger diameter.' },
@@ -4468,7 +4568,7 @@ const MOUNT_TXT = { direct: 'direkte mot betong', grout: 'undergyting',
                     standoff: 'avstandsmontert' };
 const BAR_TXT = { stud: 'Sveisebolt', rebar: 'Kamstål', rod: 'Gjengestang/bolt' };
 const END_TXT = { nut: 'endemutter', plate: 'felles endeplate',
-                  none: 'uten endemutter (heft)' };
+                  hook: 'endekrok', none: 'uten endemutter (heft)' };
 
 const REINF_DEFAULT = () =>
   ({ ds: 12, n: 4, l1: 300, hooked: true, goodBond: true, fyk: 500, nV: 0, dsV: 12, fykV: 500 });
@@ -4525,7 +4625,12 @@ function sync(m) {
   // brukeren selv har skrevet får stå til diameteren endres igjen.
   if (a._dLast !== a.d) {
     if (a.barType === 'rod') { a.dh = rodSize(a.d).NV; a.k = Math.round(0.8 * a.d); }
-    else { const ss = studSize(a.d); a.dh = ss.dh; a.k = ss.k; }
+    else if (a.barType === 'rebar') {
+      // Kamstål er ikke gjenget: mutteren sveises på, dimensjonert som en
+      // vanlig sekskantmutter for stanga - samme nøkkelviddeformel som
+      // gjengestangas fallback utenfor tabellen.
+      a.dh = Math.round(1.6 * a.d); a.k = Math.round(0.8 * a.d);
+    } else { const ss = studSize(a.d); a.dh = ss.dh; a.k = ss.k; }
     a._dLast = a.d;
   }
 

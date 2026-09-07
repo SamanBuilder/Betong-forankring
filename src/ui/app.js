@@ -27,7 +27,7 @@ const MOUNT_TXT = { direct: 'direkte mot betong', grout: 'undergyting',
                     standoff: 'avstandsmontert' };
 const BAR_TXT = { stud: 'Sveisebolt', rebar: 'Kamstål', rod: 'Gjengestang/bolt' };
 const END_TXT = { nut: 'endemutter', plate: 'felles endeplate',
-                  none: 'uten endemutter (heft)' };
+                  hook: 'endekrok', none: 'uten endemutter (heft)' };
 
 const REINF_DEFAULT = () =>
   ({ ds: 12, n: 4, l1: 300, hooked: true, goodBond: true, fyk: 500, nV: 0, dsV: 12, fykV: 500 });
@@ -84,7 +84,12 @@ function sync(m) {
   // brukeren selv har skrevet får stå til diameteren endres igjen.
   if (a._dLast !== a.d) {
     if (a.barType === 'rod') { a.dh = rodSize(a.d).NV; a.k = Math.round(0.8 * a.d); }
-    else { const ss = studSize(a.d); a.dh = ss.dh; a.k = ss.k; }
+    else if (a.barType === 'rebar') {
+      // Kamstål er ikke gjenget: mutteren sveises på, dimensjonert som en
+      // vanlig sekskantmutter for stanga - samme nøkkelviddeformel som
+      // gjengestangas fallback utenfor tabellen.
+      a.dh = Math.round(1.6 * a.d); a.k = Math.round(0.8 * a.d);
+    } else { const ss = studSize(a.d); a.dh = ss.dh; a.k = ss.k; }
     a._dLast = a.d;
   }
 

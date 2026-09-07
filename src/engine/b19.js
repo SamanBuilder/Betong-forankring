@@ -308,8 +308,17 @@ function b19BondBranch(m, res, c) {
     value: NRd, unit: 'N', ref: '19.7.2.1' });
 
   const NEd = Math.max(0, ...res.anchors.map(x => x.N));
+  const hook = a.endType === 'hook';
+  if (hook)
+    c.step({ sym: '–', desc: 'Endekrok', formula: '',
+      subst: 'Kroken er ikke kvantifisert utover heften over l_b – B19 gir ' +
+             'ingen bæreflateformel for kroker (bare hode/mutter, 19.3.2). ' +
+             'Konservativt: samme kapasitet som rett stang uten krok.',
+      value: null, unit: '' });
   return { name: 'Heftforankring', clause: rebar ? '19.3.3' : '19.3.4',
-           scope: 'bolt', NRd, NEd, util: NEd / NRd, R };
+           scope: 'bolt', NRd, NEd, util: NEd / NRd, R,
+           note: hook ? 'Konservativt: kroken gir ingen tillegg utover heften.'
+                       : undefined };
 }
 
 // Utrivning av betongen: kjeglebrudd og/eller heftforankring.

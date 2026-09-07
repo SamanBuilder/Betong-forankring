@@ -253,16 +253,36 @@ på typen – så kombinasjoner som ikke finnes, kan heller ikke velges.
 |---|---|---|
 | Sveisebolt (hodebolt) | SD1, S235J2, S355J2 | påsmidd bolthode |
 | Gjengestang / bolt | K4.6, K4.8, K5.6, K8.8, K10.9 | endemutter · felles endeplate · uten (heft) |
-| Kamstål | B500NC | endemutter · uten (heft) |
+| Kamstål | B500NC | sveist endemutter · endekrok · uten (heft) |
 
-Skrue og gjengestang er samme sak: gjenget skaft, spenningsareal `A_sp` og
-skruekvalitetene. De er derfor **én** type, ikke to. Sveisebolten har hodet
-påsmidt i fabrikken, så «forankringsende» er ikke et valg der og feltet vises
-ikke. Kamstål gjenges ikke opp for platefeste og har derfor ingen endeplate.
+**Sveisebolt vs. gjengestang/bolt** er ikke et sveist/ikke-sveist-skille –
+begge kan i praksis sveises eller boltes til plata (se «Innfesting til
+plate» under). Forskjellen er produksjonsmåten på selve stanga: en sveisebolt
+har et **påsmidd**, rundt hode uten gjenger noe sted (EN ISO 13918 – en
+«Nelson-bolt»), mens gjengestang/bolt er gjenget og tar en **påskrudd**
+sekskantmutter. De er derfor **én** type i modellen, ikke to – samme
+gjengede skaft, spenningsareal `A_sp` og skruekvalitetene K4.6–K10.9.
+
+Kamstål er hverken gjenget som en bolt eller påsmidd som en sveisebolt: det
+har kammer langs hele stanga og er ikke gjenget opp for en mutter. En
+endemutter må derfor **sveises** på i stedet for skrus på, og feltet heter
+«Sveist endemutter» for å vise det. Alternativt bøyes enden til en
+**endekrok**. Ingen av delene er kvantifisert utover den vanlige
+heftformelen (se under) – kroken gir ingen kapasitetsbonus i beregningen,
+bare et alternativ til rett stang. Kamstål gjenges heller ikke opp for
+platefeste og har derfor ingen felles endeplate.
 
 Reglene ligger i `STUD_STEELS[].bars` og `END_TYPES` i `src/core/model.js`, og
 `sync()` i `src/ui/app.js` retter opp en ugyldig kombinasjon – også når den
 kommer fra ei prosjektfil lagra før reglene ble strammet inn.
+
+I 3D skilles kamstål visuelt fra de andre stangtypene: lysbrun valsehud
+(`MAT.rebarAnchor` i `src/viz/scene-builder.js`) og kammer langs hele stanga,
+tegnet som småringer med jevne mellomrom (`rebarRibs()`) – ikke det virkelige
+valsemønsteret, bare nok til at stanga leses som kamstål og ikke glatt
+rundstål. Endekroken (`rebarHook()`) er en halvsirkel med en rett hale, samme
+prinsipp som en 180°-krok på en arbeidstegning – en tegneskikk, ikke en
+dimensjonert detalj.
 
 ### Felles endeplate
 
