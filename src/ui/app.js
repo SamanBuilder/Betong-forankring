@@ -909,7 +909,9 @@ export function boot() {
     for (const b of tools.children) b.setAttribute('aria-pressed', String(b.dataset.tool === t));
     $('#plan-hint').textContent = (TOOLS.find(x => x[0] === t) || [])[2] || '';
   };
+  const HIDDEN_TOOLS = new Set(['circle', 'poly']);
   for (const [id, label, hint] of TOOLS) {
+    if (HIDDEN_TOOLS.has(id)) continue;
     const b = el('button', 'btn', esc(label));
     b.dataset.tool = id;
     b.title = hint;
@@ -918,6 +920,7 @@ export function boot() {
   }
   setTool('select');
   const cut = $('#plan-cut');
+  cut.hidden = true;
   cut.onclick = () => {
     planner.cutMode = !planner.cutMode;
     cut.setAttribute('aria-pressed', String(planner.cutMode));
