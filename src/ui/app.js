@@ -8,12 +8,14 @@
 
 import { defaultModel, CONCRETE_GRADES, STUD_STEELS, studSize, rodSize,
          autoSpacing, boltsOutside, syncLoad, combo, nextComboId,
-         LIMIT_STATES, anchorFoot, steelsFor, defaultSteel,
-         endsFor } from '../core/model.js';
+         LIMIT_STATES, anchorFoot, steelsFor, defaultSteel, endsFor,
+         syncPlan, migratePlan, setPlanBox } from '../core/model.js';
 import { verify } from '../engine/verify.js';
 import { buildScene } from '../viz/scene-builder.js';
-import { FIELDS, barSizes, get, set, featureFields, newFeature } from './fields.js';
-import { FACES, FACE_LABEL, surfaceZ, isShaped } from '../engine/solid.js';
+import { FIELDS, barSizes, get, set, shapeFields, shapeName } from './fields.js';
+import { planShapes, shapeLoop, shapeZ, loopArea, isShaped,
+         SHAPE_LABEL, OP_LABEL } from '../engine/solid.js';
+import { PlanEditor, TOOLS } from './plan-editor.js';
 import { n, kN } from '../engine/calc.js';
 import { saveFile, saveError } from '../core/download.js';
 import '../viz/three-d-stage.js';
@@ -35,7 +37,7 @@ const REINF_DEFAULT = () =>
 
 let model = Object.assign(defaultModel(), { reinf: REINF_DEFAULT() });
 let showOpts = { cone: true, wedge: true, loads: true, labels: false, concrete: true,
-                 rebar: true, dims: true, colorMode: 'material' };
+                 rebar: true, dims: true, colorMode: 'material', shape: null };
 let hudItems = [];        // {el, pos, quat, scale} – sendes til stage.setLabels
 let activeGroup = 'Betongdel';
 let activeCheck = null;
@@ -46,8 +48,9 @@ const SUMMARY = {
   'Regelverk': m => m.code.standard === 'EN1992-4' ? 'EN 1992-4' : 'B19',
   'Betongdel': m => m.concrete.grade,
   'Betongform': m => {
-    const n2 = (m.concrete.features || []).length;
-    return n2 ? `${n2} snitt` : 'rett kloss';
+    const list = planShapes(m);
+    if (!isShaped(m)) return 'rett kloss';
+    return `${list.length} form${list.length > 1 ? 'er' : ''}`;
   },
   'Forankringsplate': m => m.plate.present
     ? `${m.plate.bx}×${m.plate.by}` : 'uten plate',
@@ -61,6 +64,7 @@ const SUMMARY = {
 function sync(m) {
   const g = CONCRETE_GRADES.find(x => x.id === m.concrete.grade);
   if (g) m.concrete.fck = g.fck;
+  syncPlan(m);                  // L_x/L_y mot plantegninga
 
   const a = m.anchors;
   // Stangtypen er styrende: stålkvalitet, forankringsende og innfesting må
@@ -115,7 +119,14 @@ function mergeModel(loaded) {
     if (v && typeof v === 'object' && !Array.isArray(v)) Object.assign(base[k], v);
     else if (v !== undefined) base[k] = v;
   }
-  return base;
+  // Ei fil lagra før plantegninga har «snitt i flatene» i stedet for former.
+  // Den gjøres om, så gamle prosjekt åpner med den samme geometrien.
+  if (loaded.concrete && !Array.isArray(loaded.concrete.plan)) {
+    base.concrete.plan = null;
+    base.concrete.features = loaded.concrete.features || [];
+    migratePlan(base);
+  }
+  return syncPlan(base);
 }
 
 // Antall bolter er endret: velg en senteravstand som holder dem innenfor plata
@@ -151,7 +162,7 @@ function renderForm() {
   const grp = visibleGroups().find(g => g.group === activeGroup);
   if (!grp) return;
   host.appendChild(el('h3', null, grp.group));
-  if (grp.custom === 'features') { renderFeatures(host); return; }
+  if (grp.custom === 'shapes') { renderShapes(host); return; }
   for (const f of grp.items) {
     if (f.when && !f.when(model)) continue;
     host.appendChild(field(f));
@@ -174,84 +185,105 @@ function renderForm() {
 }
 
 // === betongform ===========================================================
-//  Snitt i en flate, dratt ut eller inn. Lista er ikke fast som de andre
-//  gruppene, saa den bygges her i stedet for i fields.js.
-let pickFace = false;
+//  Formene i plantegninga. Lista er ikke fast som de andre gruppene - den
+//  vokser med det du tegner - saa den bygges her i stedet for i fields.js.
+//
+//  Ruta og plantegninga er to vindu inn i den samme lista: velger du en form
+//  her, staar den fram i tegninga og i 3D, og omvendt.
+// ===========================================================================
+let selectedShape = null;
+let planner = null;
 
-function nextFeatureId(m) {
-  return Math.max(0, ...(m.concrete.features || [])
-    .map(f => parseInt(String(f.id).replace(/\D/g, ''), 10) || 0)) + 1;
+function selectShape(id) {
+  selectedShape = id;
+  showOpts.shape = id;
 }
 
-function addFeature(face, u = 0, v = null) {
-  const list = model.concrete.features || (model.concrete.features = []);
-  list.push(newFeature(model, face, u, v, nextFeatureId(model)));
-  activeGroup = 'Betongform';
-  refresh(true);
+// Den minste forma som dekker punktet - saa en liten form oppi en stor kan
+// velges ved aa klikke paa den.
+function pickShapeAt(p) {
+  let best = null, bestA = Infinity;
+  for (const sh of planShapes(model)) {
+    const pts = shapeLoop(sh);
+    if (pts.length < 3) continue;
+    let inside = false;
+    for (let i = 0, j = pts.length - 1; i < pts.length; j = i++) {
+      const a = pts[i], b = pts[j];
+      if ((a.y > p.y) !== (b.y > p.y) &&
+          p.x < a.x + (p.y - a.y) / (b.y - a.y) * (b.x - a.x)) inside = !inside;
+    }
+    if (!inside) continue;
+    const A = Math.abs(loopArea(pts));
+    if (A < bestA) { bestA = A; best = sh; }
+  }
+  return best;
 }
 
-function setPickFace(on) {
-  pickFace = on;
-  const st = $('#stage');
-  if (st) st.pickMode = on ? 'face' : null;
-}
-
-function renderFeatures(host) {
+function renderShapes(host) {
   host.appendChild(el('p', 'hint',
-    'Et snitt er et rektangel tegnet i en av flatene på betongdelen. ' +
-    'Uttrekket drar betongen ut av flata (konsoll, fortanning) eller inn i ' +
-    'den (utsparing, spor), målt fra grunnformens flate. Kjeglebrudd, ' +
-    'kantbrudd og lokal tykkelse regnes av betongen slik den står etter ' +
-    'alle formene.'));
+    'Betongdelen er tegnet i plan. Hver form er et rektangel, en sirkel ' +
+    'eller ei lukka linjefigur, og legger betong til eller tar den bort. ' +
+    'Ligger flere former oppi hverandre, blir de skåret der linjene møtes: ' +
+    'det er omrisset som er delen. Tegn og mål i <b>Plan</b>-fana.'));
 
   const row = el('div', 'feat-add');
-  const sel = el('select');
-  for (const f of FACES) {
-    const o = el('option', null, esc(FACE_LABEL[f])); o.value = f; sel.appendChild(o);
-  }
-  const add = el('button', 'btn', 'Nytt snitt');
-  add.onclick = () => addFeature(sel.value);
-  const pick = el('button', 'btn', pickFace ? 'Klikk en flate i 3D …' : 'Velg flate i 3D');
-  pick.setAttribute('aria-pressed', String(pickFace));
-  pick.onclick = () => { setPickFace(!pickFace); renderForm(); };
-  row.append(sel, add, pick);
+  const goPlan = el('button', 'btn', 'Åpne plantegninga');
+  goPlan.onclick = () => { setViewTab('plan'); };
+  const box = el('button', 'btn ghost', 'Tilbake til rektangel');
+  box.title = 'Erstatter hele tegninga med ett rektangel på dagens utstrekning';
+  box.onclick = () => {
+    setPlanBox(model, model.concrete.Lx, model.concrete.Ly);
+    selectShape(null);
+    refresh(true);
+  };
+  row.append(goPlan, box);
   host.appendChild(row);
 
-  const list = model.concrete.features || [];
-  if (!list.length) {
-    host.appendChild(el('p', 'hint',
-      'Ingen former ennå – betongdelen er en rett kloss.'));
-    return;
-  }
-  const KIND = d => d > 0 ? 'legger til betong' : d < 0 ? 'tar bort betong'
-                                                : 'ikke dratt ut ennå';
-  list.forEach((ft, i) => {
-    const card = el('div', 'feat');
+  const list = planShapes(model);
+  list.forEach((sh, i) => {
+    const card = el('div', 'feat' + (sh.id === selectedShape ? ' on' : ''));
     const head = el('div', 'feat-head');
-    head.appendChild(el('span', 'nm',
-      `${i + 1} · ${esc(FACE_LABEL[ft.face] || ft.face)}`));
-    head.appendChild(el('span', 'kind', esc(KIND(+ft.depth || 0))));
+    const nm = el('button', 'nm', esc(shapeName(sh, i)));
+    nm.onclick = () => { selectShape(sh.id === selectedShape ? null : sh.id); refresh(true); };
+    head.appendChild(nm);
+    head.appendChild(el('span', 'kind',
+      esc(sh.op === 'cut' ? 'tar betong bort' : 'legger betong')));
     const del = el('button', 'btn ghost', 'Slett');
     del.title = 'Fjern denne forma';
-    del.onclick = () => { list.splice(i, 1); refresh(true); };
+    del.onclick = () => {
+      model.concrete.plan.splice(i, 1);
+      if (selectedShape === sh.id) selectShape(null);
+      refresh(true);
+    };
     head.appendChild(del);
     card.appendChild(head);
-    const kind = head.querySelector('.kind');
-    for (const f of featureFields(model, i)) {
-      const fld = field(f);
-      // Uttrekket skrives uten at skjemaet bygges om (ellers rykkes markøren
-      // ut av feltet), så overskrifta må holdes i takt for seg.
-      if (f.p.endsWith('.depth'))
-        fld.querySelector('input').addEventListener('input', ev => {
-          kind.textContent = KIND(parseFloat(ev.target.value) || 0);
-        });
-      card.appendChild(fld);
-    }
+
+    // Høyda: enten følger forma tykkelsen, eller så har den sin egen
+    // over- og underkant. Boksen er inngangen til begge deler.
+    const [z0, z1] = shapeZ(model, sh);
+    const auto = sh.z0 == null && sh.z1 == null;
+    const fld = el('label', 'fld bool');
+    fld.appendChild(el('span', 'lbl', 'Gjennom hele tykkelsen'));
+    const cb = el('input'); cb.type = 'checkbox'; cb.checked = auto;
+    cb.onchange = () => {
+      if (cb.checked) { sh.z0 = null; sh.z1 = null; }
+      else { sh.z0 = z0; sh.z1 = z1; }
+      refresh(true);
+    };
+    fld.appendChild(cb);
+    card.appendChild(fld);
+
+    for (const f of shapeFields(model, i)) card.appendChild(field(f));
+    if (sh.kind === 'poly')
+      card.appendChild(el('p', 'hint',
+        `${sh.pts.length} hjørner. Målene på linjene redigeres i plantegninga.`));
     host.appendChild(card);
   });
+
   host.appendChild(el('p', 'hint',
-    'I 3D står det en pil ut av hver form. Dra i den for å trekke betongen ' +
-    'ut eller inn – forbi null snur formen fra tillegg til utsparing.'));
+    'Den valgte forma står fram i 3D med to piler: dra i dem for å flytte ' +
+    'over- og underkanten. Da får forma sin egen høyde i stedet for å følge ' +
+    'tykkelsen h.'));
 }
 
 function field(f) {
@@ -272,8 +304,16 @@ function field(f) {
   } else {
     input = el('input'); input.type = 'number'; input.step = f.step ?? 1;
     if (f.min != null) input.min = f.min;
-    const raw = get(model, f.p);
+    // `val` er den verdien feltet skal VISE når modellen ikke har et tall selv
+    // - som over- og underkanten på en form som følger tykkelsen.
+    const raw = f.val != null ? f.val : get(model, f.p);
     input.value = f.t === 'kn' ? raw / 1000 : f.t === 'knm' ? raw / 1e6 : raw;
+    // Avledede felt vises, men kan ikke skrives i: da er det tydelig hvor
+    // verdien kommer fra.
+    if (typeof f.ro === 'function' ? f.ro(model) : f.ro) {
+      input.disabled = true;
+      wrap.classList.add('ro');
+    }
     const commit = () => {
       const v = parseFloat(input.value);
       if (!Number.isFinite(v)) return;
@@ -351,12 +391,15 @@ function concreteShapeTxt(m) {
   const c = m.concrete;
   const base = `${c.Lx}×${c.Ly}×${c.h} mm`;
   if (!isShaped(m)) return base;
-  const list = c.features.filter(f => Math.abs(+f.depth || 0) > 1e-6);
-  const cuts = list.filter(f => f.depth < 0).length;
+  const list = planShapes(m);
+  const cuts = list.filter(f => f.op === 'cut').length;
   const adds = list.length - cuts;
-  const txt = [cuts ? `${cuts} utsparing${cuts > 1 ? 'er' : ''}` : null,
-               adds ? `${adds} tillegg` : null].filter(Boolean).join(' · ');
-  return `${base} + ${txt}`;
+  const kinds = [...new Set(list.map(f => SHAPE_LABEL[f.kind]))]
+    .join(' + ').toLowerCase();
+  const txt = [`${adds} form${adds > 1 ? 'er' : ''}`,
+               cuts ? `${cuts} utsparing${cuts > 1 ? 'er' : ''}` : null]
+    .filter(Boolean).join(' · ');
+  return `tegnet i plan (${txt}: ${kinds}) · omriss ${base}`;
 }
 
 function renderResults(v) {
@@ -693,16 +736,21 @@ function buildHud(items, scale) {
 // === visning ==============================================================
 function setViewTab(t) {
   viewTab = t;
-  $('#tab-3d').setAttribute('aria-pressed', String(t === '3d'));
-  $('#tab-calc').setAttribute('aria-pressed', String(t === 'calc'));
+  for (const [id, want] of [['#tab-3d', '3d'], ['#tab-plan', 'plan'], ['#tab-calc', 'calc']])
+    $(id).setAttribute('aria-pressed', String(t === want));
   $('#wrap-3d').hidden = t !== '3d';
   $('#hud').hidden = t !== '3d';
+  $('#wrap-plan').hidden = t !== 'plan';
   $('#wrap-calc').hidden = t !== 'calc';
   $('#viewsub').hidden = t !== '3d';
+  $('#plansub').hidden = t !== 'plan';
   for (const b of document.querySelectorAll('#viewbtns .btn, #exportbtns .btn'))
     b.disabled = t !== '3d';
   $('#ortho').disabled = t !== '3d';
   if (t === '3d') $('#stage').frameAll?.();
+  // Lerretet har null størrelse mens ruta er skjult, så tegninga må tas om
+  // igjen - og passes inn første gang den vises.
+  if (t === 'plan' && planner) requestAnimationFrame(() => planner.draw());
 }
 
 // === draghåndtak ==========================================================
@@ -787,7 +835,8 @@ function refresh(rebuildForm, rebuildCombos) {
   if (rebuildForm) { renderGroups(); renderForm(); } else { renderGroups(); }
   if (rebuildCombos) renderCombos();
   const v = verify(model);
-  window.__v = v;
+  window.__v = v;               // for feilsøking i konsollet
+  window.__m = model;
   renderResults(v);
   renderSheet(v);
   paintComboUtils(utilForCombos());
@@ -796,6 +845,7 @@ function refresh(rebuildForm, rebuildCombos) {
     ? `løst · ${v.res.iter} iterasjoner` : 'løseren konvergerte ikke';
   $('#st-max').innerHTML = Number.isFinite(v.maxUtil)
     ? `maks utnyttelse <span style="color:${utilCss(v.maxUtil)}">${pct(v.maxUtil)}</span>` : '–';
+  if (planner && viewTab === 'plan') planner.draw();
   clearTimeout(t0);
   t0 = setTimeout(() => {
     const { root, hud, hudScale } = buildScene(v, showOpts);
@@ -840,7 +890,39 @@ export function boot() {
   };
 
   $('#tab-3d').onclick = () => setViewTab('3d');
+  $('#tab-plan').onclick = () => setViewTab('plan');
   $('#tab-calc').onclick = () => setViewTab('calc');
+
+  // ---- plantegninga ------------------------------------------------------
+  // Tegninga skriver rett i modellen og ber om ny beregning. `rebuild` sier om
+  // skjemaet må bygges om - under et dra gjør det ikke det, ellers ville lista
+  // hoppe for hver piksel.
+  planner = new PlanEditor($('#wrap-plan'), {
+    model: () => model,
+    selected: () => selectedShape,
+    onSelect: id => { selectShape(id); renderForm(); },
+    onChange: rebuild => refresh(!!rebuild),
+  });
+  const tools = $('#plantools');
+  const setTool = t => {
+    planner.setTool(t);
+    for (const b of tools.children) b.setAttribute('aria-pressed', String(b.dataset.tool === t));
+    $('#plan-hint').textContent = (TOOLS.find(x => x[0] === t) || [])[2] || '';
+  };
+  for (const [id, label, hint] of TOOLS) {
+    const b = el('button', 'btn', esc(label));
+    b.dataset.tool = id;
+    b.title = hint;
+    b.onclick = () => setTool(id);
+    tools.appendChild(b);
+  }
+  setTool('select');
+  const cut = $('#plan-cut');
+  cut.onclick = () => {
+    planner.cutMode = !planner.cutMode;
+    cut.setAttribute('aria-pressed', String(planner.cutMode));
+  };
+  $('#plan-fit').onclick = () => { planner.fit(); planner.draw(); };
 
   // ---- geometri rett i 3D ------------------------------------------------
   // Uttrekkspilene er drahaandtak. Under draget skrives verdien rett i
@@ -853,27 +935,6 @@ export function boot() {
   });
   stage.addEventListener('handle-end', () => refresh(true));
 
-  // Klikk paa en flate for aa legge et snitt der. Flata leses av normalen i
-  // treffpunktet, og snittet legges der du traff - som naar du starter en
-  // skisse paa en flate i SpaceClaim.
-  stage.addEventListener('face-pick', e => {
-    if (!pickFace) return;
-    const { point, normal } = e.detail;
-    const c = model.concrete;
-    const z = point.z + surfaceZ(model);      // tilbake til betongdelens z
-    const ax = Math.abs(normal.x) >= Math.abs(normal.y) &&
-               Math.abs(normal.x) >= Math.abs(normal.z) ? 'x'
-             : Math.abs(normal.y) >= Math.abs(normal.z) ? 'y' : 'z';
-    const pos = normal[ax] >= 0;
-    const face = ax === 'x' ? (pos ? 'xPos' : 'xNeg')
-               : ax === 'y' ? (pos ? 'yPos' : 'yNeg') : (pos ? 'top' : 'bottom');
-    const r5 = v => Math.round(v / 5) * 5;
-    setPickFace(false);
-    if (ax === 'x') addFeature(face, r5(point.y + c.ey), r5(z));
-    else if (ax === 'y') addFeature(face, r5(point.x + c.ex), r5(z));
-    else addFeature(face, r5(point.x + c.ex), r5(point.y + c.ey));
-  });
-
   const code = $('#code');
   code.value = model.code.standard;
   code.onchange = () => { model.code.standard = code.value; refresh(true); };
@@ -881,7 +942,8 @@ export function boot() {
   $('#reset').onclick = () => {
     model = Object.assign(defaultModel(), { reinf: REINF_DEFAULT() });
     activeCheck = null; activeGroup = 'Betongdel';
-    setPickFace(false);
+    selectShape(null);
+    if (planner) planner.touched = false;
     $('#code').value = model.code.standard;
     setViewTab('3d');
     refresh(true, true);
@@ -905,6 +967,8 @@ export function boot() {
       const loaded = JSON.parse(await file.text());
       model = mergeModel(loaded);
       activeCheck = null; activeGroup = 'Betongdel';
+      selectShape(null);
+      if (planner) planner.touched = false;
       $('#code').value = model.code.standard;
       setViewTab('3d');
       refresh(true, true);
@@ -938,7 +1002,18 @@ function buildReport(v) {
     `Dato:       ${new Date().toLocaleString('no-NO')}`, '');
   L.push('GEOMETRI', line('-'));
   L.push(`Betong ${m.concrete.grade} (f_ck = ${m.concrete.fck} N/mm²), ` +
-    `${m.concrete.Lx} × ${m.concrete.Ly} × ${m.concrete.h} mm`);
+    `${concreteShapeTxt(m)}`);
+  if (isShaped(m))
+    for (const [i, sh] of planShapes(m).entries()) {
+      const [z0, z1] = shapeZ(m, sh);
+      const geo = sh.kind === 'rect'
+        ? `${sh.bx} × ${sh.by} mm i (${sh.x}, ${sh.y})`
+        : sh.kind === 'circle' ? `⌀${2 * sh.r} mm i (${sh.x}, ${sh.y})`
+        : `${sh.pts.length} hjørner`;
+      L.push(`  ${i + 1}. ${SHAPE_LABEL[sh.kind]}, ` +
+        `${(OP_LABEL[sh.op] || OP_LABEL.add).toLowerCase()}: ${geo}, ` +
+        `kote ${Math.round(z0)} til ${Math.round(z1)}`);
+    }
   L.push(m.plate.present
     ? `Plate ${m.plate.bx} × ${m.plate.by} × ${m.plate.t} mm, ` +
       `montasje: ${MOUNT_TXT[m.plate.mount]}, ` +

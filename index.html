@@ -51,6 +51,7 @@
       <div class="pane-head">
         <div class="btn-row">
           <button class="btn" id="tab-3d" aria-pressed="true">3D</button>
+          <button class="btn" id="tab-plan" aria-pressed="false">Plan</button>
           <button class="btn" id="tab-calc" aria-pressed="false">Utregning</button>
         </div>
         <span class="grow"></span>
@@ -81,6 +82,17 @@
         <label class="tog"><input type="checkbox" id="colormode"> Fargelegg utnyttelse</label>
         <span class="stat" id="legend" hidden></span>
       </div>
+      <div class="pane-sub" id="plansub" hidden>
+        <div class="btn-row" id="plantools"></div>
+        <span class="sep"></span>
+        <button class="btn ghost" id="plan-cut" aria-pressed="false"
+          title="Neste form du tegner tar betong bort i stedet for å legge til">Utsparing</button>
+        <span class="sep"></span>
+        <button class="btn ghost" id="plan-fit">Tilpass</button>
+        <span class="grow"></span>
+        <span class="stat" id="plan-hint"></span>
+      </div>
+      <div class="plan-wrap" id="wrap-plan" hidden></div>
       <div class="stage-wrap" id="wrap-3d">
         <three-d-stage id="stage" background="#efede8" controls="none"></three-d-stage>
         <div class="hud" id="hud"></div>

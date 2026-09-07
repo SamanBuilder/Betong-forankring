@@ -7,7 +7,8 @@
 import { anchorPositions, edgeDistances, mounting, boltsOutside, EDGE_MIN,
          shaftProps, anchorFoot, grade, endsFor,
          memberThickness } from '../core/model.js';
-import { featureBox, features, surfaceZ, FACE_LABEL } from './solid.js';
+import { planShapes, shapeZ, shapeLoop, loopArea, surfaceZ,
+         SHAPE_LABEL, OP_LABEL } from './solid.js';
 
 export function validate(m) {
   const out = [];
@@ -23,7 +24,7 @@ export function validate(m) {
     const cmin = Math.min(e.xNeg, e.xPos, e.yNeg, e.yPos);
     if (cmin <= 0) {
       err(`Bolt ${q.id} ligger utenfor betongdelen (kantavstand ${Math.round(cmin)} mm). ` +
-          `Øk L_x/L_y, eller reduser senteravstand/offset.`);
+          `Utvid formen i plantegninga, eller flytt plata med e_x / e_y.`);
       break;
     }
   }
@@ -40,28 +41,31 @@ export function validate(m) {
     warn('Forankringsplata er større enn betongdelen.');
   if (a.nx * a.ny < 1) err('Minst én bolt kreves.');
 
-  // --- formene i betongen -----------------------------------------------
-  const fts = features(m);
-  fts.forEach((ft, i) => {
-    const nm = `Form ${i + 1} (${FACE_LABEL[ft.face] || ft.face})`;
-    if (!(ft.bu > 0) || !(ft.bv > 0)) { warn(`${nm}: snittet har ingen utstrekning.`); return; }
-    if (Math.abs(+ft.depth || 0) < 1e-6) {
-      warn(`${nm} er ikke dratt ut ennå – den endrer ingenting. Dra i pila i ` +
-           `3D, eller skriv et uttrekk.`);
+  // --- formene i plantegninga -------------------------------------------
+  const list = planShapes(m);
+  if (!list.some(sh => sh.op !== 'cut'))
+    err('Plantegninga har ingen form som legger betong. Tegn minst ett ' +
+        'rektangel, en sirkel eller en lukka linjefigur.');
+  list.forEach((sh, i) => {
+    const nm = `Form ${i + 1} (${SHAPE_LABEL[sh.kind] || sh.kind}, ` +
+               `${(OP_LABEL[sh.op] || OP_LABEL.add).toLowerCase()})`;
+    const pts = shapeLoop(sh);
+    if (pts.length < 3 || Math.abs(loopArea(pts)) < 1e-6) {
+      warn(`${nm} har ingen utstrekning og endrer ingenting.`);
       return;
     }
-    if (!featureBox(m, ft))
-      warn(`${nm} ligger helt utenfor flata den er tegnet i, og gir ingen betong. ` +
-           `Snittet klippes alltid mot flata, så tillagt betong henger fast i den.`);
+    const [z0, z1] = shapeZ(m, sh);
+    if (!(z1 > z0 + 1e-6))
+      warn(`${nm} har ingen høyde: overkant og underkant ligger i samme nivå.`);
   });
   const zRef = surfaceZ(m);
   if (zRef < 0)
     warn(`Plata står i en utsparing: betongoverflata under plata ligger ` +
-         `${Math.round(-zRef)} mm under overkant av grunnformen. h_ef og ` +
+         `${Math.round(-zRef)} mm under overkant av delen. h_ef og ` +
          `bruddkjegla regnes fra den flata som faktisk finnes der.`);
   else if (zRef > 0)
     warn(`Plata står på en pute som er ${Math.round(zRef)} mm høyere enn ` +
-         `grunnformen. h_ef regnes fra puta si overflate.`);
+         `overkant av delen. h_ef regnes fra puta si overflate.`);
 
   // --- forankringsende og stangtype -------------------------------------
   const sh = shaftProps(m), foot = anchorFoot(m);

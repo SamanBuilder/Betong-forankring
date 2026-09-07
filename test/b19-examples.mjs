@@ -8,7 +8,7 @@
 //  følger avrundinga i boka (tabellverdiene er oppgitt i hele kN).
 // ---------------------------------------------------------------------------
 
-import { defaultModel, syncLoad } from '../src/core/model.js';
+import { syncPlan, defaultModel, syncLoad } from '../src/core/model.js';
 import { b19Concrete, b19Steel, b19TensionConcrete, b19FootPressure,
          b19ShearBending, b19ShearConcrete } from '../src/engine/b19.js';
 import { solvePlate } from '../src/engine/plate-solver.js';
@@ -33,6 +33,7 @@ function build(mut) {
   m.load.N = 0; m.load.Vx = 0; m.load.Vy = 0;
   m.load.Mx = 0; m.load.My = 0; m.load.Mz = 0;
   mut(m);
+  syncPlan(m);                     // L_x/L_y over i plantegninga
   return { m, res: solvePlate(m) };
 }
 

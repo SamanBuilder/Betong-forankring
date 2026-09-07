@@ -20,6 +20,7 @@ import {
 } from './b19.js';
 import { tensionReinforcement, shearReinforcement } from './anchor-reinforcement.js';
 import { validate, bearingCheck } from './validate.js';
+import { syncPlan } from '../core/model.js';
 
 const STD_LABEL = {
   'EN1992-4': 'NS-EN 1992-4:2018',
@@ -29,6 +30,7 @@ const std = s => (s === 'B19' ? 'B19' : 'EN1992-4');
 const tag = (checks, s) => checks.map(c => ({ ...c, standardId: s, standard: STD_LABEL[s] }));
 
 export function verify(m) {
+  syncPlan(m);                     // L_x/L_y mot tegninga, og gamle filer over
   const issues = validate(m);
   const res = solvePlate(m);
   const gEN = partialFactors(m);

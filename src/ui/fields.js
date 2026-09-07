@@ -3,8 +3,8 @@
 // `o` kan vaere en fast liste, eller en funksjon av modellen naar valgene
 // avhenger av noe annet - som boltdiameteren, der utvalget foelger stangtypen.
 import { CONCRETE_GRADES, STUD_SIZES, REBAR_SIZES, ROD_SIZES,
-         steelsFor, endsFor } from '../core/model.js';
-import { FACES, FACE_INFO, FACE_LABEL, faceRect } from '../engine/solid.js';
+         steelsFor, endsFor, soleBox } from '../core/model.js';
+import { planShapes, shapeZ, SHAPE_LABEL } from '../engine/solid.js';
 
 // Diameterne som finnes for hver stangtype.
 export function barSizes(m) {
@@ -61,10 +61,23 @@ export const FIELDS = [
   { group: 'Betongdel', items: [
     { p: 'concrete.grade', l: 'Fasthetsklasse', t: 'select',
       o: CONCRETE_GRADES.map(g => [g.id, `${g.id}  (f_ck = ${g.fck})`]) },
-    { p: 'concrete.Lx', l: 'Lengde L_x', t: 'num', u: 'mm', step: 50 },
-    { p: 'concrete.Ly', l: 'Lengde L_y', t: 'num', u: 'mm', step: 50 },
-    { p: 'concrete.h', l: 'Tykkelse h', t: 'num', u: 'mm', step: 10 },
-    { p: 'concrete.ex', l: 'Plate offset e_x', t: 'num', u: 'mm', step: 10 },
+    // L_x og L_y ER rektangelet saa lenge delen bare er ett rektangel. Er den
+    // tegnet til noe annet, viser feltene hvor stor delen har blitt - da er
+    // det plantegninga som bestemmer.
+    { p: 'concrete.Lx', l: 'Lengde L_x', t: 'num', u: 'mm', step: 50,
+      ro: m => !soleBox(m),
+      hint: 'Delas utstrekning i x. Kan skrives i så lenge delen er ett ' +
+            'rektangel; ellers leses den av plantegninga.' },
+    { p: 'concrete.Ly', l: 'Lengde L_y', t: 'num', u: 'mm', step: 50,
+      ro: m => !soleBox(m),
+      hint: 'Delas utstrekning i y. Kan skrives i så lenge delen er ett ' +
+            'rektangel; ellers leses den av plantegninga.' },
+    { p: 'concrete.h', l: 'Tykkelse h', t: 'num', u: 'mm', step: 10,
+      hint: 'Tykkelsen former som følger tykkelsen får. Former med egen ' +
+            'over- og underkant står i ro når h endres.' },
+    { p: 'concrete.ex', l: 'Plate offset e_x', t: 'num', u: 'mm', step: 10,
+      hint: 'Hvor plata står i betongdelens eget system. Formene du har ' +
+            'tegnet står stille når plata flyttes.' },
     { p: 'concrete.ey', l: 'Plate offset e_y', t: 'num', u: 'mm', step: 10 },
     { p: 'concrete.freeEdges.xNeg', l: 'Fri kant −x', t: 'bool' },
     { p: 'concrete.freeEdges.xPos', l: 'Fri kant +x', t: 'bool' },
@@ -72,9 +85,9 @@ export const FIELDS = [
     { p: 'concrete.freeEdges.yPos', l: 'Fri kant +y', t: 'bool' },
   ] },
 
-  // Formene i betongen redigeres av sin egen rute (renderFeatures i app.js):
-  // lista er ikke fast, den vokser med snittene du legger inn.
-  { group: 'Betongform', custom: 'features', items: [] },
+  // Formene i plantegninga redigeres av si egen rute (renderShapes i app.js):
+  // lista er ikke fast, den vokser med det du tegner.
+  { group: 'Betongform', custom: 'shapes', items: [] },
 
   { group: 'Forankringsplate', items: [
     { p: 'plate.present', l: 'Stålplate i overflata', t: 'bool',
@@ -197,43 +210,49 @@ export const FIELDS = [
 ];
 
 // ---------------------------------------------------------------------------
-//  Feltene for ett snitt i betongen.
+//  Feltene for én form i plantegninga.
 //
-//  Navnene foelger flata snittet er tegnet i, ikke en fast u/v-notasjon:
-//  staar du paa en sideflate er den andre retninga hoeyden, staar du paa
-//  overflata er begge plane mål. Da slipper du aa oversette i hodet.
+//  Rektangelet har senter og to sidekanter, sirkelen senter og radius, og ei
+//  linjefigur har hjoernene sine - dem redigerer du i plantegninga, ikke som
+//  tall. Alle tre har det samme hoeydeintervallet.
+//
+//  z1/z0 vises som tall naar forma har sitt eget intervall. Foelger den
+//  tykkelsen, staar avkryssingsboksen i skjemaet i stedet (se renderShapes).
 // ---------------------------------------------------------------------------
-export function featureFields(m, i) {
-  const ft = m.concrete.features[i];
-  const inf = FACE_INFO[ft.face] || FACE_INFO.top;
-  const flat = inf.axis === 'z';          // topp/bunn: begge retningene er plane
-  const uN = inf.uAxis, vN = inf.vAxis;
-  const P = k => `concrete.features.${i}.${k}`;
-  return [
-    { p: P('face'), l: 'Flate', t: 'select', o: FACES.map(f => [f, FACE_LABEL[f]]),
-      hint: 'Flata snittet er tegnet i. Uttrekket gaar vinkelrett ut av den.' },
-    { p: P('bu'), l: `Bredde ${uN}`, t: 'num', u: 'mm', step: 10, min: 0 },
-    { p: P('bv'), l: flat ? `Bredde ${vN}` : 'Høyde z', t: 'num', u: 'mm', step: 10, min: 0 },
-    { p: P('u'), l: `Senter ${uN}`, t: 'num', u: 'mm', step: 10 },
-    { p: P('v'), l: `Senter ${vN}`, t: 'num', u: 'mm', step: 10,
-      hint: flat ? 'Målt fra betongdelens senter.'
-                 : 'Målt fra betongoverflata og nedover, så −h/2 er midt i tverrsnittet.' },
-    { p: P('depth'), l: 'Uttrekk', t: 'num', u: 'mm', step: 5,
-      hint: 'Positivt drar betongen ut av flata (konsoll, fortanning). ' +
-            'Negativt drar den inn (utsparing, spor). Du kan også dra i pila i 3D.' },
+export function shapeFields(m, i) {
+  const sh = planShapes(m)[i];
+  const P = k => `concrete.plan.${i}.${k}`;
+  const out = [
+    { p: P('op'), l: 'Virkning', t: 'select', o: [
+      ['add', 'Legger betong'], ['cut', 'Utsparing – tar betong bort']],
+      hint: 'To former som legger betong og overlapper, blir til én: det er ' +
+            'unionen som teller, så de indre linjene forsvinner av seg selv.' },
   ];
+  if (sh.kind === 'rect')
+    out.push(
+      { p: P('bx'), l: 'Bredde x', t: 'num', u: 'mm', step: 10, min: 0 },
+      { p: P('by'), l: 'Bredde y', t: 'num', u: 'mm', step: 10, min: 0 },
+      { p: P('x'), l: 'Senter x', t: 'num', u: 'mm', step: 10 },
+      { p: P('y'), l: 'Senter y', t: 'num', u: 'mm', step: 10 });
+  else if (sh.kind === 'circle')
+    out.push(
+      { p: P('r'), l: 'Radius', t: 'num', u: 'mm', step: 10, min: 0 },
+      { p: P('x'), l: 'Senter x', t: 'num', u: 'mm', step: 10 },
+      { p: P('y'), l: 'Senter y', t: 'num', u: 'mm', step: 10 });
+  if (!(sh.z0 == null && sh.z1 == null)) {
+    const [z0, z1] = shapeZ(m, sh);
+    out.push(
+      { p: P('z1'), l: 'Overkant', t: 'num', u: 'mm', step: 10, val: z1,
+        hint: '0 er overkant av betongdelen, og negative tall ligger under. ' +
+              'En form som stikker over 0 er en pute eller en konsoll.' },
+      { p: P('z0'), l: 'Underkant', t: 'num', u: 'mm', step: 10, val: z0 });
+  }
+  return out;
 }
 
-// Snittets utstrekning i flata det ligger i - brukes til å sette fornuftige
-// startmål når et nytt snitt legges inn.
-export function newFeature(m, face, u = 0, v = null, id = 1) {
-  const r = faceRect(m, face);
-  const inf = FACE_INFO[face];
-  const bu = Math.max(50, Math.round((r.u1 - r.u0) / 3 / 10) * 10);
-  const bv = Math.max(50, Math.round((r.v1 - r.v0) / 3 / 10) * 10);
-  const vDef = v == null ? (inf.axis === 'z' ? 0 : (r.v0 + r.v1) / 2) : v;
-  return { id: `f${id}`, face, u, v: vDef, bu, bv, depth: 0 };
-}
+// Navnet på forma i lista.
+export const shapeName = (sh, i) =>
+  `${i + 1} · ${SHAPE_LABEL[sh.kind] || sh.kind}`;
 
 export const get = (o, p) => p.split('.').reduce((a, k) => a?.[k], o);
 export function set(o, p, v) {

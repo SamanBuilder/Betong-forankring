@@ -281,7 +281,10 @@ export class ThreeDStage extends HTMLElement {
   //  Drahaandtak og flatevalg.
   //
   //  Et haandtak er hvilken som helst gruppe i modellen med userData.handle:
-  //    { path, value, dir, step, min, max }
+  //    { path, value, step, min, max, sign }
+  //  `sign` snur hvilken vei verdien gaar naar du drar: -1 naar pila peker
+  //  motsatt vei av at verdien vokser (underkanten av en form peker ned,
+  //  men kotenen synker naar du drar den nedover).
   //  Pila peker langs sin egen lokale +y, saa dragaksen leses rett ut av
   //  verdensmatrisa - da trenger ikke visninga vite noe om ingenioerakser.
   //
@@ -382,7 +385,7 @@ export class ThreeDStage extends HTMLElement {
     const p = this._axisParam(e, d.origin, d.axis);
     if (p == null) return;
     const step = d.h.step || 1;
-    let v = d.v0 + (p - d.p0);
+    let v = d.v0 + (d.h.sign ?? 1) * (p - d.p0);
     v = Math.round(v / step) * step;
     if (d.h.min != null) v = Math.max(d.h.min, v);
     if (d.h.max != null) v = Math.min(d.h.max, v);

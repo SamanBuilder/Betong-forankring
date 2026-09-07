@@ -4,8 +4,8 @@
 //  Fortegn:  +N = strekk (plata trekkes av betongen),  z = ut av betongen.
 // ---------------------------------------------------------------------------
 import { unionRectArea } from '../engine/geometry.js';
-import { edgeDistancesAt, anchorDepth, baseBox,
-         minThickness } from '../engine/solid.js';
+import { edgeDistancesAt, anchorDepth, baseBox, planSize,
+         minThickness, planShapes } from '../engine/solid.js';
 
 // fckCube = terningfasthet f_ck,cube, fctk = f_ctk,0,05.  Begge etter
 // NS-EN 1992-1-1 tab. 3.1 (parene C20/25 ... C55/67).  B65-B85 har ingen
@@ -263,6 +263,117 @@ export function anchorFoot(m) {
            t: a.k, limited: false, Agross: A, Aeff: A, Ah: A - core };
 }
 
+// ---------------------------------------------------------------------------
+//  Formene i plantegninga.
+//
+//   rect    x, y = senter,  bx, by = sidekantene
+//   circle  x, y = senter,  r = radius
+//   poly    pts = [[x, y], ...], lukka av seg selv
+//
+//  z1/z0 er overkant/underkant. null betyr «foelg tykkelsen» - overkant i 0 og
+//  underkant i -h - saa en vanlig form flytter seg med h uten aa skrives om.
+//  op = 'add' legger betong til, 'cut' tar den bort.
+// ---------------------------------------------------------------------------
+export function newShape(id, kind, geom = {}, op = 'add') {
+  return { id, kind, op, z0: null, z1: null,
+           x: 0, y: 0, bx: 0, by: 0, r: 0, pts: null, ...geom };
+}
+
+export function nextShapeId(m) {
+  const n = Math.max(0, ...planShapes(m)
+    .map(s => parseInt(String(s.id).replace(/\D/g, ''), 10) || 0));
+  return `s${n + 1}`;
+}
+
+// ---------------------------------------------------------------------------
+//  Prosjektfiler fra foer plantegninga: grunnklossen L_x x L_y og «snittene»
+//  i de seks flatene gjoeres om til former i plan. Et snitt i en sideflate
+//  blir et rektangel som stikker inn i eller ut av den kanten, med samme
+//  hoeydeintervall som snittet hadde; et snitt i over- eller underflata blir
+//  et rektangel over hele sin hoeyde. Geometrien blir den samme.
+// ---------------------------------------------------------------------------
+const FACE_AXIS = { xNeg: ['x', -1], xPos: ['x', 1], yNeg: ['y', -1],
+                    yPos: ['y', 1], top: ['z', 1], bottom: ['z', -1] };
+
+export function migratePlan(m) {
+  const c = m.concrete;
+  if (Array.isArray(c.plan) && c.plan.length) { delete c.features; return m; }
+  const Lx = +c.Lx || 1200, Ly = +c.Ly || 1200, h = Math.abs(+c.h || 300);
+  const out = [newShape('s1', 'rect', { x: 0, y: 0, bx: Lx, by: Ly })];
+  let k = 2;
+  for (const ft of (c.features || [])) {
+    const inf = FACE_AXIS[ft.face];
+    const d = +ft.depth || 0;
+    if (!inf || Math.abs(d) < 1e-6) continue;
+    const [axis, sign] = inf;
+    const op = d > 0 ? 'add' : 'cut';
+    const bu = Math.abs(+ft.bu || 0), bv = Math.abs(+ft.bv || 0);
+    const u = +ft.u || 0, v = +ft.v || 0;
+    if (axis === 'z') {
+      const plane = sign > 0 ? 0 : -h;
+      const a = plane, b = plane + sign * d;
+      out.push(newShape(`s${k++}`, 'rect',
+        { x: u, y: v, bx: bu, by: bv, z0: Math.min(a, b), z1: Math.max(a, b) }, op));
+      continue;
+    }
+    const plane = axis === 'x' ? sign * Lx / 2 : sign * Ly / 2;
+    const a = plane, b = plane + sign * d;
+    const lo = Math.min(a, b), hi = Math.max(a, b);
+    const geom = axis === 'x'
+      ? { x: (lo + hi) / 2, y: u, bx: hi - lo, by: bu }
+      : { x: u, y: (lo + hi) / 2, bx: bu, by: hi - lo };
+    out.push(newShape(`s${k++}`, 'rect',
+      { ...geom, z0: Math.min(v - bv / 2, v + bv / 2),
+        z1: Math.max(v - bv / 2, v + bv / 2) }, op));
+  }
+  c.plan = out;
+  delete c.features;
+  return m;
+}
+
+// ---------------------------------------------------------------------------
+//  L_x og L_y mot tegninga.
+//
+//  Er delen ETT rektangel over hele tykkelsen - den rette klossen - er de to
+//  maala rektangelet, og du kan skrive dem rett inn som foer. Er den tegnet
+//  til noe annet, er de avledet: da er det tegninga som bestemmer, og feltene
+//  viser bare hvor stor delen har blitt.
+//
+//  Hvilken vei det gaar avgjoeres av om verdien er endret siden forrige
+//  synkronisering - samme moenster som diameteren og fotmaala lenger nede.
+// ---------------------------------------------------------------------------
+export function soleBox(m) {
+  const list = planShapes(m);
+  if (list.length !== 1) return null;
+  const s = list[0];
+  return (s.kind === 'rect' && s.op !== 'cut' && s.z0 == null && s.z1 == null)
+    ? s : null;
+}
+
+export function syncPlan(m) {
+  const c = m.concrete;
+  // Bare ei fil UTEN plantegning skal gjoeres om. Ei tom liste er en tilstand
+  // brukeren har laget selv - da skal delen bli borte, ikke dukke opp igjen,
+  // og inndatakontrollen sier fra om at det ikke er noe betong igjen.
+  if (!Array.isArray(c.plan)) migratePlan(m);
+  const box = soleBox(m);
+  if (box) {
+    if (c._Lx !== c.Lx && +c.Lx > 0) box.bx = +c.Lx;
+    if (c._Ly !== c.Ly && +c.Ly > 0) box.by = +c.Ly;
+  }
+  const sz = planSize(m);
+  c.Lx = c._Lx = sz.Lx;
+  c.Ly = c._Ly = sz.Ly;
+  return m;
+}
+
+// Legger delen tilbake til ett rektangel. Brukes naar tegninga skal nullstilles.
+export function setPlanBox(m, Lx, Ly) {
+  m.concrete.plan = [newShape('s1', 'rect', { x: 0, y: 0, bx: Lx, by: Ly })];
+  m.concrete._Lx = m.concrete._Ly = null;
+  return syncPlan(m);
+}
+
 export function defaultModel() {
   return {
     meta: {
@@ -289,18 +400,21 @@ export function defaultModel() {
     concrete: {
       grade: 'B35',
       fck: 35,
-      Lx: 1200,   // utstrekning i x
-      Ly: 1200,   // utstrekning i y
       h: 300,     // tykkelse
-      // Plassering av platas senter i betongdelens lokale system (0,0 = senter)
+      // Plassering av platas senter i betongdelens lokale system.
+      // Formene tegnes i delas system; plata ligger i (e_x, e_y) der.
       ex: 0,
       ey: 0,
       // Hvilke sider som er frie kanter. Er en side ikke fri, regnes den uendelig.
       freeEdges: { xNeg: true, xPos: true, yNeg: true, yPos: true },
-      // Formene som er lagt oppaa grunnklossen. Hver form er et rektangel
-      // tegnet i en av de seks flatene og dratt ut (mer betong) eller inn
-      // (utsparing) - se src/engine/solid.js.
-      features: [],
+      // Betongdelen slik den er tegnet i plan: ei liste former, hver med sitt
+      // hoeydeintervall (z1 = overkant, z0 = underkant, null = foelg h).
+      // En rett kloss er ett rektangel over hele tykkelsen - se plan.js.
+      plan: [newShape('s1', 'rect', { x: 0, y: 0, bx: 1200, by: 1200 })],
+      // Avledet av tegninga (planSize), holdt i takt av sync(). Ligger i
+      // modellen fordi rapport, maalsetting og materialskalering leser dem.
+      Lx: 1200,
+      Ly: 1200,
     },
 
     // ---- Stålplate -------------------------------------------------------
@@ -455,7 +569,8 @@ export function edgeDistances(m, x, y) {
   return edgeDistancesAt(m, x, y, z0, z1);
 }
 
-// Grunnklossens ytterkanter i platas system. Ikke-frie sider regnes uendelige.
+// Delas ytterkanter (omslutningsrektangelet) i platas system. Ikke-frie sider
+// regnes uendelige.
 // Brukes der det er selve klossen som er referansen (endeplata, maalsettinga).
 // Bruddarealene klippes mot den virkelige formen, ikke mot dette - se
 // coneProjection() og solid.js.

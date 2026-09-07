@@ -7,9 +7,10 @@
 
 import * as THREE from 'three';
 import { anchorPositions, edgeDistances, anchorFoot, mounting,
-         shaftProps, memberThickness } from '../core/model.js';
-import { solidBoxes, boundaryEdges, facePlane, faceRect, surfaceZ, planMask,
-         anchorDepth, FACE_INFO, FACE_LABEL } from '../engine/solid.js';
+         shaftProps, memberThickness, soleBox } from '../core/model.js';
+import { solidSlabs, solidOutline, surfaceZ, planMask, anchorDepth, baseBox,
+         planShapes, shapeLoop, shapeZ, toPlate, spansFullDepth,
+         SHAPE_LABEL } from '../engine/solid.js';
 import { edgeBreakout } from '../engine/geometry.js';
 import { n } from '../engine/calc.js';
 
@@ -307,23 +308,32 @@ function buildDimensions(m, mnt, zTop, hud, dz = 0) {
   g.name = 'maal';
   const c = m.concrete, p = m.plate, a = m.anchors;
   const V = (x, y, z) => new THREE.Vector3(x, y, z);
-  const S = Math.max(c.Lx, c.Ly);
+  // Golv paa skalaen: uten det blir maalelinjene null lange naar
+  // plantegninga er tom, og retningsvektorene deres udefinerte.
+  const S = Math.max(c.Lx, c.Ly, 400);
   const arrow = S * 0.011;
   const textOff = TEXT_H(m) * 0.88;      // halve teksthøyden + et lite mellomrom
   const opt = extra => ({ arrow, textOff, ...extra });
 
-  const x0 = -(c.Lx / 2 + c.ex), x1 = c.Lx / 2 - c.ex;
-  const y0 = -(c.Ly / 2 + c.ey), y1 = c.Ly / 2 - c.ey;
+  const bb = baseBox(m);
+  const x0 = bb.x0, x1 = bb.x1, y0 = bb.y0, y1 = bb.y1;
   const zc = -c.h + dz, D = S * 0.085;
 
-  // Betongdelen måles for seg, ved underkant. Grunnformen måles alltid - de
-  // formene som er lagt oppå den måler seg selv, se buildFeatures().
-  dimension(g, hud, V(x0, y0, zc), V(x1, y0, zc), V(0, -D, 0),
-    'concrete.Lx', c.Lx, opt());
-  dimension(g, hud, V(x1, y0, zc), V(x1, y1, zc), V(D, 0, 0),
-    'concrete.Ly', c.Ly, opt());
-  dimension(g, hud, V(x1, y0, dz), V(x1, y0, zc), V(D * 0.75, -D * 0.75, 0),
-    'concrete.h', c.h, opt());
+  // Betongdelen måles for seg, ved underkant, over hele utstrekninga.
+  //
+  // L_x og L_y kan bare skrives i når delen ER ett rektangel - da er de
+  // rektangelet. Er den tegnet til noe annet, er de avledet av tegninga, og
+  // står som avlest mål: det du kan endre, ligger i plantegninga eller i den
+  // valgte forma (se buildPlanShapes).
+  const box = soleBox(m);
+  if (x1 - x0 > 1 && y1 - y0 > 1) {
+    dimension(g, hud, V(x0, y0, zc), V(x1, y0, zc), V(0, -D, 0),
+      box ? 'concrete.Lx' : null, c.Lx, opt());
+    dimension(g, hud, V(x1, y0, zc), V(x1, y1, zc), V(D, 0, 0),
+      box ? 'concrete.Ly' : null, c.Ly, opt());
+    dimension(g, hud, V(x1, y0, dz), V(x1, y0, zc), V(D * 0.75, -D * 0.75, 0),
+      'concrete.h', c.h, opt());
+  }
 
   // Plata og boltavstandene hører sammen og måles i samme område, i platas
   // plan: plata innerst, boltkjeden like utenfor.
@@ -742,8 +752,8 @@ export function buildScene(v, opts = {}) {
   // ---- laster -----------------------------------------------------------
   if (show.loads) root.add(loadTriad(m, zTop, hud));
 
-  // ---- formene i betongen, med uttrekkspiler ----------------------------
-  root.add(buildFeatures(m, dz, hud, show));
+  // ---- den valgte forma i plantegninga ---------------------------------
+  root.add(buildPlanShapes(m, dz, hud, show));
 
   // ---- målsetting -------------------------------------------------------
   if (show.dims) root.add(buildDimensions(m, mnt, zTop, hud, dz));
@@ -835,22 +845,38 @@ function edgeWedges(m, res, dir) {
 }
 
 // ---------------------------------------------------------------------------
-//  Betongdelen slik den faktisk staar: grunnformen med alle snittene dratt ut
-//  eller inn. Legemet kommer fra solid.js som noen faa akseparallelle kasser,
-//  og konturen som bare de ekte kantene - ingen soemmer mellom kassene.
+//  Betongdelen slik den faktisk staar.
+//
+//  Legemet kommer fra solid.js som noen faa PRISMER: ett pr. hoeydelag, med
+//  omrisset som lukka sloeyfe og hullene som egne sloeyfer i den. Det er den
+//  samme figuren beregninga klipper bruddflatene mot, saa bildet og tallet kan
+//  ikke komme i utakt. Konturen er bare de ekte kantene - ingen soemmer
+//  mellom lagene, og ingen loddrett strek i en jevn sirkelbue.
 // ---------------------------------------------------------------------------
 function concreteBody(m, dz) {
   const c = m.concrete;
   const g = new THREE.Group();
   g.name = 'betong';
   const mat = MAT.concrete(c.Lx, c.Ly);
-  for (const b of solidBoxes(m)) {
-    const mesh = boxMesh(b.x1 - b.x0, b.y1 - b.y0, b.z1 - b.z0, mat, 'betong');
-    mesh.position.set((b.x0 + b.x1) / 2, (b.y0 + b.y1) / 2, (b.z0 + b.z1) / 2 + dz);
+  for (const slab of solidSlabs(m)) {
+    const shapes = [];
+    for (const f of slab.faces) {
+      if (f.outer.length < 3) continue;
+      const sh = new THREE.Shape(f.outer.map(q => new THREE.Vector2(q.x, q.y)));
+      for (const h of f.holes)
+        if (h.length >= 3) sh.holes.push(new THREE.Path(h.map(q => new THREE.Vector2(q.x, q.y))));
+      shapes.push(sh);
+    }
+    if (!shapes.length) continue;
+    const geo = new THREE.ExtrudeGeometry(shapes,
+      { depth: slab.z1 - slab.z0, bevelEnabled: false, curveSegments: 1 });
+    geo.translate(0, 0, slab.z0 + dz);
+    const mesh = new THREE.Mesh(geo, mat);
+    mesh.name = 'betong';
     g.add(mesh);
   }
   const pts = [];
-  for (const [p, q] of boundaryEdges(m)) {
+  for (const [p, q] of solidOutline(m)) {
     pts.push(new THREE.Vector3(p[0], p[1], p[2] + dz),
              new THREE.Vector3(q[0], q[1], q[2] + dz));
   }
@@ -863,96 +889,103 @@ function concreteBody(m, dz) {
 }
 
 // ---------------------------------------------------------------------------
-//  Snittene med uttrekkspilene.
+//  Den valgte forma i plantegninga, vist i 3D.
 //
-//  Hver form vises som rektangelet den er tegnet av, i flata den hoerer til,
-//  og en pil ut fra den flyttede flata. Pila er et drahaandtak: den er merket
-//  med hvilken verdi i modellen den styrer, saa 3D-visninga kan dra den og
-//  skrive rett i modellen - samme prinsipp som maalene, bare kontinuerlig.
+//  Formene tegnes i plan; her staar den ene du har valgt fram som et prisme i
+//  betongen - blaatt naar den legger betong, roedt naar den tar bort - med
+//  maala sine og to piler du kan dra i:
+//
+//    pila opp    overkanten av forma
+//    pila ned    underkanten
+//
+//  Draget skriver et tall der forma foer fulgte tykkelsen automatisk. Vil du
+//  ha den tilbake til aa foelge h, er det avkryssingsboksen i skjemaet.
+//
+//  Bare den valgte forma vises. Ellers ville en tegning med ti former bli et
+//  kaos av streker oppi selve delen, og det er delen du skal se.
 // ---------------------------------------------------------------------------
 const FEATURE_ADD = 0x2f6fb5;      // blaa: legger betong til
 const FEATURE_CUT = 0xc0524a;      // roed: tar betong bort
 
-function featurePoint(m, ft, u, v, off) {
-  const c = m.concrete, inf = FACE_INFO[ft.face];
-  const plane = facePlane(m, ft.face) + inf.sign * off;
-  if (inf.axis === 'x') return new THREE.Vector3(plane, u - c.ey, v);
-  if (inf.axis === 'y') return new THREE.Vector3(u - c.ex, plane, v);
-  return new THREE.Vector3(u - c.ex, v - c.ey, plane);
-}
-
-function buildFeatures(m, dz, hud, show) {
+function buildPlanShapes(m, dz, hud, show) {
   const g = new THREE.Group();
   g.name = 'former';
-  const c = m.concrete;
-  const list = c.features || [];
-  if (!list.length) return g;
-  const S = Math.max(c.Lx, c.Ly, 400);
-  const shift = new THREE.Vector3(0, 0, dz);
+  const list = planShapes(m);
+  const i = list.findIndex(s => s.id === show.shape);
+  if (i < 0) return g;
+  const sp = list[i];
+  const loop = shapeLoop(sp).map(q => toPlate(m, q.x, q.y));
+  if (loop.length < 3) return g;
+  const [z0, z1] = shapeZ(m, sp);
+  const col = sp.op === 'cut' ? FEATURE_CUT : FEATURE_ADD;
+  const V = (x, y, z) => new THREE.Vector3(x, y, z + dz);
+  const S = Math.max(m.concrete.Lx, m.concrete.Ly, 400);
 
-  list.forEach((ft, i) => {
-    const inf = FACE_INFO[ft.face];
-    if (!inf) return;
-    const rect = faceRect(m, ft.face);
-    const u0 = Math.max(rect.u0, ft.u - ft.bu / 2), u1 = Math.min(rect.u1, ft.u + ft.bu / 2);
-    const v0 = Math.max(rect.v0, ft.v - ft.bv / 2), v1 = Math.min(rect.v1, ft.v + ft.bv / 2);
-    if (!(u1 > u0) || !(v1 > v0)) return;
-    const d = +ft.depth || 0;
-    const col = d < 0 ? FEATURE_CUT : FEATURE_ADD;
-    const P = (u, v, off) => featurePoint(m, ft, u, v, off).add(shift);
+  // Prismet som strekfigur: omrisset oppe, nede, og loddrett i hvert hjoerne.
+  const pts = [];
+  for (let k = 0; k < loop.length; k++) {
+    const a = loop[k], b = loop[(k + 1) % loop.length];
+    pts.push(V(a.x, a.y, z0), V(b.x, b.y, z0));
+    pts.push(V(a.x, a.y, z1), V(b.x, b.y, z1));
+    pts.push(V(a.x, a.y, z0), V(a.x, a.y, z1));
+  }
+  const line = new THREE.LineSegments(
+    new THREE.BufferGeometry().setFromPoints(pts),
+    new THREE.LineBasicMaterial({ color: col, transparent: true, opacity: 0.9,
+                                  depthTest: false }));
+  line.name = `form_${sp.id}`;
+  line.renderOrder = ORDER.outline;
+  line.userData.noExport = true;
+  g.add(line);
 
-    // Snittet i flata, og det samme rektangelet der uttrekket har flyttet det.
-    const loop = off => [[u0, v0], [u1, v0], [u1, v1], [u0, v1], [u0, v0]]
-      .map(([u, v]) => P(u, v, off));
-    const pts = [];
-    const push = arr => { for (let k = 0; k < arr.length - 1; k++) pts.push(arr[k], arr[k + 1]); };
-    push(loop(0));
-    if (Math.abs(d) > 1e-6) {
-      push(loop(d));
-      for (const [u, v] of [[u0, v0], [u1, v0], [u1, v1], [u0, v1]])
-        pts.push(P(u, v, 0), P(u, v, d));
-    }
-    const line = new THREE.LineSegments(
-      new THREE.BufferGeometry().setFromPoints(pts),
-      new THREE.LineBasicMaterial({ color: col, transparent: true, opacity: 0.9,
-                                    depthTest: false }));
-    line.name = `snitt_${ft.id || i + 1}`;
-    line.renderOrder = ORDER.outline;
-    line.userData.noExport = true;
-    g.add(line);
+  // Tyngdepunktet i omrisset - der pilene staar.
+  let cx = 0, cy = 0;
+  for (const q of loop) { cx += q.x; cy += q.y; }
+  cx /= loop.length; cy /= loop.length;
+  const w = Math.max(...loop.map(q => q.x)) - Math.min(...loop.map(q => q.x));
+  const d = Math.max(...loop.map(q => q.y)) - Math.min(...loop.map(q => q.y));
+  const len = Math.max(40, Math.min(S * 0.13, Math.max(w, d) * 0.6));
 
-    // Uttrekkspila: staar paa den flyttede flata og peker utover. Dra den ut
-    // for mer betong, inn - forbi null - for en utsparing.
-    const uc = (u0 + u1) / 2, vc = (v0 + v1) / 2;
-    const nrm = new THREE.Vector3(...inf.n);
-    const len = Math.max(40, Math.min(S * 0.13, Math.max(u1 - u0, v1 - v0) * 0.9));
-    const arrow = forceArrow(P(uc, vc, d), nrm, len, col);
-    arrow.name = `uttrekk_${ft.id || i + 1}`;
-    const handle = { path: `concrete.features.${i}.depth`, id: ft.id, value: d,
-                     dir: [nrm.x, nrm.y, nrm.z], step: 5,
-                     label: `${FACE_LABEL[ft.face]} · uttrekk` };
-    // Pila er et betjeningselement, ikke geometri: den tegnes flatt og over
-    // alt annet. En utsparing flytter flata inn i betongen, og da ville pila
-    // ellers ligge begravd akkurat naar du trenger aa ta tak i den.
-    const amat = new THREE.MeshBasicMaterial({ color: col, depthTest: false,
-      transparent: true, opacity: 0.95 });
+  const amat = new THREE.MeshBasicMaterial({ color: col, depthTest: false,
+    transparent: true, opacity: 0.95 });
+  const pull = (z, up, path, value, sign) => {
+    const nrm = new THREE.Vector3(0, 0, up ? 1 : -1);
+    const arrow = forceArrow(V(cx, cy, z), nrm, len, col);
+    arrow.name = `${up ? 'overkant' : 'underkant'}_${sp.id}`;
+    const handle = { path, id: sp.id, value, step: 10, sign,
+                     label: `${SHAPE_LABEL[sp.kind]} · ${up ? 'overkant' : 'underkant'}` };
     arrow.traverse(o => {
       o.userData.handle = handle;
       o.userData.noExport = true;
       if (o.isMesh) { o.material = amat; o.renderOrder = ORDER.tag - 1; }
     });
     g.add(arrow);
+  };
+  pull(z1, true, `concrete.plan.${i}.z1`, z1, 1);
+  pull(z0, false, `concrete.plan.${i}.z0`, z0, -1);
 
-    // Uttrekksdybden maales langs pila, og kan skrives i som alle andre maal.
-    if (show.dims && Math.abs(d) > 1e-6) {
-      const off = new THREE.Vector3(...inf.n).cross(new THREE.Vector3(0, 0, 1));
-      if (off.lengthSq() < 1e-9) off.set(1, 0, 0);
-      off.normalize().multiplyScalar(Math.max(u1 - u0, v1 - v0) * 0.62 + S * 0.02);
-      dimension(g, hud, P(u1, v1, 0), P(u1, v1, d), off,
-        `concrete.features.${i}.depth`, d,
-        { arrow: S * 0.011, textOff: TEXT_H(m) * 0.88, step: 5, min: -1e6 });
+  // Maala til forma. Rektangelet maales i to retninger, sirkelen paa
+  // diameteren; en linjefigur maales i plantegninga, der hjoernene ligger.
+  if (show.dims) {
+    const arrow = S * 0.011, textOff = TEXT_H(m) * 0.88;
+    const opt = extra => ({ arrow, textOff, ...extra });
+    const P = (x, y) => V(x, y, z1);
+    const x0 = Math.min(...loop.map(q => q.x)), x1 = Math.max(...loop.map(q => q.x));
+    const y0 = Math.min(...loop.map(q => q.y)), y1 = Math.max(...loop.map(q => q.y));
+    const D = S * 0.06;
+    if (sp.kind === 'rect') {
+      dimension(g, hud, P(x0, y0), P(x1, y0), new THREE.Vector3(0, -D, 0),
+        `concrete.plan.${i}.bx`, sp.bx, opt({ step: 10 }));
+      dimension(g, hud, P(x1, y0), P(x1, y1), new THREE.Vector3(D, 0, 0),
+        `concrete.plan.${i}.by`, sp.by, opt({ step: 10 }));
+    } else if (sp.kind === 'circle') {
+      dimension(g, hud, P(x0, (y0 + y1) / 2), P(x1, (y0 + y1) / 2),
+        new THREE.Vector3(0, -D, 0), null, 2 * sp.r, opt({ step: 10 }));
     }
-  });
+    // Hoeyden av forma, maalt paa hjoernet.
+    dimension(g, hud, V(x1, y1, z1), V(x1, y1, z0),
+      new THREE.Vector3(D * 0.7, D * 0.7, 0), null, z1 - z0, opt({ step: 10 }));
+  }
   return g;
 }
 

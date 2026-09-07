@@ -20,6 +20,7 @@ const ROOT = dirname(fileURLToPath(import.meta.url));
 const ORDER = [
   'src/core/download.js',
   'src/engine/calc.js',
+  'src/engine/plan.js',
   'src/engine/solid.js',
   'src/engine/geometry.js',
   'src/core/model.js',
@@ -32,6 +33,7 @@ const ORDER = [
   'src/viz/three-d-stage.js',
   'src/viz/scene-builder.js',
   'src/ui/fields.js',
+  'src/ui/plan-editor.js',
   'src/ui/app.js',
 ];
 
