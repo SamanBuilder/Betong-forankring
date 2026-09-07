@@ -165,6 +165,22 @@ body { margin:0; height:100vh; overflow:hidden; background:var(--bg); color:var(
 .fld input[type=checkbox] { width:15px; height:15px; accent-color:var(--acc); }
 .hint { color:var(--tx3); font-size:11px; line-height:1.5; margin:14px 0 0; }
 
+/* --- former i betongen ------------------------------------------------- */
+.feat-add { display:flex; gap:5px; margin:14px 0 4px; flex-wrap:wrap; }
+.feat-add select { flex:1 1 120px; min-width:0;
+  font:11.5px var(--sans); color:var(--tx); background:var(--panel);
+  border:1px solid var(--line2); border-radius:5px; padding:5px 6px; }
+.feat-add select:hover { border-color:var(--acc); }
+.feat { border:1px solid var(--line); border-radius:7px; padding:4px 10px 10px;
+  margin:12px 0 0; background:var(--panel2); }
+.feat-head { display:flex; align-items:center; gap:8px; padding:6px 0 4px;
+  border-bottom:1px solid var(--line); margin-bottom:4px; }
+.feat-head .nm { font-size:11.5px; font-weight:500; color:var(--tx); }
+.feat-head .kind { font:10.5px var(--mono); color:var(--tx3); margin-left:auto; }
+.feat-head .btn { padding:3px 7px; font-size:10.5px; }
+/* Flatenavnet er langt - snittfeltene får en bredere kolonne enn de vanlige. */
+.feat .fld { grid-template-columns:1fr 122px; }
+
 /* === 3D ================================================================= */
 .stage-wrap { flex:1 1 auto; position:relative; min-height:0; }
 three-d-stage { position:absolute; inset:0; }
@@ -680,6 +696,509 @@ function skipped(clause, why) {
   return c;
 }
 
+// ===== src/engine/solid.js =========================================
+// ---------------------------------------------------------------------------
+//  Betongdelen som et legeme, ikke bare en kloss.
+//
+//  Grunnformen er fortsatt L_x x L_y x h. Oppaa den ligger en liste med
+//  «snitt»: et rektangel tegnet i en av de seks flatene og dratt ut eller inn.
+//  Dratt ut legger betong til (konsoll, fortanning, forsterkning), dratt inn
+//  tar betong bort (utsparing, spor, avtrapping). Det er samme prinsipp som
+//  pull/push i SpaceClaim.
+//
+//  Uttrekket maales alltid fra GRUNNFORMENS flate, ikke fra der betongen
+//  tilfeldigvis slutter naa. Da er hvert maal absolutt og leses av tegninga
+//  uten aa kjenne de andre formene - men det betyr ogsaa at et tillegg alltid
+//  legger seg utenpaa klossen og aldri kan fylle igjen en utsparing: tillegg
+//  gaar utover, utsparinger innover, og de to moetes ikke.
+//
+//  Alle formene er akseparallelle kasser. Da kan legemet beskrives EKSAKT med
+//  koordinatkompresjon: hver kasse deler opp x-, y- og z-aksen, og hver celle
+//  i rutenettet som oppstaar er enten helt full eller helt tom. Ingen
+//  triangulering og ingen toleranser - og alt beregninga trenger av geometri
+//  kan leses rett ut av rutenettet:
+//
+//    planMask()          hvilke soeyler som har betong gjennom en dybde
+//    maskArea()          bruddareal A_c,N klippet mot den virkelige formen
+//    edgeDistancesAt()   kantavstand ved aa gaa utover til betongen slutter
+//    thicknessAt()       lokal tykkelse under en bolt
+//    solidBoxes()        legemet som faa kasser, til 3D-visninga
+//    boundaryEdges()     bare de ekte kantene, ikke sømmene i rutenettet
+//
+//  Koordinatene er platas system, som resten av motoren: (0,0) = platesenter,
+//  z = 0 i overkant av grunnformen, negativ nedover. Snittene angis i
+//  betongdelens eget system (0,0 = delas senter), saa de staar stille naar
+//  plata flyttes med e_x / e_y.
+// ---------------------------------------------------------------------------
+
+const R6 = v => Math.round(v * 1e6) / 1e6;
+const TOL = 1e-6;
+
+// ---------------------------------------------------------------------------
+//  Flatene.  Hver flate har et eget 2D-system (u, v) som snittet tegnes i, og
+//  en utoverrettet normal som uttrekket foelger.
+//
+//    xNeg/xPos   u = y i betongdelen,  v = z (0 i overkant, negativ nedover)
+//    yNeg/yPos   u = x,                v = z
+//    top/bottom  u = x,                v = y
+//
+//  `n` er utovernormalen i platas system. Positiv uttrekksdybde foelger den,
+//  negativ gaar motsatt vei og tar betong bort.
+// ---------------------------------------------------------------------------
+const FACE_INFO = {
+  xNeg:   { axis: 'x', sign: -1, n: [-1, 0, 0], uAxis: 'y', vAxis: 'z' },
+  xPos:   { axis: 'x', sign: +1, n: [+1, 0, 0], uAxis: 'y', vAxis: 'z' },
+  yNeg:   { axis: 'y', sign: -1, n: [0, -1, 0], uAxis: 'x', vAxis: 'z' },
+  yPos:   { axis: 'y', sign: +1, n: [0, +1, 0], uAxis: 'x', vAxis: 'z' },
+  top:    { axis: 'z', sign: +1, n: [0, 0, +1], uAxis: 'x', vAxis: 'y' },
+  bottom: { axis: 'z', sign: -1, n: [0, 0, -1], uAxis: 'x', vAxis: 'y' },
+};
+
+const FACES = Object.keys(FACE_INFO);
+
+const FACE_LABEL = {
+  xNeg: 'Sideflate −x', xPos: 'Sideflate +x',
+  yNeg: 'Sideflate −y', yPos: 'Sideflate +y',
+  top: 'Overflata', bottom: 'Underflata',
+};
+
+// Grunnformen i platas system.  Samme tall som memberLimits() gir, men uten
+// uendelighetene: her er det den fysiske klossen som gjelder.
+function baseBox(m) {
+  const c = m.concrete;
+  return { x0: R6(-(c.Lx / 2 + c.ex)), x1: R6(c.Lx / 2 - c.ex),
+           y0: R6(-(c.Ly / 2 + c.ey)), y1: R6(c.Ly / 2 - c.ey),
+           z0: R6(-c.h), z1: 0, add: true };
+}
+
+// Flatas eget rektangel, uttrykt i (u, v).  Snittet klippes mot dette, slik at
+// betong som legges til alltid henger fast i flata den er tegnet paa.
+function faceRect(m, face) {
+  const c = m.concrete, f = FACE_INFO[face];
+  if (!f) return null;
+  if (f.axis === 'z') return { u0: -c.Lx / 2, u1: c.Lx / 2, v0: -c.Ly / 2, v1: c.Ly / 2 };
+  const w = f.axis === 'x' ? c.Ly : c.Lx;
+  return { u0: -w / 2, u1: w / 2, v0: -c.h, v1: 0 };
+}
+
+// Flateplanet i platas system: koordinaten langs flatas akse.
+function facePlane(m, face) {
+  const b = baseBox(m), f = FACE_INFO[face];
+  if (!f) return 0;
+  if (f.axis === 'x') return f.sign > 0 ? b.x1 : b.x0;
+  if (f.axis === 'y') return f.sign > 0 ? b.y1 : b.y0;
+  return f.sign > 0 ? b.z1 : b.z0;
+}
+
+// ---------------------------------------------------------------------------
+//  Snittet som kasse i platas system.
+//
+//  Rektangelet klippes mot flata det er tegnet i - ellers kunne et uttrekk
+//  legge betong som ikke henger sammen med noe. Uttrekket gaar fra flateplanet
+//  og `depth` millimeter langs normalen: positivt utover (mer betong),
+//  negativt innover (utsparing).
+// ---------------------------------------------------------------------------
+function featureBox(m, ft) {
+  const f = FACE_INFO[ft.face];
+  if (!f) return null;
+  const c = m.concrete;
+  const d = +ft.depth || 0;
+  if (Math.abs(d) < TOL) return null;
+
+  const rect = faceRect(m, ft.face);
+  const bu = Math.max(0, +ft.bu || 0), bv = Math.max(0, +ft.bv || 0);
+  const u0 = Math.max(rect.u0, (+ft.u || 0) - bu / 2);
+  const u1 = Math.min(rect.u1, (+ft.u || 0) + bu / 2);
+  const v0 = Math.max(rect.v0, (+ft.v || 0) - bv / 2);
+  const v1 = Math.min(rect.v1, (+ft.v || 0) + bv / 2);
+  if (!(u1 > u0 + TOL) || !(v1 > v0 + TOL)) return null;
+
+  const plane = facePlane(m, ft.face);
+  const a0 = Math.min(plane, plane + f.sign * d);
+  const a1 = Math.max(plane, plane + f.sign * d);
+  const add = d > 0;
+
+  // (u, v) er i betongdelens system; platas system er forskjoevet med e.
+  if (f.axis === 'x')
+    return { x0: R6(a0), x1: R6(a1), y0: R6(u0 - c.ey), y1: R6(u1 - c.ey),
+             z0: R6(v0), z1: R6(v1), add };
+  if (f.axis === 'y')
+    return { x0: R6(u0 - c.ex), x1: R6(u1 - c.ex), y0: R6(a0), y1: R6(a1),
+             z0: R6(v0), z1: R6(v1), add };
+  return { x0: R6(u0 - c.ex), x1: R6(u1 - c.ex), y0: R6(v0 - c.ey), y1: R6(v1 - c.ey),
+           z0: R6(a0), z1: R6(a1), add };
+}
+
+const features = m => (m.concrete && m.concrete.features) || [];
+
+// ---------------------------------------------------------------------------
+//  Rutenettet.
+// ---------------------------------------------------------------------------
+function axisCuts(boxes, k0, k1) {
+  const s = new Set();
+  for (const b of boxes) { s.add(b[k0]); s.add(b[k1]); }
+  return [...s].sort((a, b) => a - b);
+}
+
+function buildSolid(m) {
+  const base = baseBox(m);
+  const boxes = [base];
+  for (const ft of features(m)) {
+    const b = featureBox(m, ft);
+    if (b) boxes.push(b);
+  }
+  const xs = axisCuts(boxes, 'x0', 'x1');
+  const ys = axisCuts(boxes, 'y0', 'y1');
+  const zs = axisCuts(boxes, 'z0', 'z1');
+  const nx = xs.length - 1, ny = ys.length - 1, nz = zs.length - 1;
+  const occ = new Uint8Array(Math.max(0, nx * ny * nz));
+
+  // Grunnformen foerst, saa hvert snitt i rekkefoelge. Med uttrekk maalt fra
+  // grunnformens flater overlapper aldri to snitt, saa rekkefoelgen betyr
+  // ingenting i praksis - men den gjoer resultatet entydig uansett.
+  for (const b of boxes) {
+    const i0 = xs.indexOf(b.x0), i1 = xs.indexOf(b.x1);
+    const j0 = ys.indexOf(b.y0), j1 = ys.indexOf(b.y1);
+    const k0 = zs.indexOf(b.z0), k1 = zs.indexOf(b.z1);
+    const val = b.add ? 1 : 0;
+    for (let k = k0; k < k1; k++)
+      for (let j = j0; j < j1; j++)
+        for (let i = i0; i < i1; i++)
+          occ[(k * ny + j) * nx + i] = val;
+  }
+  return { xs, ys, zs, nx, ny, nz, occ, base,
+           at: (i, j, k) => occ[(k * ny + j) * nx + i] };
+}
+
+// Legemet bygges om bare naar betonggeometrien faktisk endrer seg. Motoren
+// spoer om kantavstander mange ganger pr. beregning, saa dette teller.
+let CACHE = { key: null, S: null, masks: null };
+
+function solidKey(m) {
+  const c = m.concrete;
+  return JSON.stringify([c.Lx, c.Ly, c.h, c.ex, c.ey, c.freeEdges,
+    features(m).map(f => [f.face, f.u, f.v, f.bu, f.bv, f.depth])]);
+}
+
+function solid(m) {
+  const key = solidKey(m);
+  if (CACHE.key !== key) CACHE = { key, S: buildSolid(m), masks: new Map() };
+  return CACHE.S;
+}
+
+// Cellen et punkt ligger i. -1 naar punktet er utenfor rutenettet.
+function cellOf(arr, v) {
+  if (v < arr[0] - TOL || v > arr[arr.length - 1] + TOL) return -1;
+  let lo = 0, hi = arr.length - 2;
+  while (lo < hi) { const mid = (lo + hi + 1) >> 1; if (v >= arr[mid] - TOL) lo = mid; else hi = mid - 1; }
+  return lo;
+}
+
+// ---------------------------------------------------------------------------
+//  Planmaske: soeylene som har betong gjennom HELE dybdeintervallet [z0, z1].
+//
+//  Det er den maska bruddflatene skal klippes mot. En kjegle som paa veien opp
+//  passerer et hull har ingen betong aa rive ut der, saa soeyla teller ikke -
+//  konservativt, og eksakt naar formen er hel.
+// ---------------------------------------------------------------------------
+function planMask(m, z0, z1) {
+  const S = solid(m);
+  const zb = Math.max(Math.min(z0, z1), S.zs[0]);
+  const zt = Math.min(Math.max(z0, z1), S.zs[S.nz]);
+  const key = `${R6(zb)}:${R6(zt)}`;
+  if (CACHE.masks.has(key)) return CACHE.masks.get(key);
+
+  const ks = [];
+  for (let k = 0; k < S.nz; k++)
+    if (S.zs[k + 1] > zb + TOL && S.zs[k] < zt - TOL) ks.push(k);
+
+  const cells = new Uint8Array(S.nx * S.ny);
+  if (ks.length) {
+    for (let j = 0; j < S.ny; j++)
+      for (let i = 0; i < S.nx; i++)
+        cells[j * S.nx + i] = ks.every(k => S.at(i, j, k)) ? 1 : 0;
+  }
+  // Sider som ikke er frie: der fortsetter konstruksjonen, saa bruddflata skal
+  // ikke stoppe ved grunnklossens ytterplan. Utenfor klossen paa en slik side
+  // regnes betongen som hel - det er den samme forutsetninga som de gamle
+  // uendelige kantene i memberLimits().
+  const b = S.base, fe = m.concrete.freeEdges, BIG = 1e9;
+  const ext = { x0: fe.xNeg ? b.x0 : -BIG, x1: fe.xPos ? b.x1 : BIG,
+                y0: fe.yNeg ? b.y0 : -BIG, y1: fe.yPos ? b.y1 : BIG };
+  const inBase = (x, y) => x > b.x0 - TOL && x < b.x1 + TOL &&
+                           y > b.y0 - TOL && y < b.y1 + TOL;
+  const inExt = (x, y) => x > ext.x0 && x < ext.x1 && y > ext.y0 && y < ext.y1;
+
+  const mask = { xs: S.xs, ys: S.ys, nx: S.nx, ny: S.ny, cells, base: b, ext,
+                 at: (i, j) => cells[j * S.nx + i],
+                 has: (x, y) => {
+                   const i = cellOf(S.xs, x), j = cellOf(S.ys, y);
+                   if (i >= 0 && j >= 0 && cells[j * S.nx + i]) return true;
+                   return inExt(x, y) && !inBase(x, y);
+                 } };
+  CACHE.masks.set(key, mask);
+  return mask;
+}
+
+// ---------------------------------------------------------------------------
+//  Betongoverflata under plata.
+//
+//  Er det skaaret en grop der plata staar, er det gropas bunn forankringene
+//  gaar ned fra: h_ef maales fra den betongoverflata som faktisk finnes, ikke
+//  fra et plan som er skaaret vekk. Ligger det en pute under plata, hever den
+//  referansen tilsvarende.  Maalt i platesenter - det er der plata ligger an.
+// ---------------------------------------------------------------------------
+function surfaceZ(m) {
+  const S = solid(m);
+  const i = cellOf(S.xs, 0), j = cellOf(S.ys, 0);
+  if (i < 0 || j < 0) return 0;
+  for (let k = S.nz - 1; k >= 0; k--) if (S.at(i, j, k)) return S.zs[k + 1];
+  return 0;
+}
+
+// Dybdeintervallet en forankring staar i: fra underkant fot og opp til
+// betongoverflata. Det er der betongen maa vaere hel for at kjegla skal ha noe
+// aa rive i.
+function anchorDepth(m) {
+  const z = surfaceZ(m);
+  return [z - Math.abs(m.anchors.hef), z];
+}
+
+// ---------------------------------------------------------------------------
+//  Areal av (union av rektangler) klippet mot maska.
+//  Erstatter clippedSquares(): kanten er ikke lenger fire tall, men formen.
+// ---------------------------------------------------------------------------
+function maskArea(mask, rects) {
+  const rs = rects.filter(r => r.x1 > r.x0 + TOL && r.y1 > r.y0 + TOL);
+  if (!rs.length) return 0;
+  const xs = grid(mask.xs, rs.flatMap(r => [r.x0, r.x1]));
+  const ys = grid(mask.ys, rs.flatMap(r => [r.y0, r.y1]));
+  let A = 0;
+  for (let i = 0; i < xs.length - 1; i++) {
+    const cx = (xs[i] + xs[i + 1]) / 2, dx = xs[i + 1] - xs[i];
+    for (let j = 0; j < ys.length - 1; j++) {
+      const cy = (ys[j] + ys[j + 1]) / 2;
+      if (!mask.has(cx, cy)) continue;
+      if (rs.some(r => cx > r.x0 && cx < r.x1 && cy > r.y0 && cy < r.y1))
+        A += dx * (ys[j + 1] - ys[j]);
+    }
+  }
+  return A;
+}
+
+// Maskas egne snitt pluss rektanglenes. Ingen klipping: rektangler som stikker
+// utenfor rutenettet kan ligge paa en side som ikke er fri, og der teller
+// betongen med (se planMask).
+function grid(base, extra) {
+  const s = new Set(base);
+  for (const v of extra) s.add(R6(v));
+  return [...s].sort((a, b) => a - b);
+}
+
+// ---------------------------------------------------------------------------
+//  Betongens utstrekning tvers paa en linje.
+//
+//  Kantbruddflata er like brei som betongen tillater. Med en utsparing i kanten
+//  er ikke det lenger «fra sidekant til sidekant», men de intervallene der det
+//  faktisk staar betong i boltradens plan.
+//    axis  aksen intervallene maales langs ('x' eller 'y')
+//    at    posisjonen paa den andre aksen
+// ---------------------------------------------------------------------------
+function spansAlong(mask, axis, at) {
+  const alongX = axis === 'x';
+  const other = alongX ? mask.ys : mask.xs;
+  const idx = cellOf(other, at);
+  if (idx < 0) return [];
+  const cuts = alongX ? mask.xs : mask.ys;
+  const nA = (alongX ? mask.nx : mask.ny);
+  const solidAt = a => alongX ? mask.at(a, idx) : mask.at(idx, a);
+  const out = [];
+  let run = null;
+  for (let a = 0; a < nA; a++) {
+    if (solidAt(a)) { if (!run) run = [cuts[a], cuts[a + 1]]; else run[1] = cuts[a + 1]; }
+    else if (run) { out.push(run); run = null; }
+  }
+  if (run) out.push(run);
+  if (!out.length) return out;
+  // Sider som ikke er frie fortsetter - der stopper ikke bruddflata i
+  // grunnklossens ytterplan.
+  const lo = alongX ? mask.ext.x0 : mask.ext.y0;
+  const hi = alongX ? mask.ext.x1 : mask.ext.y1;
+  const b0 = alongX ? mask.base.x0 : mask.base.y0;
+  const b1 = alongX ? mask.base.x1 : mask.base.y1;
+  if (out[0][0] <= b0 + TOL) out[0][0] = Math.min(out[0][0], lo);
+  const last = out[out.length - 1];
+  if (last[1] >= b1 - TOL) last[1] = Math.max(last[1], hi);
+  return out;
+}
+
+// Snitt av to intervallsett.
+function intersectSpans(a, b) {
+  const out = [];
+  for (const p of a) for (const q of b) {
+    const lo = Math.max(p[0], q[0]), hi = Math.min(p[1], q[1]);
+    if (hi > lo + TOL) out.push([lo, hi]);
+  }
+  return out;
+}
+
+// ---------------------------------------------------------------------------
+//  Kantavstand: gaa utover fra bolten til betongen slutter.
+//
+//  For den rette klossen gir dette noeyaktig de samme tallene som foer. Med et
+//  snitt i kanten gir det avstanden til den virkelige kanten - en utsparing
+//  foran bolten flytter kanten naermere, en konsoll flytter den lengre ut.
+//
+//  Sider som ikke er frie regnes uendelige: der fortsetter konstruksjonen.
+// ---------------------------------------------------------------------------
+function edgeDistancesAt(m, x, y, z0, z1) {
+  const S = solid(m), mask = planMask(m, z0, z1), fe = m.concrete.freeEdges;
+  const b = S.base;
+  const i0 = cellOf(S.xs, x), j0 = cellOf(S.ys, y);
+  const out = { xNeg: 0, xPos: 0, yNeg: 0, yPos: 0 };
+  if (i0 < 0 || j0 < 0 || !mask.at(i0, j0)) return out;
+
+  const walk = (dir) => {
+    const alongX = dir[0] === 'x';
+    const pos = dir.endsWith('Pos');
+    const cuts = alongX ? S.xs : S.ys;
+    const nA = alongX ? S.nx : S.ny;
+    let a = alongX ? i0 : j0;
+    while (a + (pos ? 1 : -1) >= 0 && a + (pos ? 1 : -1) < nA) {
+      const nxt = a + (pos ? 1 : -1);
+      if (!(alongX ? mask.at(nxt, j0) : mask.at(i0, nxt))) break;
+      a = nxt;
+    }
+    const exit = pos ? cuts[a + 1] : cuts[a];
+    // Naar betongen slutter i grunnformens ytterplan og sida ikke er fri,
+    // fortsetter konstruksjonen: ingen kant aa rive ut mot.
+    const limit = alongX ? (pos ? b.x1 : b.x0) : (pos ? b.y1 : b.y0);
+    if (!fe[dir] && (pos ? exit >= limit - TOL : exit <= limit + TOL)) return Infinity;
+    return pos ? exit - (alongX ? x : y) : (alongX ? x : y) - exit;
+  };
+  for (const dir of ['xNeg', 'xPos', 'yNeg', 'yPos']) out[dir] = walk(dir);
+  return out;
+}
+
+// ---------------------------------------------------------------------------
+//  Lokal tykkelse i en soeyle: den sammenhengende betongen som omslutter
+//  dybden zRef. En utsparing i overflata gjoer betongen tynnere akkurat der,
+//  og det er den tykkelsen psi_h og utstoetingsformlene skal ha.
+// ---------------------------------------------------------------------------
+function thicknessAt(m, x, y, zRef) {
+  const S = solid(m);
+  const i = cellOf(S.xs, x), j = cellOf(S.ys, y);
+  if (i < 0 || j < 0) return 0;
+  const k0 = cellOf(S.zs, zRef ?? -m.concrete.h / 2);
+  if (k0 < 0 || !S.at(i, j, k0)) return 0;
+  let lo = k0, hi = k0;
+  while (lo - 1 >= 0 && S.at(i, j, lo - 1)) lo--;
+  while (hi + 1 < S.nz && S.at(i, j, hi + 1)) hi++;
+  return S.zs[hi + 1] - S.zs[lo];
+}
+
+// Minste lokale tykkelse under et sett punkter - den som styrer.
+function minThickness(m, pts) {
+  const zRef = surfaceZ(m) - Math.min(Math.abs(m.anchors.hef), m.concrete.h) / 2;
+  let t = Infinity;
+  for (const p of pts) t = Math.min(t, thicknessAt(m, p.x, p.y, zRef));
+  return Number.isFinite(t) && t > 0 ? t : m.concrete.h;
+}
+
+// Har betongdelen andre former enn grunnklossen?
+const isShaped = m => features(m).some(f => featureBox(m, f));
+
+// ---------------------------------------------------------------------------
+//  Legemet som faa kasser - til 3D-visninga.
+//  Cellene slaas sammen graadig i x, saa y, saa z, saa en enkel form fortsatt
+//  blir én kasse og en trappeform blir noen faa.
+// ---------------------------------------------------------------------------
+function solidBoxes(m) {
+  const S = solid(m);
+  const used = new Uint8Array(S.occ.length);
+  const at = (i, j, k) => S.at(i, j, k) && !used[(k * S.ny + j) * S.nx + i];
+  const out = [];
+  for (let k = 0; k < S.nz; k++)
+    for (let j = 0; j < S.ny; j++)
+      for (let i = 0; i < S.nx; i++) {
+        if (!at(i, j, k)) continue;
+        let i1 = i;
+        while (i1 + 1 < S.nx && at(i1 + 1, j, k)) i1++;
+        let j1 = j;
+        while (j1 + 1 < S.ny && rowFree(i, i1, j1 + 1, k, k, at)) j1++;
+        let k1 = k;
+        while (k1 + 1 < S.nz && slabFree(i, i1, j, j1, k1 + 1, at)) k1++;
+        for (let kk = k; kk <= k1; kk++)
+          for (let jj = j; jj <= j1; jj++)
+            for (let ii = i; ii <= i1; ii++)
+              used[(kk * S.ny + jj) * S.nx + ii] = 1;
+        out.push({ x0: S.xs[i], x1: S.xs[i1 + 1], y0: S.ys[j], y1: S.ys[j1 + 1],
+                   z0: S.zs[k], z1: S.zs[k1 + 1] });
+      }
+  return out;
+}
+
+function rowFree(i0, i1, j, k0, k1, at) {
+  for (let k = k0; k <= k1; k++) for (let i = i0; i <= i1; i++) if (!at(i, j, k)) return false;
+  return true;
+}
+function slabFree(i0, i1, j0, j1, k, at) {
+  for (let j = j0; j <= j1; j++) for (let i = i0; i <= i1; i++) if (!at(i, j, k)) return false;
+  return true;
+}
+
+// ---------------------------------------------------------------------------
+//  De ekte kantene paa legemet.
+//
+//  Rutenettet er full av soemmer som ikke er kanter. En strek tegnes bare naar
+//  flatene som moetes i den ligger i ULIKE plan - da er det et hjoerne. To
+//  flater i samme plan deler bare en soem inne i en jevn flate.
+// ---------------------------------------------------------------------------
+function boundaryEdges(m) {
+  const S = solid(m);
+  const segs = new Map();
+  const add = (p, q, plane) => {
+    const key = [p, q].map(v => v.map(t => R6(t)).join(',')).sort().join('|');
+    let e = segs.get(key);
+    if (!e) segs.set(key, e = { p, q, planes: new Set() });
+    e.planes.add(plane);
+  };
+  const solidAt = (i, j, k) =>
+    i >= 0 && j >= 0 && k >= 0 && i < S.nx && j < S.ny && k < S.nz && S.at(i, j, k);
+
+  for (let k = 0; k < S.nz; k++)
+    for (let j = 0; j < S.ny; j++)
+      for (let i = 0; i < S.nx; i++) {
+        if (!S.at(i, j, k)) continue;
+        const x0 = S.xs[i], x1 = S.xs[i + 1];
+        const y0 = S.ys[j], y1 = S.ys[j + 1];
+        const z0 = S.zs[k], z1 = S.zs[k + 1];
+        // x-flatene
+        for (const [di, X] of [[-1, x0], [1, x1]])
+          if (!solidAt(i + di, j, k)) {
+            const pl = `x${R6(X)}`;
+            add([X, y0, z0], [X, y1, z0], pl); add([X, y0, z1], [X, y1, z1], pl);
+            add([X, y0, z0], [X, y0, z1], pl); add([X, y1, z0], [X, y1, z1], pl);
+          }
+        for (const [dj, Y] of [[-1, y0], [1, y1]])
+          if (!solidAt(i, j + dj, k)) {
+            const pl = `y${R6(Y)}`;
+            add([x0, Y, z0], [x1, Y, z0], pl); add([x0, Y, z1], [x1, Y, z1], pl);
+            add([x0, Y, z0], [x0, Y, z1], pl); add([x1, Y, z0], [x1, Y, z1], pl);
+          }
+        for (const [dk, Z] of [[-1, z0], [1, z1]])
+          if (!solidAt(i, j, k + dk)) {
+            const pl = `z${R6(Z)}`;
+            add([x0, y0, Z], [x1, y0, Z], pl); add([x0, y1, Z], [x1, y1, Z], pl);
+            add([x0, y0, Z], [x0, y1, Z], pl); add([x1, y0, Z], [x1, y1, Z], pl);
+          }
+      }
+
+  const out = [];
+  for (const e of segs.values()) if (e.planes.size > 1) out.push([e.p, e.q]);
+  return out;
+}
+
 // ===== src/engine/geometry.js ======================================
 // Areal av unionen av akseparallelle rektangler, via koordinatkompresjon.
 // rects: [{x0,x1,y0,y1}]  -> areal (mm2).  Brukes til A_c,N og A_c,V.
@@ -711,12 +1230,17 @@ function unionLength(ivs) {
   return L;
 }
 
-// Prosjektert areal av kvadratene (punkt +/- r), klippet mot betongdelens
-// frie kanter. Brukes til A_c,N i baade EN 1992-4 og B19.
-function clippedSquares(pts, r, lim) {
-  return unionRectArea(pts.map(p => ({
-    x0: Math.max(p.x - r, lim.x0), x1: Math.min(p.x + r, lim.x1),
-    y0: Math.max(p.y - r, lim.y0), y1: Math.min(p.y + r, lim.y1),
+// Prosjektert areal av kvadratene (punkt +/- r), klippet mot betongen slik den
+// faktisk staar. Brukes til A_c,N i baade EN 1992-4 og B19.
+//
+// Kantene er ikke lenger fire tall: er det skaaret en utsparing eller lagt paa
+// en konsoll, er det den formen kjegla maa rives ut av. Maska teller bare
+// soeyler som har hel betong gjennom hele forankringsdybden - en kjegle som
+// paa veien opp passerer et hull har ingenting aa rive ut der.
+function clippedSquares(m, pts, r) {
+  const [z0, z1] = anchorDepth(m);
+  return maskArea(planMask(m, z0, z1), pts.map(p => ({
+    x0: p.x - r, x1: p.x + r, y0: p.y - r, y1: p.y + r,
   })));
 }
 
@@ -725,15 +1249,32 @@ function clippedSquares(pts, r, lim) {
 // Henger boltene i en felles endeplate, er forankringen ett stivt legeme:
 // kjegla sprer seg fra platekanten, ikke fra hver bolt for seg. Uten slik
 // plate er arealet unionen av de enkelte boltenes kjegler.
-function coneProjection(foot, pts, r, lim) {
+function coneProjection(m, foot, pts, r) {
   if (foot && foot.common) {
     const pl = foot.plate;
-    return unionRectArea([{
-      x0: Math.max(pl.x0 - r, lim.x0), x1: Math.min(pl.x1 + r, lim.x1),
-      y0: Math.max(pl.y0 - r, lim.y0), y1: Math.min(pl.y1 + r, lim.y1),
+    const [z0, z1] = anchorDepth(m);
+    return maskArea(planMask(m, z0, z1), [{
+      x0: pl.x0 - r, x1: pl.x1 + r, y0: pl.y0 - r, y1: pl.y1 + r,
     }]);
   }
-  return clippedSquares(pts, r, lim);
+  return clippedSquares(m, pts, r);
+}
+
+// Bredden av kantbruddflata langs kanten.
+//
+// Bruddflata sprer seg 1,5*c_1 til hver side av boltene i fremste rekke, men
+// bare saa langt det staar betong. Klippet skjer i boltradens eget plan: det er
+// der bruddlegemet starter, og det er formen der som avgjoer hvor bredt det kan
+// bli. En utsparing i kanten kutter bredden; en konsoll gir mer.
+//
+//   axis   aksen bredden maales langs ('x' eller 'y')
+//   at     boltradens posisjon paa den andre aksen
+//   spans  [[t0, t1], ...] de uklippede 1,5*c_1-feltene
+function frontWidth(m, axis, at, spans) {
+  const [z0, z1] = anchorDepth(m);
+  const solidSpans = spansAlong(planMask(m, z0, z1), axis, at);
+  if (!solidSpans.length) return 0;
+  return unionLength(intersectSpans(spans, solidSpans));
 }
 
 const clamp = (v, lo, hi) => Math.min(hi, Math.max(lo, v));
@@ -1035,6 +1576,10 @@ function defaultModel() {
       ey: 0,
       // Hvilke sider som er frie kanter. Er en side ikke fri, regnes den uendelig.
       freeEdges: { xNeg: true, xPos: true, yNeg: true, yPos: true },
+      // Formene som er lagt oppaa grunnklossen. Hver form er et rektangel
+      // tegnet i en av de seks flatene og dratt ut (mer betong) eller inn
+      // (utsparing) - se src/engine/solid.js.
+      features: [],
     },
 
     // ---- Stålplate -------------------------------------------------------
@@ -1179,29 +1724,35 @@ function anchorPositions(m) {
   return out;
 }
 
-// Kantavstander fra et punkt (x,y) i platas system til betongdelens frie kanter.
-// Ikke-frie kanter returneres som Infinity.
+// Kantavstander fra et punkt (x,y) i platas system til betongdelens frie
+// kanter. Avstanden maales i betongen slik den faktisk staar: er det lagt inn
+// en utsparing eller en konsoll i kanten, er det den nye kanten som gjelder.
+// For den rene klossen gir dette de samme tallene som L/2 +/- e.
+// Ikke-frie sider returneres som Infinity - der fortsetter konstruksjonen.
 function edgeDistances(m, x, y) {
-  const c = m.concrete;
-  const X = x + c.ex, Y = y + c.ey;   // punkt i betongdelens system
-  const big = Infinity;
+  const [z0, z1] = anchorDepth(m);
+  return edgeDistancesAt(m, x, y, z0, z1);
+}
+
+// Grunnklossens ytterkanter i platas system. Ikke-frie sider regnes uendelige.
+// Brukes der det er selve klossen som er referansen (endeplata, maalsettinga).
+// Bruddarealene klippes mot den virkelige formen, ikke mot dette - se
+// coneProjection() og solid.js.
+function memberLimits(m) {
+  const c = m.concrete, big = 1e9, b = baseBox(m);
   return {
-    xNeg: c.freeEdges.xNeg ? c.Lx / 2 + X : big,
-    xPos: c.freeEdges.xPos ? c.Lx / 2 - X : big,
-    yNeg: c.freeEdges.yNeg ? c.Ly / 2 + Y : big,
-    yPos: c.freeEdges.yPos ? c.Ly / 2 - Y : big,
+    x0: c.freeEdges.xNeg ? b.x0 : -big,
+    x1: c.freeEdges.xPos ? b.x1 : big,
+    y0: c.freeEdges.yNeg ? b.y0 : -big,
+    y1: c.freeEdges.yPos ? b.y1 : big,
   };
 }
 
-// Betongdelens ytterkanter i platas system. Ikke-frie sider regnes uendelige.
-function memberLimits(m) {
-  const c = m.concrete, big = 1e9;
-  return {
-    x0: c.freeEdges.xNeg ? -(c.Lx / 2 + c.ex) : -big,
-    x1: c.freeEdges.xPos ? (c.Lx / 2 - c.ex) : big,
-    y0: c.freeEdges.yNeg ? -(c.Ly / 2 + c.ey) : -big,
-    y1: c.freeEdges.yPos ? (c.Ly / 2 - c.ey) : big,
-  };
+// Tykkelsen som gjelder under boltene. Uten former er det h; med en utsparing
+// i over- eller underflata er betongen tynnere akkurat der, og det er den
+// lokale tykkelsen bruddformlene skal ha.
+function memberThickness(m, pts) {
+  return minThickness(m, pts && pts.length ? pts : anchorPositions(m));
 }
 
 function minEdgeDistance(m, positions) {
@@ -1502,7 +2053,7 @@ function partialFactors(m) {
 // Prosjektert areal for betongkjegle, 7.2.1.4 - union av rektangler klippet
 // mot betongdelens frie kanter.
 function coneArea(m, pts, ccr) {
-  return coneProjection(anchorFoot(m), pts, ccr, memberLimits(m));
+  return coneProjection(m, anchorFoot(m), pts, ccr);
 }
 
 function minEdge(m, pts) {
@@ -1928,11 +2479,13 @@ function shearConcreteEdge(m, res, g) {
     const axisX = cd.axis === 'x';
     const t = p => (axisX ? p.y : p.x);
     const sideNeg = axisX ? 'yNeg' : 'xNeg', sidePos = axisX ? 'yPos' : 'xPos';
-    const lo = cc.freeEdges[sideNeg] ? -(axisX ? cc.Ly / 2 + cc.ey : cc.Lx / 2 + cc.ex) : -1e9;
-    const hi = cc.freeEdges[sidePos] ? (axisX ? cc.Ly / 2 - cc.ey : cc.Lx / 2 - cc.ex) : 1e9;
-    const width = unionLength(front.map(p =>
-      [Math.max(t(p) - 1.5 * c1, lo), Math.min(t(p) + 1.5 * c1, hi)]));
-    const height = Math.min(1.5 * c1, cc.h);
+    // Bruddflata er like brei som betongen tillater i boltradens plan. Med en
+    // utsparing i kanten er ikke det «fra sidekant til sidekant», men de
+    // stykkene der det faktisk staar betong (se solid.js).
+    const width = frontWidth(m, axisX ? 'y' : 'x', axisX ? front[0].x : front[0].y,
+      front.map(p => [t(p) - 1.5 * c1, t(p) + 1.5 * c1]));
+    const hLoc = memberThickness(m, front);
+    const height = Math.min(1.5 * c1, hLoc);
     const Ac = width * height, A0 = 4.5 * c1 * c1;
     const alpha = 0.1 * Math.sqrt(lf / c1);
     const beta = 0.1 * Math.pow(dnom / c1, 0.2);
@@ -1941,7 +2494,7 @@ function shearConcreteEdge(m, res, g) {
     const c2 = Math.min(...front.map(p => {
       const e = edgeDistances(m, p.x, p.y); return Math.min(e[sideNeg], e[sidePos]); }));
     const psi_s = Number.isFinite(c2) ? clamp(0.7 + 0.3 * c2 / (1.5 * c1), 0, 1) : 1.0;
-    const psi_h = Math.max(1, Math.sqrt(1.5 * c1 / cc.h));
+    const psi_h = Math.max(1, Math.sqrt(1.5 * c1 / hLoc));
     const comp = axisX ? Math.abs(V.Vx) : Math.abs(V.Vy);
     const cosA = clamp(comp / V.Vres, 0, 1);
     const sinA = Math.sqrt(Math.max(0, 1 - cosA * cosA));
@@ -1950,7 +2503,7 @@ function shearConcreteEdge(m, res, g) {
     const psi_ec = clamp(1 / (1 + 2 * eV / (3 * c1)), 0, 1);
     const VRk = V0 * (Ac / A0) * psi_s * psi_h * psi_a * psi_ec * psi_re;
     const VRd = VRk / g.gMc;
-    const cand = { dir: cd.dir, c1, c2, front, width, height, Ac, A0, alpha, beta, V0,
+    const cand = { dir: cd.dir, c1, c2, front, width, height, hLoc, Ac, A0, alpha, beta, V0,
                    psi_s, psi_h, psi_a, psi_ec, eV, VRk, VRd, util: V.Vres / VRd };
     if (!worst || cand.util > worst.util) worst = cand;
   }
@@ -1965,7 +2518,8 @@ function shearConcreteEdge(m, res, g) {
   const c = new Calc('7.2.2.5');
   c.in('c_1', w.c1, 'mm', `Kantavstand til kant ${EDGE_LABEL[w.dir]}, forreste boltrad`);
   c.in('⌀_nom', dnom, 'mm', 'Bolter');
-  c.in('h', cc.h, 'mm', 'Betongdel · tykkelse');
+  c.in('h', w.hLoc, 'mm', w.hLoc === cc.h ? 'Betongdel · tykkelse'
+    : 'Betongdel · lokal tykkelse ved fremste boltrad (formene tatt med)');
   c.in('f_ck', cc.fck, 'N/mm²', `Betongdel · ${cc.grade}`);
   c.in('k_9', k9, '–', `Regelverk · ${cracked ? 'opprisset' : 'uopprisset'}`);
   c.in('γ_Mc', g.gMc, '–', '4.4.3.1');
@@ -1988,9 +2542,10 @@ function shearConcreteEdge(m, res, g) {
   c.step({ sym: 'A⁰_c,V', desc: 'Referanseareal på kantflata for én bolt',
     formula: '4,5 · c_1²', subst: `4,5 · ${n(w.c1, 0)}²`, value: w.A0, unit: 'mm²' });
   c.step({ sym: 'A_c,V', desc: 'Faktisk bruddflate langs kanten',
-    formula: 'bredde · høyde,  bredde = union av 1,5·c_1 hver vei fra forreste bolter',
+    formula: 'bredde · høyde,  bredde = union av 1,5·c_1 hver vei fra forreste bolter, ' +
+             'klippet mot betongen slik den står',
     subst: `${n(w.width, 0)} · ${n(w.height, 0)}   ` +
-           `(høyde = min(1,5·c_1 ; h) = min(${n(1.5 * w.c1, 0)} ; ${n(cc.h, 0)}))`,
+           `(høyde = min(1,5·c_1 ; h) = min(${n(1.5 * w.c1, 0)} ; ${n(w.hLoc, 0)}))`,
     value: w.Ac, unit: 'mm²', ref: '(7.41)' });
   c.step({ sym: 'ψ_s,V', desc: 'Sidekant vinkelrett på lastretninga',
     formula: '0,7 + 0,3 · c_2 / (1,5·c_1) ≤ 1,0',
@@ -1999,7 +2554,7 @@ function shearConcreteEdge(m, res, g) {
     value: w.psi_s, unit: '–' });
   c.step({ sym: 'ψ_h,V', desc: 'Tynn betongdel – bruddflata får ikke utvikle seg fritt',
     formula: '√(1,5·c_1 / h) ≥ 1,0',
-    subst: `√(${n(1.5 * w.c1, 0)} / ${n(cc.h, 0)})`, value: w.psi_h, unit: '–' });
+    subst: `√(${n(1.5 * w.c1, 0)} / ${n(w.hLoc, 0)})`, value: w.psi_h, unit: '–' });
   c.step({ sym: 'ψ_α,V', desc: 'Skjærkraft på skrå mot kanten',
     formula: '√(1 / (cos²α_V + (0,5·sin α_V)²)) ≥ 1,0',
     subst: `V mot kant ${EDGE_LABEL[w.dir]}`, value: w.psi_a, unit: '–' });
@@ -2414,7 +2969,7 @@ function b19ConeBranch(m, res, c) {
       ? `felles endeplate ${n(foot.plate.bx, 0)} × ${n(foot.plate.by, 0)} mm, ` +
         `1,5·h_ef = ${n(1.5 * hef, 0)} mm`
       : `${pts.length} bolter i strekk, 1,5·h_ef = ${n(1.5 * hef, 0)} mm`,
-    value: coneProjection(foot, pts, 1.5 * hef, memberLimits(m)), unit: 'mm²',
+    value: coneProjection(m, foot, pts, 1.5 * hef), unit: 'mm²',
     ref: 'fig. B 19.11' });
 
   const cmin = minEdgeDist(m, pts);
@@ -2730,11 +3285,10 @@ function b19ShearBending(m, res) {
 function b19FrontWidth(m, dir, a1, front) {
   const axisX = B19_AXIS[dir] === 'x';
   const t = p => (axisX ? p.y : p.x);
-  const lim = memberLimits(m);
-  const lo = axisX ? lim.y0 : lim.x0;
-  const hi = axisX ? lim.y1 : lim.x1;
-  return unionLength(front.map(p =>
-    [Math.max(t(p) - 1.5 * a1, lo), Math.min(t(p) + 1.5 * a1, hi)]));
+  // Klippet foelger betongen slik den faktisk staar i boltradens plan, ikke
+  // bare grunnklossens sidekanter - se frontWidth() i geometry.js.
+  return frontWidth(m, axisX ? 'y' : 'x', axisX ? front[0].x : front[0].y,
+    front.map(p => [t(p) - 1.5 * a1, t(p) + 1.5 * a1]));
 }
 
 // 19.4.2.3 / 19.4.4 Betongens avskjæringskapasitet.
@@ -2750,17 +3304,27 @@ function b19ShearConcrete(m, res) {
   const cc = m.concrete, a = m.anchors, all = anchorPositions(m);
   const plate = m.plate.present;
   const welded = a.attachment !== 'bolted';
+  // Uten trykkflate mot betongen - verken fordi det ikke finnes noen plate,
+  // eller fordi plata er avstandsmontert - virker skjæret med momentarm i
+  // bolten før det når betongen. Lokal knusing der bolten går inn i betongen
+  // blir da det samme som for en fritt stående dybel, selv om det finnes en
+  // plate lenger oppe: forhøyelsen i 19.4.4 forutsetter at plata selv gir
+  // betongen lokal støtte, og det gjør den ikke uten kontaktflate.
+  const bearing = mounting(m).contact;
 
-  const kind = !plate ? 'dowel' : welded ? 'welded' : 'bolted';
+  const kind = !bearing ? 'dowel' : welded ? 'welded' : 'bolted';
   const factor = { dowel: KB.dowel, welded: KB.dowelWelded, bolted: KB.dowelBolted }[kind];
   const FTXT = {
-    dowel: 'Dybel uten stålplate – kombinasjonsformelen (19.4.2.3)',
+    dowel: plate
+      ? 'Plata er avstandsmontert – ingen trykkflate mot betongen, så lokal ' +
+        'knusing regnes som for en fritt stående dybel: kombinasjonsformelen (19.4.2.3)'
+      : 'Dybel uten stålplate – kombinasjonsformelen (19.4.2.3)',
     welded: 'Innstøpt stålplate med påsveiste forankringer: 86 % høyere enn ' +
             'ren dybel, avrundet til 1,8 (19.4.4)',
     bolted: 'Påskrudd stålplate: 1,8 · 0,5/0,6 = 1,5 (19.4.4)',
   };
 
-  const c = new Calc(plate ? '19.4.4' : '19.4.2.3');
+  const c = new Calc(bearing ? '19.4.4' : '19.4.2.3');
   c.in('⌀', sh.d, 'mm', 'Bolter · nominell diameter');
   c.in('f_cd', cd.fcd, 'N/mm²', `Betongdel · 0,85 · f_ck / γ_c`);
   c.in(st.kind === 'rebar' ? 'f_yd' : st.fSym, st.fDowel, 'N/mm²',
@@ -2771,14 +3335,14 @@ function b19ShearConcrete(m, res) {
 
   const kf = c.step({ sym: 'faktor', desc: FTXT[kind],
     formula: 'V⁰_Rd,c = faktor · ⌀² · √(f_cd · f_sd)', subst: `${n(factor, 1)}`,
-    value: factor, unit: '–', ref: plate ? '19.4.4' : '19.4.2.3' });
+    value: factor, unit: '–', ref: bearing ? '19.4.4' : '19.4.2.3' });
   const V0 = c.step({ sym: 'V⁰_Rd,c', desc: 'Kapasitet pr. stang ved stor kantavstand',
     formula: 'faktor · ⌀² · √(f_cd · f_sd)',
     subst: `${n(kf, 1)} · ${n(sh.d, 0)}² · √(${n(cd.fcd, 1)} · ${n(st.fDowel, 0)})`,
     value: factor * sh.d * sh.d * Math.sqrt(cd.fcd * st.fDowel), unit: 'N',
-    ref: plate ? '19.4.4' : '19.4.2.3' });
+    ref: bearing ? '19.4.4' : '19.4.2.3' });
 
-  if (!plate)
+  if (kind === 'dowel')
     c.step({ sym: 'sammenlikning', desc:
       'De to enkeltmodellene kombinasjonsformelen ligger mellom: stålets ' +
       'bøyning og ren knusing av betongen foran dybelen',
@@ -2827,7 +3391,7 @@ function b19ShearConcrete(m, res) {
       ref: '19.4.4' });
     c.util({ formula: 'V_Ed,g / V_Rd,c', subst: `${n(V.Vres)} / ${n(VRd)}`,
       value: V.Vres / VRd });
-    return { id: 'V-conc', mode: 'Dybelskjær i betong', clause: plate ? '19.4.4' : '19.4.2.3',
+    return { id: 'V-conc', mode: 'Dybelskjær i betong', clause: bearing ? '19.4.4' : '19.4.2.3',
              scope: 'gruppe', NRk: VRd, NRd: VRd, NEd: V.Vres, util: V.Vres / VRd,
              calc: c, note: 'Ingen fri kant i skjærkraftas retning – øvre grense ' +
                             'for lokal knusing av betongen styrer.' };
@@ -2875,7 +3439,7 @@ function b19ShearConcrete(m, res) {
     value: w.util });
 
   return { id: 'V-conc', mode: `Dybelskjær mot kant ${B19_EDGE[w.dir]}`,
-           clause: plate ? '19.4.4' : '19.4.2.3', scope: 'gruppe', edgeDir: w.dir,
+           clause: bearing ? '19.4.4' : '19.4.2.3', scope: 'gruppe', edgeDir: w.dir,
            NRk: VRd, NRd: VRd, NEd: V.Vres, util: w.util, calc: c };
 }
 
@@ -3003,13 +3567,41 @@ function validate(m) {
       break;
     }
   }
-  if (a.hef >= c.h) err(`h_ef = ${a.hef} mm er ikke mindre enn tykkelsen h = ${c.h} mm.`);
-  else if (a.hef > 0.8 * c.h)
-    warn(`h_ef = ${a.hef} mm er over 80 % av tykkelsen (h = ${c.h} mm) – kontroller ` +
+  // Tykkelsen som gjelder er den lokale: en utsparing i over- eller underflata
+  // gjoer betongen tynnere akkurat der forankringen staar.
+  const hLoc = memberThickness(m, pos);
+  const hTxt = hLoc === c.h ? `h = ${c.h} mm`
+    : `lokal tykkelse ${Math.round(hLoc)} mm (h = ${c.h} mm utenfor formene)`;
+  if (a.hef >= hLoc) err(`h_ef = ${a.hef} mm er ikke mindre enn ${hTxt}.`);
+  else if (a.hef > 0.8 * hLoc)
+    warn(`h_ef = ${a.hef} mm er over 80 % av tykkelsen (${hTxt}) – kontroller ` +
          `gjennomlokking og plass til hodet.`);
   if (p.present && (p.bx > c.Lx || p.by > c.Ly))
     warn('Forankringsplata er større enn betongdelen.');
   if (a.nx * a.ny < 1) err('Minst én bolt kreves.');
+
+  // --- formene i betongen -----------------------------------------------
+  const fts = features(m);
+  fts.forEach((ft, i) => {
+    const nm = `Form ${i + 1} (${FACE_LABEL[ft.face] || ft.face})`;
+    if (!(ft.bu > 0) || !(ft.bv > 0)) { warn(`${nm}: snittet har ingen utstrekning.`); return; }
+    if (Math.abs(+ft.depth || 0) < 1e-6) {
+      warn(`${nm} er ikke dratt ut ennå – den endrer ingenting. Dra i pila i ` +
+           `3D, eller skriv et uttrekk.`);
+      return;
+    }
+    if (!featureBox(m, ft))
+      warn(`${nm} ligger helt utenfor flata den er tegnet i, og gir ingen betong. ` +
+           `Snittet klippes alltid mot flata, så tillagt betong henger fast i den.`);
+  });
+  const zRef = surfaceZ(m);
+  if (zRef < 0)
+    warn(`Plata står i en utsparing: betongoverflata under plata ligger ` +
+         `${Math.round(-zRef)} mm under overkant av grunnformen. h_ef og ` +
+         `bruddkjegla regnes fra den flata som faktisk finnes der.`);
+  else if (zRef > 0)
+    warn(`Plata står på en pute som er ${Math.round(zRef)} mm høyere enn ` +
+         `grunnformen. h_ef regnes fra puta si overflate.`);
 
   // --- forankringsende og stangtype -------------------------------------
   const sh = shaftProps(m), foot = anchorFoot(m);
@@ -3069,6 +3661,13 @@ function validate(m) {
          'faller strekkontrollene mot betong bort – velg Betongelementboka ' +
          'B19 for «Strekk mot betong», som har heftforankring av kamstål og ' +
          'gjengestang (pkt. 19.3.3/19.3.4).');
+  if (m.code.shearConcreteStandard === 'EN1992-4' && !mounting(m).contact)
+    warn('NS-EN 1992-4 har ingen formel for lokal betongknusing under en ' +
+         'dybel uten trykkflate mot betongen (verken uten plate, eller med ' +
+         'avstandsmontert plate) – det forutsettes dekket av produkt-' +
+         'godkjenningen (ETA) for det valgte ankersystemet. Velg ' +
+         'Betongelementboka B19 for «Skjær mot betong» for å få denne ' +
+         'kontrollen (pkt. 19.4.2.3).');
   if (m.code.tensionConcreteStandard === 'B19' || m.code.shearConcreteStandard === 'B19') {
     const g = grade(c.grade);
     if (g.fck < 25 || g.fck > 55)
@@ -3234,6 +3833,13 @@ function verify(m) {
 //  API:
 //    stage.setContent(object3d)      bytt ut modellen
 //    stage.frameAll()                zoom til modellen
+//    stage.pickMode = 'face'         neste klikk plukker en flate i stedet
+//                                    for aa rotere; gir 'face-pick'
+//
+//  Hendelser:
+//    'handle'      { path, value, id }   drahaandtak flyttet (kontinuerlig)
+//    'handle-end'  { path, value, id }   dratt ferdig
+//    'face-pick'   { point, normal }     flate valgt, i modellens koordinater
 //    stage.setView('iso'|'top'|'front'|'side')
 //    stage.exportOBJ(basename)       laster ned .obj + .mtl
 //    stage.exportGLB(basename)       laster ned .glb
@@ -3356,6 +3962,8 @@ class ThreeDStage extends HTMLElement {
     root.querySelector('[data-a="fit"]')?.addEventListener('click', () => this.frameAll());
     root.querySelector('[data-a="obj"]')?.addEventListener('click', () => this.exportOBJ());
     root.querySelector('[data-a="glb"]')?.addEventListener('click', () => this.exportGLB());
+
+    this._initPointer();
 
     this._ro = new ResizeObserver(() => this._resize());
     this._ro.observe(this);
@@ -3489,6 +4097,134 @@ class ThreeDStage extends HTMLElement {
     }
   }
 
+  // -----------------------------------------------------------------------
+  //  Drahaandtak og flatevalg.
+  //
+  //  Et haandtak er hvilken som helst gruppe i modellen med userData.handle:
+  //    { path, value, dir, step, min, max }
+  //  Pila peker langs sin egen lokale +y, saa dragaksen leses rett ut av
+  //  verdensmatrisa - da trenger ikke visninga vite noe om ingenioerakser.
+  //
+  //  Under draget regnes verdien ut av hvor langt PEKEREN har flyttet seg
+  //  langs aksen, ikke av hvor pila staar. Da kan modellen bygges om for hver
+  //  eneste ramme uten at draget mister taket: haandtaket er tall, ikke mesh.
+  // -----------------------------------------------------------------------
+  _initPointer() {
+    this._ray = new THREE.Raycaster();
+    this._ray.params.Line.threshold = 0;
+    this._handleObjs = [];
+    // Lyttes av i fangstfasen paa verten, ikke paa lerretet: da kommer vi til
+    // foer OrbitControls og kan stanse rotasjonen naar draget er vaart.
+    const opt = { capture: true };
+    this.addEventListener('pointerdown', e => this._onPointerDown(e), opt);
+    this.addEventListener('pointermove', e => this._onPointerMove(e), opt);
+    this.addEventListener('pointerup', e => this._onPointerUp(e), opt);
+    this.addEventListener('pointercancel', e => this._onPointerUp(e), opt);
+  }
+
+  _ndc(e) {
+    const r = this.renderer.domElement.getBoundingClientRect();
+    return { x: ((e.clientX - r.left) / r.width) * 2 - 1,
+             y: -((e.clientY - r.top) / r.height) * 2 + 1 };
+  }
+
+  _hits(e, objs) {
+    this._ray.setFromCamera(this._ndc(e), this.camera);
+    return this._ray.intersectObjects(objs || this.content.children, true)
+      .filter(h => h.object.visible && h.object.type !== 'LineSegments');
+  }
+
+  // Bare haandtakene testes, ikke hele modellen: gjengespiraler og kammer er
+  // tunge aa stryke en straale gjennom for hver musebevegelse.
+  _handleAt(e) {
+    if (!this._handleObjs.length) return null;
+    for (const hit of this._hits(e, this._handleObjs)) {
+      let o = hit.object;
+      while (o && !o.userData.handle) o = o.parent;
+      if (o) return { obj: o, handle: o.userData.handle };
+    }
+    return null;
+  }
+
+  // Naermeste punkt paa dragaksen til pekerstraalen, som parameter langs aksen.
+  _axisParam(e, origin, axis) {
+    this._ray.setFromCamera(this._ndc(e), this.camera);
+    const ro = this._ray.ray.origin, rd = this._ray.ray.direction;
+    const w = new THREE.Vector3().subVectors(origin, ro);
+    const b = axis.dot(rd), d = axis.dot(w), f = rd.dot(w);
+    const den = 1 - b * b;
+    if (Math.abs(den) < 1e-6) return null;      // ser rett langs aksen
+    return (b * f - d) / den;
+  }
+
+  _onPointerDown(e) {
+    if (e.button !== 0) return;
+    if (this.pickMode === 'face') {
+      const hit = this._hits(e).find(h => h.face && h.object.name.startsWith('betong'));
+      if (!hit) return;
+      const inv = new THREE.Matrix4().copy(this.content.children[0].matrixWorld).invert();
+      const point = hit.point.clone().applyMatrix4(inv);
+      const normal = hit.face.normal.clone()
+        .transformDirection(hit.object.matrixWorld).transformDirection(inv).normalize();
+      e.preventDefault(); e.stopPropagation();
+      this.dispatchEvent(new CustomEvent('face-pick', {
+        detail: { point: { x: point.x, y: point.y, z: point.z },
+                  normal: { x: normal.x, y: normal.y, z: normal.z } } }));
+      return;
+    }
+    const h = this._handleAt(e);
+    if (!h) return;
+    const origin = new THREE.Vector3().setFromMatrixPosition(h.obj.matrixWorld);
+    const axis = new THREE.Vector3(0, 1, 0)
+      .transformDirection(h.obj.matrixWorld).normalize();
+    const p0 = this._axisParam(e, origin, axis);
+    if (p0 == null) return;
+    e.preventDefault(); e.stopPropagation();
+    this.controls.enabled = false;
+    try { this.renderer.domElement.setPointerCapture(e.pointerId); } catch { /* uten peker */ }
+    this._drag = { h: h.handle, origin, axis, p0, v0: +h.handle.value || 0,
+                   id: e.pointerId, moved: false };
+  }
+
+  _onPointerMove(e) {
+    if (!this._drag) {
+      if (!this.pickMode) {
+        const over = !!this._handleAt(e);
+        if (over !== this._overHandle) {
+          this._overHandle = over;
+          this.renderer.domElement.style.cursor = over ? 'grab' : '';
+        }
+      } else this.renderer.domElement.style.cursor = 'crosshair';
+      return;
+    }
+    const d = this._drag;
+    e.preventDefault(); e.stopPropagation();
+    const p = this._axisParam(e, d.origin, d.axis);
+    if (p == null) return;
+    const step = d.h.step || 1;
+    let v = d.v0 + (p - d.p0);
+    v = Math.round(v / step) * step;
+    if (d.h.min != null) v = Math.max(d.h.min, v);
+    if (d.h.max != null) v = Math.min(d.h.max, v);
+    if (v === d.last) return;
+    d.last = v; d.moved = true;
+    this.renderer.domElement.style.cursor = 'grabbing';
+    this.dispatchEvent(new CustomEvent('handle', {
+      detail: { path: d.h.path, id: d.h.id, value: v } }));
+  }
+
+  _onPointerUp(e) {
+    if (!this._drag) return;
+    const d = this._drag;
+    this._drag = null;
+    this.controls.enabled = true;
+    this.renderer.domElement.style.cursor = '';
+    try { this.renderer.domElement.releasePointerCapture(d.id); } catch { /* sluppet */ }
+    if (d.moved)
+      this.dispatchEvent(new CustomEvent('handle-end', {
+        detail: { path: d.h.path, id: d.h.id, value: d.last } }));
+  }
+
   setContent(obj) {
     this.content.traverse(o => {
       if (o.geometry) o.geometry.dispose();
@@ -3496,6 +4232,14 @@ class ThreeDStage extends HTMLElement {
     });
     this.content.clear();
     this.content.add(obj);
+    // Bare det oeverste leddet i hvert haandtak samles - resten av pila henger
+    // under det og treffes likevel av straalen.
+    this._handleObjs = [];
+    obj.traverse(o => {
+      if (!o.userData.handle) return;
+      for (let q = o.parent; q; q = q.parent) if (q.userData.handle) return;
+      this._handleObjs.push(o);
+    });
     if (!this._framed) { this.frameAll(); this._framed = true; }
   }
 
@@ -3942,7 +4686,7 @@ function dimension(group, hud, a0, b0, off, path, value, opts = {}) {
              step: opts.step ?? 10, min: opts.min ?? 1 });
 }
 
-function buildDimensions(m, mnt, zTop, hud) {
+function buildDimensions(m, mnt, zTop, hud, dz = 0) {
   const g = new THREE.Group();
   g.name = 'maal';
   const c = m.concrete, p = m.plate, a = m.anchors;
@@ -3954,14 +4698,15 @@ function buildDimensions(m, mnt, zTop, hud) {
 
   const x0 = -(c.Lx / 2 + c.ex), x1 = c.Lx / 2 - c.ex;
   const y0 = -(c.Ly / 2 + c.ey), y1 = c.Ly / 2 - c.ey;
-  const zc = -c.h, D = S * 0.085;
+  const zc = -c.h + dz, D = S * 0.085;
 
-  // Betongdelen måles for seg, ved underkant.
+  // Betongdelen måles for seg, ved underkant. Grunnformen måles alltid - de
+  // formene som er lagt oppå den måler seg selv, se buildFeatures().
   dimension(g, hud, V(x0, y0, zc), V(x1, y0, zc), V(0, -D, 0),
     'concrete.Lx', c.Lx, opt());
   dimension(g, hud, V(x1, y0, zc), V(x1, y1, zc), V(D, 0, 0),
     'concrete.Ly', c.Ly, opt());
-  dimension(g, hud, V(x1, y0, 0), V(x1, y0, zc), V(D * 0.75, -D * 0.75, 0),
+  dimension(g, hud, V(x1, y0, dz), V(x1, y0, zc), V(D * 0.75, -D * 0.75, 0),
     'concrete.h', c.h, opt());
 
   // Plata og boltavstandene hører sammen og måles i samme område, i platas
@@ -4168,17 +4913,11 @@ function buildScene(v, opts = {}) {
   const c = m.concrete, p = m.plate, a = m.anchors;
 
   // ---- betongdel --------------------------------------------------------
-  if (show.concrete) {
-    const bl = boxMesh(c.Lx, c.Ly, c.h, MAT.concrete(c.Lx, c.Ly), 'betong');
-    bl.position.set(-c.ex, -c.ey, -c.h / 2);
-    root.add(bl);
-    const eg = new THREE.LineSegments(
-      new THREE.EdgesGeometry(bl.geometry),
-      new THREE.LineBasicMaterial({ color: 0x8a857a, transparent: true, opacity: 0.55 }));
-    eg.position.copy(bl.position);
-    eg.userData.noExport = true;
-    root.add(eg);
-  }
+  // Nullpunktet i visninga er betongoverflata under plata. Er det skaaret en
+  // grop der plata staar, ligger grunnformens overkant over null - da flyttes
+  // betongen, ikke stålet, saa alt det andre kan regne z = 0 som overflata.
+  const dz = -surfaceZ(m);
+  if (show.concrete) root.add(concreteBody(m, dz));
 
   // ---- undergyting ------------------------------------------------------
   const mnt = mounting(m);
@@ -4345,29 +5084,18 @@ function buildScene(v, opts = {}) {
           y0: foot.plate.y0, y1: foot.plate.y1 }
       : { x0: Math.min(...xs), x1: Math.max(...xs),
           y0: Math.min(...ys), y1: Math.max(...ys) };
-    const lim = memberLimits(m);
-    const t = {
-      x0: Math.max(b.x0 - ccr, lim.x0), x1: Math.min(b.x1 + ccr, lim.x1),
-      y0: Math.max(b.y0 - ccr, lim.y0), y1: Math.min(b.y1 + ccr, lim.y1),
-    };
-    const zB = -a.hef, zT = 0;
-    const V = [
-      [b.x0, b.y0, zB], [b.x1, b.y0, zB], [b.x1, b.y1, zB], [b.x0, b.y1, zB],
-      [t.x0, t.y0, zT], [t.x1, t.y0, zT], [t.x1, t.y1, zT], [t.x0, t.y1, zT],
-    ];
-    const F = [[0,1,5],[0,5,4],[1,2,6],[1,6,5],[2,3,7],[2,7,6],[3,0,4],[3,4,7],
-               [4,5,6],[4,6,7]];
-    const cm = polyMesh(V, F, MAT.cone(), 'bruddkjegle');
-    cm.renderOrder = 3;
-    root.add(cm, outline(cm, 0xffa53d));
+    const cm = coneMesh(m, b, ccr, a.hef);
+    if (cm) {
+      cm.renderOrder = 3;
+      root.add(cm, outline(cm, 0xffa53d));
+    }
   }
 
   // ---- kantbrudd-kile ---------------------------------------------------
   // Kantbrudd-kila: EN 1992-4 sin V-edge, eller B19 sin V-conc mot en kant.
   const edge = v.checks.find(k => k.edgeDir);
   if (show.wedge && edge && Number.isFinite(edge.NRd) && edge.util > 0) {
-    const w = edgeWedge(m, res, edge.edgeDir);
-    if (w) {
+    for (const w of edgeWedges(m, res, edge.edgeDir)) {
       const wm = polyMesh(w.V, w.F, MAT.wedge(), 'kantbrudd');
       wm.renderOrder = 3;
       root.add(wm, outline(wm, 0xff5f56));
@@ -4398,8 +5126,11 @@ function buildScene(v, opts = {}) {
   // ---- laster -----------------------------------------------------------
   if (show.loads) root.add(loadTriad(m, zTop, hud));
 
+  // ---- formene i betongen, med uttrekkspiler ----------------------------
+  root.add(buildFeatures(m, dz, hud, show));
+
   // ---- målsetting -------------------------------------------------------
-  if (show.dims) root.add(buildDimensions(m, mnt, zTop, hud));
+  if (show.dims) root.add(buildDimensions(m, mnt, zTop, hud, dz));
 
   // 1 CSS-piksel = 1 mm i modellen ved skala 1. Skalaen settes slik at
   // teksten holder samme andel av modellen uansett hvor stor den er.
@@ -4407,33 +5138,224 @@ function buildScene(v, opts = {}) {
   return { root, hud, hudScale };
 }
 
+// ---------------------------------------------------------------------------
+//  Bruddkjegla, klippet mot betongen slik den staar.
+//
+//  Kjegla er en pyramidestubb: bunnflata er forankringas rektangel b i dybden
+//  h_ef, og den sprer seg 1,5*h_ef ut til overflata. Den bygges som et
+//  hoeydefelt over det samme rutenettet arealet regnes av, saa kjegla i bildet
+//  har noeyaktig den grunnflata A_c,N er regnet av: der betongen mangler,
+//  stopper kjegla i en loddrett flate i stedet for aa henge i lufta.
+//
+//  Underflata i et punkt ligger like hoeyt som avstanden ut fra b tilsier:
+//  rett over b er den i -h_ef, og 1,5*h_ef lengre ut har den naadd overflata.
+// ---------------------------------------------------------------------------
+function coneMesh(m, b, ccr, hef) {
+  const [z0, z1] = anchorDepth(m);
+  const mask = planMask(m, z0, z1);
+  const t = { x0: b.x0 - ccr, x1: b.x1 + ccr, y0: b.y0 - ccr, y1: b.y1 + ccr };
+  const cuts = (base, extra, lo, hi) =>
+    [...new Set([...base, ...extra, lo, hi])]
+      .filter(v => v > lo - 1e-9 && v < hi + 1e-9).sort((u, w) => u - w);
+  const xs = cuts(mask.xs, [b.x0, b.x1], t.x0, t.x1);
+  const ys = cuts(mask.ys, [b.y0, b.y1], t.y0, t.y1);
+  if (xs.length < 2 || ys.length < 2) return null;
+
+  const low = (x, y) => {
+    const dx = Math.max(b.x0 - x, x - b.x1, 0);
+    const dy = Math.max(b.y0 - y, y - b.y1, 0);
+    return -hef * (1 - Math.min(Math.max(dx, dy), ccr) / ccr);
+  };
+  const nx = xs.length - 1, ny = ys.length - 1;
+  const keep = new Uint8Array(nx * ny);
+  for (let i = 0; i < nx; i++)
+    for (let j = 0; j < ny; j++)
+      keep[j * nx + i] = mask.has((xs[i] + xs[i + 1]) / 2, (ys[j] + ys[j + 1]) / 2) ? 1 : 0;
+  if (!keep.some(Boolean)) return null;
+
+  const P = [];
+  const tri = (a1, a2, a3) => P.push(...a1, ...a2, ...a3);
+  const quad = (a1, a2, a3, a4) => { tri(a1, a2, a3); tri(a1, a3, a4); };
+  const on = (i, j) => i >= 0 && j >= 0 && i < nx && j < ny && keep[j * nx + i];
+
+  for (let i = 0; i < nx; i++)
+    for (let j = 0; j < ny; j++) {
+      if (!keep[j * nx + i]) continue;
+      const x0 = xs[i], x1 = xs[i + 1], y0 = ys[j], y1 = ys[j + 1];
+      const L = (x, y) => [x, y, low(x, y)];
+      // underflata (den skraa kjegleflata) og overflata i betongoverflata
+      quad(L(x0, y0), L(x1, y0), L(x1, y1), L(x0, y1));
+      quad([x0, y0, 0], [x0, y1, 0], [x1, y1, 0], [x1, y0, 0]);
+      // loddrette flater der kjegla moeter en kant, et hull eller sin egen ytterkant
+      if (!on(i - 1, j)) quad(L(x0, y0), L(x0, y1), [x0, y1, 0], [x0, y0, 0]);
+      if (!on(i + 1, j)) quad(L(x1, y1), L(x1, y0), [x1, y0, 0], [x1, y1, 0]);
+      if (!on(i, j - 1)) quad(L(x1, y0), L(x0, y0), [x0, y0, 0], [x1, y0, 0]);
+      if (!on(i, j + 1)) quad(L(x0, y1), L(x1, y1), [x1, y1, 0], [x0, y1, 0]);
+    }
+
+  const g = new THREE.BufferGeometry();
+  g.setAttribute('position', new THREE.Float32BufferAttribute(P, 3));
+  g.computeVertexNormals();
+  const mesh = new THREE.Mesh(g, MAT.cone());
+  mesh.name = 'bruddkjegle';
+  return mesh;
+}
+
 // Kantbruddlegemet: kile fra forreste boltrad ut til kantflata.
-function edgeWedge(m, res, dir) {
-  if (!dir) return null;
+//
+// Kanten er den betongen faktisk har - er den flyttet av en utsparing eller en
+// konsoll, foelger kila med. Klipper en utsparing bruddflata i to, tegnes den
+// som to kiler, slik arealet ogsaa regnes.
+function edgeWedges(m, res, dir) {
+  if (!dir) return [];
   const all = anchorPositions(m);
   const ds = all.map(p => edgeDistances(m, p.x, p.y)[dir]);
   const c1 = Math.min(...ds);
-  if (!Number.isFinite(c1)) return null;
+  if (!Number.isFinite(c1)) return [];
   const front = all.filter((p, i) => Math.abs(ds[i] - c1) < 1e-6);
-  const lim = memberLimits(m);
-  const hv = -Math.min(1.5 * c1, m.concrete.h);
+  const hv = -Math.min(1.5 * c1, memberThickness(m, front));
   const axisX = dir.startsWith('x');
-  const face = dir === 'xPos' ? lim.x1 : dir === 'xNeg' ? lim.x0
-             : dir === 'yPos' ? lim.y1 : lim.y0;
   const t = p => (axisX ? p.y : p.x);
-  const tl = Math.max(Math.min(...front.map(t)) - 1.5 * c1, axisX ? lim.y0 : lim.x0);
-  const th = Math.min(Math.max(...front.map(t)) + 1.5 * c1, axisX ? lim.y1 : lim.x1);
-  const al = Math.min(...front.map(t)), ah = Math.max(...front.map(t));
   const ax = axisX ? front[0].x : front[0].y;    // boltradens posisjon i lastretning
+  const face = dir.endsWith('Pos') ? ax + c1 : ax - c1;
+  const al = Math.min(...front.map(t)), ah = Math.max(...front.map(t));
+
+  const [z0, z1] = anchorDepth(m);
+  const spans = intersectSpans(
+    front.map(p => [t(p) - 1.5 * c1, t(p) + 1.5 * c1]),
+    spansAlong(planMask(m, z0, z1), axisX ? 'y' : 'x', ax));
+  if (!spans.length) return [];
 
   const P = (u, w, z) => axisX ? [u, w, z] : [w, u, z];
-  const V = [
-    P(face, tl, 0), P(face, th, 0), P(face, th, hv), P(face, tl, hv),   // kantflata
-    P(ax, al, 0), P(ax, ah, 0), P(ax, ah, hv), P(ax, al, hv),           // boltlinja
-  ];
   const F = [[0,1,5],[0,5,4],[3,7,6],[3,6,2],[0,4,7],[0,7,3],[1,2,6],[1,6,5],
              [4,5,6],[4,6,7],[0,3,2],[0,2,1]];
-  return { V, F };
+  return spans.map(([tl, th]) => ({ F, V: [
+    P(face, tl, 0), P(face, th, 0), P(face, th, hv), P(face, tl, hv),   // kantflata
+    P(ax, Math.max(al, tl), 0), P(ax, Math.min(ah, th), 0),
+    P(ax, Math.min(ah, th), hv), P(ax, Math.max(al, tl), hv),           // boltlinja
+  ] }));
+}
+
+// ---------------------------------------------------------------------------
+//  Betongdelen slik den faktisk staar: grunnformen med alle snittene dratt ut
+//  eller inn. Legemet kommer fra solid.js som noen faa akseparallelle kasser,
+//  og konturen som bare de ekte kantene - ingen soemmer mellom kassene.
+// ---------------------------------------------------------------------------
+function concreteBody(m, dz) {
+  const c = m.concrete;
+  const g = new THREE.Group();
+  g.name = 'betong';
+  const mat = MAT.concrete(c.Lx, c.Ly);
+  for (const b of solidBoxes(m)) {
+    const mesh = boxMesh(b.x1 - b.x0, b.y1 - b.y0, b.z1 - b.z0, mat, 'betong');
+    mesh.position.set((b.x0 + b.x1) / 2, (b.y0 + b.y1) / 2, (b.z0 + b.z1) / 2 + dz);
+    g.add(mesh);
+  }
+  const pts = [];
+  for (const [p, q] of boundaryEdges(m)) {
+    pts.push(new THREE.Vector3(p[0], p[1], p[2] + dz),
+             new THREE.Vector3(q[0], q[1], q[2] + dz));
+  }
+  const eg = new THREE.LineSegments(
+    new THREE.BufferGeometry().setFromPoints(pts),
+    new THREE.LineBasicMaterial({ color: 0x8a857a, transparent: true, opacity: 0.55 }));
+  eg.userData.noExport = true;
+  g.add(eg);
+  return g;
+}
+
+// ---------------------------------------------------------------------------
+//  Snittene med uttrekkspilene.
+//
+//  Hver form vises som rektangelet den er tegnet av, i flata den hoerer til,
+//  og en pil ut fra den flyttede flata. Pila er et drahaandtak: den er merket
+//  med hvilken verdi i modellen den styrer, saa 3D-visninga kan dra den og
+//  skrive rett i modellen - samme prinsipp som maalene, bare kontinuerlig.
+// ---------------------------------------------------------------------------
+const FEATURE_ADD = 0x2f6fb5;      // blaa: legger betong til
+const FEATURE_CUT = 0xc0524a;      // roed: tar betong bort
+
+function featurePoint(m, ft, u, v, off) {
+  const c = m.concrete, inf = FACE_INFO[ft.face];
+  const plane = facePlane(m, ft.face) + inf.sign * off;
+  if (inf.axis === 'x') return new THREE.Vector3(plane, u - c.ey, v);
+  if (inf.axis === 'y') return new THREE.Vector3(u - c.ex, plane, v);
+  return new THREE.Vector3(u - c.ex, v - c.ey, plane);
+}
+
+function buildFeatures(m, dz, hud, show) {
+  const g = new THREE.Group();
+  g.name = 'former';
+  const c = m.concrete;
+  const list = c.features || [];
+  if (!list.length) return g;
+  const S = Math.max(c.Lx, c.Ly, 400);
+  const shift = new THREE.Vector3(0, 0, dz);
+
+  list.forEach((ft, i) => {
+    const inf = FACE_INFO[ft.face];
+    if (!inf) return;
+    const rect = faceRect(m, ft.face);
+    const u0 = Math.max(rect.u0, ft.u - ft.bu / 2), u1 = Math.min(rect.u1, ft.u + ft.bu / 2);
+    const v0 = Math.max(rect.v0, ft.v - ft.bv / 2), v1 = Math.min(rect.v1, ft.v + ft.bv / 2);
+    if (!(u1 > u0) || !(v1 > v0)) return;
+    const d = +ft.depth || 0;
+    const col = d < 0 ? FEATURE_CUT : FEATURE_ADD;
+    const P = (u, v, off) => featurePoint(m, ft, u, v, off).add(shift);
+
+    // Snittet i flata, og det samme rektangelet der uttrekket har flyttet det.
+    const loop = off => [[u0, v0], [u1, v0], [u1, v1], [u0, v1], [u0, v0]]
+      .map(([u, v]) => P(u, v, off));
+    const pts = [];
+    const push = arr => { for (let k = 0; k < arr.length - 1; k++) pts.push(arr[k], arr[k + 1]); };
+    push(loop(0));
+    if (Math.abs(d) > 1e-6) {
+      push(loop(d));
+      for (const [u, v] of [[u0, v0], [u1, v0], [u1, v1], [u0, v1]])
+        pts.push(P(u, v, 0), P(u, v, d));
+    }
+    const line = new THREE.LineSegments(
+      new THREE.BufferGeometry().setFromPoints(pts),
+      new THREE.LineBasicMaterial({ color: col, transparent: true, opacity: 0.9,
+                                    depthTest: false }));
+    line.name = `snitt_${ft.id || i + 1}`;
+    line.renderOrder = ORDER.outline;
+    line.userData.noExport = true;
+    g.add(line);
+
+    // Uttrekkspila: staar paa den flyttede flata og peker utover. Dra den ut
+    // for mer betong, inn - forbi null - for en utsparing.
+    const uc = (u0 + u1) / 2, vc = (v0 + v1) / 2;
+    const nrm = new THREE.Vector3(...inf.n);
+    const len = Math.max(40, Math.min(S * 0.13, Math.max(u1 - u0, v1 - v0) * 0.9));
+    const arrow = forceArrow(P(uc, vc, d), nrm, len, col);
+    arrow.name = `uttrekk_${ft.id || i + 1}`;
+    const handle = { path: `concrete.features.${i}.depth`, id: ft.id, value: d,
+                     dir: [nrm.x, nrm.y, nrm.z], step: 5,
+                     label: `${FACE_LABEL[ft.face]} · uttrekk` };
+    // Pila er et betjeningselement, ikke geometri: den tegnes flatt og over
+    // alt annet. En utsparing flytter flata inn i betongen, og da ville pila
+    // ellers ligge begravd akkurat naar du trenger aa ta tak i den.
+    const amat = new THREE.MeshBasicMaterial({ color: col, depthTest: false,
+      transparent: true, opacity: 0.95 });
+    arrow.traverse(o => {
+      o.userData.handle = handle;
+      o.userData.noExport = true;
+      if (o.isMesh) { o.material = amat; o.renderOrder = ORDER.tag - 1; }
+    });
+    g.add(arrow);
+
+    // Uttrekksdybden maales langs pila, og kan skrives i som alle andre maal.
+    if (show.dims && Math.abs(d) > 1e-6) {
+      const off = new THREE.Vector3(...inf.n).cross(new THREE.Vector3(0, 0, 1));
+      if (off.lengthSq() < 1e-9) off.set(1, 0, 0);
+      off.normalize().multiplyScalar(Math.max(u1 - u0, v1 - v0) * 0.62 + S * 0.02);
+      dimension(g, hud, P(u1, v1, 0), P(u1, v1, d), off,
+        `concrete.features.${i}.depth`, d,
+        { arrow: S * 0.011, textOff: TEXT_H(m) * 0.88, step: 5, min: -1e6 });
+    }
+  });
+  return g;
 }
 
 // Utnyttelse pr. bolt (staal + uttrekk, det verste)
@@ -4494,7 +5416,11 @@ const FIELDS = [
             'heftforankring uten fot (kamstål/gjengestang).' },
     { p: 'code.shearConcreteStandard', l: 'Skjær mot betong', t: 'select', o: [
       ['EN1992-4', 'NS-EN 1992-4:2018 – kantbrudd/pry-out'],
-      ['B19', 'Betongelementboka B19 – dybelskjær']] },
+      ['B19', 'Betongelementboka B19 – dybelskjær']],
+      hint: 'NS-EN 1992-4 har ingen formel for lokal betongknusing under en ' +
+            'dybel uten trykkflate (uten plate, eller med avstandsmontert ' +
+            'plate) – den forutsetter en produktgodkjenning (ETA). Velg B19 ' +
+            'for å få dybelskjærformelen (pkt. 19.4.2.3) i det tilfellet.' },
     { p: 'code.cracked', l: 'Opprisset betong', t: 'bool' },
     { p: 'code.gammaC', l: 'γ_c', t: 'num', step: 0.05 },
     { p: 'code.denseReinf', l: 'Tett armering (c/c < 150)', t: 'bool' },
@@ -4520,6 +5446,10 @@ const FIELDS = [
     { p: 'concrete.freeEdges.yNeg', l: 'Fri kant −y', t: 'bool' },
     { p: 'concrete.freeEdges.yPos', l: 'Fri kant +y', t: 'bool' },
   ] },
+
+  // Formene i betongen redigeres av sin egen rute (renderFeatures i app.js):
+  // lista er ikke fast, den vokser med snittene du legger inn.
+  { group: 'Betongform', custom: 'features', items: [] },
 
   { group: 'Forankringsplate', items: [
     { p: 'plate.present', l: 'Stålplate i overflata', t: 'bool',
@@ -4641,6 +5571,45 @@ const FIELDS = [
 
 ];
 
+// ---------------------------------------------------------------------------
+//  Feltene for ett snitt i betongen.
+//
+//  Navnene foelger flata snittet er tegnet i, ikke en fast u/v-notasjon:
+//  staar du paa en sideflate er den andre retninga hoeyden, staar du paa
+//  overflata er begge plane mål. Da slipper du aa oversette i hodet.
+// ---------------------------------------------------------------------------
+function featureFields(m, i) {
+  const ft = m.concrete.features[i];
+  const inf = FACE_INFO[ft.face] || FACE_INFO.top;
+  const flat = inf.axis === 'z';          // topp/bunn: begge retningene er plane
+  const uN = inf.uAxis, vN = inf.vAxis;
+  const P = k => `concrete.features.${i}.${k}`;
+  return [
+    { p: P('face'), l: 'Flate', t: 'select', o: FACES.map(f => [f, FACE_LABEL[f]]),
+      hint: 'Flata snittet er tegnet i. Uttrekket gaar vinkelrett ut av den.' },
+    { p: P('bu'), l: `Bredde ${uN}`, t: 'num', u: 'mm', step: 10, min: 0 },
+    { p: P('bv'), l: flat ? `Bredde ${vN}` : 'Høyde z', t: 'num', u: 'mm', step: 10, min: 0 },
+    { p: P('u'), l: `Senter ${uN}`, t: 'num', u: 'mm', step: 10 },
+    { p: P('v'), l: `Senter ${vN}`, t: 'num', u: 'mm', step: 10,
+      hint: flat ? 'Målt fra betongdelens senter.'
+                 : 'Målt fra betongoverflata og nedover, så −h/2 er midt i tverrsnittet.' },
+    { p: P('depth'), l: 'Uttrekk', t: 'num', u: 'mm', step: 5,
+      hint: 'Positivt drar betongen ut av flata (konsoll, fortanning). ' +
+            'Negativt drar den inn (utsparing, spor). Du kan også dra i pila i 3D.' },
+  ];
+}
+
+// Snittets utstrekning i flata det ligger i - brukes til å sette fornuftige
+// startmål når et nytt snitt legges inn.
+function newFeature(m, face, u = 0, v = null, id = 1) {
+  const r = faceRect(m, face);
+  const inf = FACE_INFO[face];
+  const bu = Math.max(50, Math.round((r.u1 - r.u0) / 3 / 10) * 10);
+  const bv = Math.max(50, Math.round((r.v1 - r.v0) / 3 / 10) * 10);
+  const vDef = v == null ? (inf.axis === 'z' ? 0 : (r.v0 + r.v1) / 2) : v;
+  return { id: `f${id}`, face, u, v: vDef, bu, bv, depth: 0 };
+}
+
 const get = (o, p) => p.split('.').reduce((a, k) => a?.[k], o);
 function set(o, p, v) {
   const ks = p.split('.'), last = ks.pop();
@@ -4684,6 +5653,10 @@ let viewTab = '3d';
 const SUMMARY = {
   'Regelverk': m => m.code.standard === 'EN1992-4' ? 'EN 1992-4' : 'B19',
   'Betongdel': m => m.concrete.grade,
+  'Betongform': m => {
+    const n2 = (m.concrete.features || []).length;
+    return n2 ? `${n2} snitt` : 'rett kloss';
+  },
   'Forankringsplate': m => m.plate.present
     ? `${m.plate.bx}×${m.plate.by}` : 'uten plate',
   'Bolter': m => `${m.anchors.nx * m.anchors.ny} × ` +
@@ -4786,6 +5759,7 @@ function renderForm() {
   const grp = visibleGroups().find(g => g.group === activeGroup);
   if (!grp) return;
   host.appendChild(el('h3', null, grp.group));
+  if (grp.custom === 'features') { renderFeatures(host); return; }
   for (const f of grp.items) {
     if (f.when && !f.when(model)) continue;
     host.appendChild(field(f));
@@ -4805,6 +5779,87 @@ function renderForm() {
       'Uten plate regnes boltene som dybler: skjærkapasiteten i betongen ' +
       'faller til ⌀²·√(f_cd·f_yd), og stålets bøyning over utkraginga blir ' +
       'ofte begrensende (B19 pkt. 19.4.2).'));
+}
+
+// === betongform ===========================================================
+//  Snitt i en flate, dratt ut eller inn. Lista er ikke fast som de andre
+//  gruppene, saa den bygges her i stedet for i fields.js.
+let pickFace = false;
+
+function nextFeatureId(m) {
+  return Math.max(0, ...(m.concrete.features || [])
+    .map(f => parseInt(String(f.id).replace(/\D/g, ''), 10) || 0)) + 1;
+}
+
+function addFeature(face, u = 0, v = null) {
+  const list = model.concrete.features || (model.concrete.features = []);
+  list.push(newFeature(model, face, u, v, nextFeatureId(model)));
+  activeGroup = 'Betongform';
+  refresh(true);
+}
+
+function setPickFace(on) {
+  pickFace = on;
+  const st = $('#stage');
+  if (st) st.pickMode = on ? 'face' : null;
+}
+
+function renderFeatures(host) {
+  host.appendChild(el('p', 'hint',
+    'Et snitt er et rektangel tegnet i en av flatene på betongdelen. ' +
+    'Uttrekket drar betongen ut av flata (konsoll, fortanning) eller inn i ' +
+    'den (utsparing, spor), målt fra grunnformens flate. Kjeglebrudd, ' +
+    'kantbrudd og lokal tykkelse regnes av betongen slik den står etter ' +
+    'alle formene.'));
+
+  const row = el('div', 'feat-add');
+  const sel = el('select');
+  for (const f of FACES) {
+    const o = el('option', null, esc(FACE_LABEL[f])); o.value = f; sel.appendChild(o);
+  }
+  const add = el('button', 'btn', 'Nytt snitt');
+  add.onclick = () => addFeature(sel.value);
+  const pick = el('button', 'btn', pickFace ? 'Klikk en flate i 3D …' : 'Velg flate i 3D');
+  pick.setAttribute('aria-pressed', String(pickFace));
+  pick.onclick = () => { setPickFace(!pickFace); renderForm(); };
+  row.append(sel, add, pick);
+  host.appendChild(row);
+
+  const list = model.concrete.features || [];
+  if (!list.length) {
+    host.appendChild(el('p', 'hint',
+      'Ingen former ennå – betongdelen er en rett kloss.'));
+    return;
+  }
+  const KIND = d => d > 0 ? 'legger til betong' : d < 0 ? 'tar bort betong'
+                                                : 'ikke dratt ut ennå';
+  list.forEach((ft, i) => {
+    const card = el('div', 'feat');
+    const head = el('div', 'feat-head');
+    head.appendChild(el('span', 'nm',
+      `${i + 1} · ${esc(FACE_LABEL[ft.face] || ft.face)}`));
+    head.appendChild(el('span', 'kind', esc(KIND(+ft.depth || 0))));
+    const del = el('button', 'btn ghost', 'Slett');
+    del.title = 'Fjern denne forma';
+    del.onclick = () => { list.splice(i, 1); refresh(true); };
+    head.appendChild(del);
+    card.appendChild(head);
+    const kind = head.querySelector('.kind');
+    for (const f of featureFields(model, i)) {
+      const fld = field(f);
+      // Uttrekket skrives uten at skjemaet bygges om (ellers rykkes markøren
+      // ut av feltet), så overskrifta må holdes i takt for seg.
+      if (f.p.endsWith('.depth'))
+        fld.querySelector('input').addEventListener('input', ev => {
+          kind.textContent = KIND(parseFloat(ev.target.value) || 0);
+        });
+      card.appendChild(fld);
+    }
+    host.appendChild(card);
+  });
+  host.appendChild(el('p', 'hint',
+    'I 3D står det en pil ut av hver form. Dra i den for å trekke betongen ' +
+    'ut eller inn – forbi null snur formen fra tillegg til utsparing.'));
 }
 
 function field(f) {
@@ -4898,6 +5953,20 @@ function renderUtilSummary(v) {
   return wrap;
 }
 
+// Formen på betongdelen hører hjemme i forutsetningene: leseren av en
+// beregning må se at kapasitetene ikke er regnet av en rett kloss.
+function concreteShapeTxt(m) {
+  const c = m.concrete;
+  const base = `${c.Lx}×${c.Ly}×${c.h} mm`;
+  if (!isShaped(m)) return base;
+  const list = c.features.filter(f => Math.abs(+f.depth || 0) > 1e-6);
+  const cuts = list.filter(f => f.depth < 0).length;
+  const adds = list.length - cuts;
+  const txt = [cuts ? `${cuts} utsparing${cuts > 1 ? 'er' : ''}` : null,
+               adds ? `${adds} tillegg` : null].filter(Boolean).join(' · ');
+  return `${base} + ${txt}`;
+}
+
 function renderResults(v) {
   const m = model, a = m.anchors, g = v.gamma;
   const foot = anchorFoot(m);
@@ -4915,6 +5984,7 @@ function renderResults(v) {
     ['— strekk mot betong', v.standards.tcLabel],
     ['— skjær mot betong', v.standards.scLabel],
     ['Betong', `${m.concrete.grade} · f_ck ${m.concrete.fck} N/mm²`],
+    ['Betongdel', concreteShapeTxt(m)],
     ['Tilstand', m.code.cracked ? 'Opprisset' : 'Uopprisset'],
     ['Bolter', `${a.nx}×${a.ny} ${a.barType === 'rod' ? 'M' : '⌀'}${a.d} · ` +
       `${a.endType === 'none' ? 'l_b' : 'h_ef'} ${a.hef} mm`],
@@ -5380,6 +6450,38 @@ function boot() {
   $('#tab-3d').onclick = () => setViewTab('3d');
   $('#tab-calc').onclick = () => setViewTab('calc');
 
+  // ---- geometri rett i 3D ------------------------------------------------
+  // Uttrekkspilene er drahaandtak. Under draget skrives verdien rett i
+  // modellen og alt regnes om; naar du slipper, bygges skjemaet om saa
+  // tallfeltet viser det samme som pila.
+  const stage = $('#stage');
+  stage.addEventListener('handle', e => {
+    set(model, e.detail.path, e.detail.value);
+    refresh(false);
+  });
+  stage.addEventListener('handle-end', () => refresh(true));
+
+  // Klikk paa en flate for aa legge et snitt der. Flata leses av normalen i
+  // treffpunktet, og snittet legges der du traff - som naar du starter en
+  // skisse paa en flate i SpaceClaim.
+  stage.addEventListener('face-pick', e => {
+    if (!pickFace) return;
+    const { point, normal } = e.detail;
+    const c = model.concrete;
+    const z = point.z + surfaceZ(model);      // tilbake til betongdelens z
+    const ax = Math.abs(normal.x) >= Math.abs(normal.y) &&
+               Math.abs(normal.x) >= Math.abs(normal.z) ? 'x'
+             : Math.abs(normal.y) >= Math.abs(normal.z) ? 'y' : 'z';
+    const pos = normal[ax] >= 0;
+    const face = ax === 'x' ? (pos ? 'xPos' : 'xNeg')
+               : ax === 'y' ? (pos ? 'yPos' : 'yNeg') : (pos ? 'top' : 'bottom');
+    const r5 = v => Math.round(v / 5) * 5;
+    setPickFace(false);
+    if (ax === 'x') addFeature(face, r5(point.y + c.ey), r5(z));
+    else if (ax === 'y') addFeature(face, r5(point.x + c.ex), r5(z));
+    else addFeature(face, r5(point.x + c.ex), r5(point.y + c.ey));
+  });
+
   const code = $('#code');
   code.value = model.code.standard;
   code.onchange = () => { model.code.standard = code.value; refresh(true); };
@@ -5387,6 +6489,7 @@ function boot() {
   $('#reset').onclick = () => {
     model = Object.assign(defaultModel(), { reinf: REINF_DEFAULT() });
     activeCheck = null; activeGroup = 'Betongdel';
+    setPickFace(false);
     $('#code').value = model.code.standard;
     setViewTab('3d');
     refresh(true, true);
