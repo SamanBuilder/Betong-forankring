@@ -167,6 +167,24 @@ three-d-stage { position:absolute; inset:0; }
 .assump .k { color:var(--tx2); font-size:11.5px; }
 .assump .v { color:var(--tx); font:11px var(--mono); text-align:right; }
 
+/* Utnyttelsessammendrag: alle kontrollene samtidig, som skrå stolper (~72°
+   fra vannrett, opp mot høyre). Navn og stolpe roteres som én enhet, så de
+   følger samme vinkel - transform-origin i venstre/nedre hjørne av hvert
+   element gjør at stolpen "vokser" oppover fra samme grunnlinje som navnet. */
+.usum { border-bottom:1px solid var(--line); }
+.usum-track { display:flex; align-items:flex-end; gap:28px; overflow-x:auto;
+  overflow-y:hidden; padding:10px 14px 24px 48px; }
+.usum-item { flex:0 0 auto; display:flex; align-items:flex-end; gap:6px;
+  border:0; background:none; cursor:pointer; padding:0;
+  transform:rotate(18deg); transform-origin:left bottom; }
+.usum-item .nm { font-size:10px; line-height:1.2; color:var(--tx2); white-space:nowrap;
+  transition:color .12s; }
+.usum-item .col { width:12px; }
+.usum-item .col i { display:block; width:100%; border-radius:2px 2px 0 0; }
+.usum-item:hover .nm { color:var(--tx); }
+.usum-item.over .nm { color:var(--bad); }
+.usum-item[aria-current="true"] .nm { color:var(--acc); font-weight:500; }
+
 .sect { margin:20px 14px 0; font-size:10px; font-weight:600; letter-spacing:.11em;
   text-transform:uppercase; color:var(--tx3); padding-bottom:6px;
   border-bottom:1px solid var(--line); }

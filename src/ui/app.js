@@ -220,6 +220,30 @@ function bar(u, cls = '') {
          `<i style="width:${w}%;background:${utilCss(u)}"></i></div>`;
 }
 
+// Alle utnyttelsene i ett samlet oversiktsbilde: skrå stolper (~72° fra
+// vannrett, opp mot høyre) med navnet på kontrollen skrådd i samme vinkel
+// til venstre for stolpen. Trykk for å hoppe til utregningsarket, akkurat
+// som radene lenger ned i lista.
+function renderUtilSummary(v) {
+  const list = v.checks.filter(applicable);
+  if (!list.length) return null;
+  const wrap = el('div', 'usum');
+  const track = el('div', 'usum-track');
+  for (const c of list) {
+    const item = el('button', 'usum-item' + (c.util > 1 ? ' over' : ''));
+    item.setAttribute('aria-current', String(activeCheck === c.id));
+    item.title = `${c.mode} · ${pct(c.util)}`;
+    const h = Math.round(Math.min(c.util, 1.3) * 78);
+    item.innerHTML =
+      `<span class="nm">${esc(c.mode)}</span>` +
+      `<span class="col"><i style="height:${h}px;background:${utilCss(c.util)}"></i></span>`;
+    item.onclick = () => { activeCheck = c.id; setViewTab('calc'); refresh(false); };
+    track.appendChild(item);
+  }
+  wrap.appendChild(track);
+  return wrap;
+}
+
 function renderResults(v) {
   const m = model, a = m.anchors, g = v.gamma;
   const foot = anchorFoot(m);
@@ -260,6 +284,9 @@ function renderResults(v) {
   for (const [k, val] of rows)
     ass.appendChild(el('div', 'row', `<span class="k">${esc(k)}</span><span class="v">${esc(val)}</span>`));
   host.appendChild(ass);
+
+  const usum = renderUtilSummary(v);
+  if (usum) host.appendChild(usum);
 
   for (const i of v.issues)
     host.appendChild(el('div', 'msg ' + (i.level === 'error' ? 'err' : 'warn'), esc(i.text)));

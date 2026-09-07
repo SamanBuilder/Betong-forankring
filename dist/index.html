@@ -177,6 +177,24 @@ three-d-stage { position:absolute; inset:0; }
 .assump .k { color:var(--tx2); font-size:11.5px; }
 .assump .v { color:var(--tx); font:11px var(--mono); text-align:right; }
 
+/* Utnyttelsessammendrag: alle kontrollene samtidig, som skrå stolper (~72°
+   fra vannrett, opp mot høyre). Navn og stolpe roteres som én enhet, så de
+   følger samme vinkel - transform-origin i venstre/nedre hjørne av hvert
+   element gjør at stolpen "vokser" oppover fra samme grunnlinje som navnet. */
+.usum { border-bottom:1px solid var(--line); }
+.usum-track { display:flex; align-items:flex-end; gap:28px; overflow-x:auto;
+  overflow-y:hidden; padding:10px 14px 24px 48px; }
+.usum-item { flex:0 0 auto; display:flex; align-items:flex-end; gap:6px;
+  border:0; background:none; cursor:pointer; padding:0;
+  transform:rotate(18deg); transform-origin:left bottom; }
+.usum-item .nm { font-size:10px; line-height:1.2; color:var(--tx2); white-space:nowrap;
+  transition:color .12s; }
+.usum-item .col { width:12px; }
+.usum-item .col i { display:block; width:100%; border-radius:2px 2px 0 0; }
+.usum-item:hover .nm { color:var(--tx); }
+.usum-item.over .nm { color:var(--bad); }
+.usum-item[aria-current="true"] .nm { color:var(--acc); font-weight:500; }
+
 .sect { margin:20px 14px 0; font-size:10px; font-weight:600; letter-spacing:.11em;
   text-transform:uppercase; color:var(--tx3); padding-bottom:6px;
   border-bottom:1px solid var(--line); }
@@ -4833,6 +4851,30 @@ function bar(u, cls = '') {
          `<i style="width:${w}%;background:${utilCss(u)}"></i></div>`;
 }
 
+// Alle utnyttelsene i ett samlet oversiktsbilde: skrå stolper (~72° fra
+// vannrett, opp mot høyre) med navnet på kontrollen skrådd i samme vinkel
+// til venstre for stolpen. Trykk for å hoppe til utregningsarket, akkurat
+// som radene lenger ned i lista.
+function renderUtilSummary(v) {
+  const list = v.checks.filter(applicable);
+  if (!list.length) return null;
+  const wrap = el('div', 'usum');
+  const track = el('div', 'usum-track');
+  for (const c of list) {
+    const item = el('button', 'usum-item' + (c.util > 1 ? ' over' : ''));
+    item.setAttribute('aria-current', String(activeCheck === c.id));
+    item.title = `${c.mode} · ${pct(c.util)}`;
+    const h = Math.round(Math.min(c.util, 1.3) * 78);
+    item.innerHTML =
+      `<span class="nm">${esc(c.mode)}</span>` +
+      `<span class="col"><i style="height:${h}px;background:${utilCss(c.util)}"></i></span>`;
+    item.onclick = () => { activeCheck = c.id; setViewTab('calc'); refresh(false); };
+    track.appendChild(item);
+  }
+  wrap.appendChild(track);
+  return wrap;
+}
+
 function renderResults(v) {
   const m = model, a = m.anchors, g = v.gamma;
   const foot = anchorFoot(m);
@@ -4873,6 +4915,9 @@ function renderResults(v) {
   for (const [k, val] of rows)
     ass.appendChild(el('div', 'row', `<span class="k">${esc(k)}</span><span class="v">${esc(val)}</span>`));
   host.appendChild(ass);
+
+  const usum = renderUtilSummary(v);
+  if (usum) host.appendChild(usum);
 
   for (const i of v.issues)
     host.appendChild(el('div', 'msg ' + (i.level === 'error' ? 'err' : 'warn'), esc(i.text)));
