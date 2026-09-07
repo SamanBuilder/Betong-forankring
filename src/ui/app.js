@@ -220,26 +220,37 @@ function bar(u, cls = '') {
          `<i style="width:${w}%;background:${utilCss(u)}"></i></div>`;
 }
 
-// Alle utnyttelsene i ett samlet oversiktsbilde: skrå stolper (~72° fra
-// vannrett, opp mot høyre) med navnet på kontrollen skrådd i samme vinkel
-// til venstre for stolpen. Trykk for å hoppe til utregningsarket, akkurat
-// som radene lenger ned i lista.
+// Kortere navn enn c.mode, kun for den trange stolpeoversikten.
+const SHORT_NAME = { 'V-pryout': 'Pry-out' };
+
+// Alle utnyttelsene i ett samlet oversiktsbilde: loddrette stolper med
+// prosenten vannrett under, navnet loddrett under der igjen, og en felles
+// 100 %-strek på tvers. Trykk for å hoppe til utregningsarket, akkurat som
+// radene lenger ned i lista.
+const USUM_CAP = 1.3;      // stolpen klippes ved 130 % av grensa
+const USUM_H = 84;         // px – høyden som tilsvarer 100 % (padding-top i .usum-plot
+                            // i style.css reserverer rom for de siste 30 % over streken)
+
 function renderUtilSummary(v) {
   const list = v.checks.filter(applicable);
   if (!list.length) return null;
   const wrap = el('div', 'usum');
   const track = el('div', 'usum-track');
+  const plot = el('div', 'usum-plot');
+  plot.appendChild(el('div', 'usum-100', `<b>100 %</b>`));
   for (const c of list) {
     const item = el('button', 'usum-item' + (c.util > 1 ? ' over' : ''));
     item.setAttribute('aria-current', String(activeCheck === c.id));
     item.title = `${c.mode} · ${pct(c.util)}`;
-    const h = Math.round(Math.min(c.util, 1.3) * 78);
+    const h = Math.round(Math.min(c.util, USUM_CAP) * USUM_H);
     item.innerHTML =
-      `<span class="nm">${esc(c.mode)}</span>` +
-      `<span class="col"><i style="height:${h}px;background:${utilCss(c.util)}"></i></span>`;
+      `<span class="col"><i style="height:${h}px;background:${utilCss(c.util)}"></i></span>` +
+      `<span class="pc">${pct(c.util)}</span>` +
+      `<span class="nm">${esc(SHORT_NAME[c.id] ?? c.mode)}</span>`;
     item.onclick = () => { activeCheck = c.id; setViewTab('calc'); refresh(false); };
-    track.appendChild(item);
+    plot.appendChild(item);
   }
+  track.appendChild(plot);
   wrap.appendChild(track);
   return wrap;
 }

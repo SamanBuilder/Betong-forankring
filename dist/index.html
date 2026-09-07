@@ -177,25 +177,31 @@ three-d-stage { position:absolute; inset:0; }
 .assump .k { color:var(--tx2); font-size:11.5px; }
 .assump .v { color:var(--tx); font:11px var(--mono); text-align:right; }
 
-/* Utnyttelsessammendrag: alle kontrollene samtidig, som skrå stolper (~72°
-   fra vannrett, opp mot høyre). Navn og stolpe roteres som én enhet, så de
-   følger samme vinkel - transform-origin i venstre/nedre hjørne av hvert
-   element gjør at stolpen "vokser" oppover fra samme grunnlinje som navnet. */
+/* Utnyttelsessammendrag: alle kontrollene samtidig, som loddrette stolper i
+   ett felles diagram med en 100 %-strek på tvers. Prosenten står vannrett
+   rett under stolpen; navnet står loddrett (bunn-til-topp) under der igjen,
+   så trange kolonner ikke tvinger fram brede navn. */
 .usum { border-bottom:1px solid var(--line); }
-.usum-track { display:flex; align-items:flex-end; gap:16px; overflow-x:auto;
-  overflow-y:hidden; padding:10px 14px 24px 24px; }
-.usum-item { flex:0 0 auto; display:flex; align-items:flex-end; gap:4px;
-  border:0; background:none; cursor:pointer; padding:0;
-  transform:rotate(18deg); transform-origin:left bottom; }
-/* Teksten står vertikalt (bunn-til-topp) FØR hele elementet roteres, slik at
-   den blir parallell med stolpen i stedet for å ligge på tvers av den. */
+.usum-track { overflow-x:auto; padding:24px 14px 20px; }
+/* padding-top over stolpesona er reservert til stolper over 100 % (inntil
+   130 %) - se USUM_OVER i app.js. */
+.usum-plot { position:relative; display:inline-flex; align-items:flex-start;
+  gap:14px; padding-top:26px; }
+.usum-100 { position:absolute; left:0; right:0; top:26px; height:0;
+  border-top:1px dashed var(--line2); }
+.usum-100 b { position:absolute; left:2px; top:-16px; font:10px var(--mono);
+  color:var(--tx3); white-space:nowrap; }
+.usum-item { flex:0 0 auto; display:flex; flex-direction:column; align-items:center;
+  gap:5px; border:0; background:none; cursor:pointer; padding:0; }
+.usum-item .col { width:14px; height:84px; display:flex; align-items:flex-end; }
+.usum-item .col i { display:block; width:100%; border-radius:2px 2px 0 0; }
+.usum-item .pc { font:600 10px var(--mono); color:var(--tx2); white-space:nowrap; }
+.usum-item.over .pc { color:var(--bad); }
+/* Loddrett tekst, bunn-til-topp - se samme teknikk brukt i .hud for målsatte tall. */
 .usum-item .nm { writing-mode:vertical-rl; transform:rotate(180deg);
   font-size:10px; line-height:1.2; color:var(--tx2); white-space:nowrap;
   transition:color .12s; }
-.usum-item .col { width:12px; }
-.usum-item .col i { display:block; width:100%; border-radius:2px 2px 0 0; }
-.usum-item:hover .nm { color:var(--tx); }
-.usum-item.over .nm { color:var(--bad); }
+.usum-item:hover .nm, .usum-item:hover .pc { color:var(--tx); }
 .usum-item[aria-current="true"] .nm { color:var(--acc); font-weight:500; }
 
 .sect { margin:20px 14px 0; font-size:10px; font-weight:600; letter-spacing:.11em;
@@ -4854,26 +4860,37 @@ function bar(u, cls = '') {
          `<i style="width:${w}%;background:${utilCss(u)}"></i></div>`;
 }
 
-// Alle utnyttelsene i ett samlet oversiktsbilde: skrå stolper (~72° fra
-// vannrett, opp mot høyre) med navnet på kontrollen skrådd i samme vinkel
-// til venstre for stolpen. Trykk for å hoppe til utregningsarket, akkurat
-// som radene lenger ned i lista.
+// Kortere navn enn c.mode, kun for den trange stolpeoversikten.
+const SHORT_NAME = { 'V-pryout': 'Pry-out' };
+
+// Alle utnyttelsene i ett samlet oversiktsbilde: loddrette stolper med
+// prosenten vannrett under, navnet loddrett under der igjen, og en felles
+// 100 %-strek på tvers. Trykk for å hoppe til utregningsarket, akkurat som
+// radene lenger ned i lista.
+const USUM_CAP = 1.3;      // stolpen klippes ved 130 % av grensa
+const USUM_H = 84;         // px – høyden som tilsvarer 100 % (padding-top i .usum-plot
+                            // i style.css reserverer rom for de siste 30 % over streken)
+
 function renderUtilSummary(v) {
   const list = v.checks.filter(applicable);
   if (!list.length) return null;
   const wrap = el('div', 'usum');
   const track = el('div', 'usum-track');
+  const plot = el('div', 'usum-plot');
+  plot.appendChild(el('div', 'usum-100', `<b>100 %</b>`));
   for (const c of list) {
     const item = el('button', 'usum-item' + (c.util > 1 ? ' over' : ''));
     item.setAttribute('aria-current', String(activeCheck === c.id));
     item.title = `${c.mode} · ${pct(c.util)}`;
-    const h = Math.round(Math.min(c.util, 1.3) * 78);
+    const h = Math.round(Math.min(c.util, USUM_CAP) * USUM_H);
     item.innerHTML =
-      `<span class="nm">${esc(c.mode)}</span>` +
-      `<span class="col"><i style="height:${h}px;background:${utilCss(c.util)}"></i></span>`;
+      `<span class="col"><i style="height:${h}px;background:${utilCss(c.util)}"></i></span>` +
+      `<span class="pc">${pct(c.util)}</span>` +
+      `<span class="nm">${esc(SHORT_NAME[c.id] ?? c.mode)}</span>`;
     item.onclick = () => { activeCheck = c.id; setViewTab('calc'); refresh(false); };
-    track.appendChild(item);
+    plot.appendChild(item);
   }
+  track.appendChild(plot);
   wrap.appendChild(track);
   return wrap;
 }
