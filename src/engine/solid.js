@@ -333,12 +333,29 @@ export function spansAlong(mask, axis, at) {
   return out;
 }
 
-// Snitt av to intervallsett.
+// Snitt av to intervallsett. Overlappende par gir overlappende resultater -
+// vil du ha dem slaatt sammen til en flate uten hull, kjoer resultatet
+// gjennom mergeSpans().
 export function intersectSpans(a, b) {
   const out = [];
   for (const p of a) for (const q of b) {
     const lo = Math.max(p[0], q[0]), hi = Math.min(p[1], q[1]);
     if (hi > lo + TOL) out.push([lo, hi]);
+  }
+  return out;
+}
+
+// Slaar sammen overlappende/tilstoetende intervaller til den korteste lista
+// som daekker det samme. Brukes der resultatet skal tegnes som geometri (ett
+// legeme, ikke flere overlappende) - unionLength() gir bare summen, ikke
+// intervallene selv.
+export function mergeSpans(ivs) {
+  const s = ivs.filter(i => i[1] > i[0] + TOL).sort((a, b) => a[0] - b[0]);
+  const out = [];
+  for (const iv of s) {
+    const last = out[out.length - 1];
+    if (last && iv[0] <= last[1] + TOL) last[1] = Math.max(last[1], iv[1]);
+    else out.push([...iv]);
   }
   return out;
 }

@@ -1032,12 +1032,29 @@ function spansAlong(mask, axis, at) {
   return out;
 }
 
-// Snitt av to intervallsett.
+// Snitt av to intervallsett. Overlappende par gir overlappende resultater -
+// vil du ha dem slaatt sammen til en flate uten hull, kjoer resultatet
+// gjennom mergeSpans().
 function intersectSpans(a, b) {
   const out = [];
   for (const p of a) for (const q of b) {
     const lo = Math.max(p[0], q[0]), hi = Math.min(p[1], q[1]);
     if (hi > lo + TOL) out.push([lo, hi]);
+  }
+  return out;
+}
+
+// Slaar sammen overlappende/tilstoetende intervaller til den korteste lista
+// som daekker det samme. Brukes der resultatet skal tegnes som geometri (ett
+// legeme, ikke flere overlappende) - unionLength() gir bare summen, ikke
+// intervallene selv.
+function mergeSpans(ivs) {
+  const s = ivs.filter(i => i[1] > i[0] + TOL).sort((a, b) => a[0] - b[0]);
+  const out = [];
+  for (const iv of s) {
+    const last = out[out.length - 1];
+    if (last && iv[0] <= last[1] + TOL) last[1] = Math.max(last[1], iv[1]);
+    else out.push([...iv]);
   }
   return out;
 }
@@ -5201,11 +5218,22 @@ function coneMesh(m, b, ccr, hef) {
   return mesh;
 }
 
-// Kantbruddlegemet: kile fra forreste boltrad ut til kantflata.
+// ---------------------------------------------------------------------------
+//  Kantbruddlegemet: en kile, ikke en boks.
 //
-// Kanten er den betongen faktisk har - er den flyttet av en utsparing eller en
-// konsoll, foelger kila med. Klipper en utsparing bruddflata i to, tegnes den
-// som to kiler, slik arealet ogsaa regnes.
+//  Bruddflata er skraa i hele sin lengde: den staar i overflata (z=0) ved
+//  boltraden og skraaner jevnt nedover mot kanten, der den gaar ut av den
+//  loddrette snittflata i dybden h_v = min(1,5*a_1 ; h). Det er den samme
+//  vinkelen uansett hvor kanten ligger - er kanten naermere enn 1,5*a_1
+//  skulle rukket, ville det betydd en annen a_1, ikke en justert vinkel paa
+//  samme kile. Boltlinja er derfor en LINJE ved z=0, ikke en loddrett flate:
+//  det finnes ingen vegg rett under bolten, bare den skraa flata som gaar
+//  derfra og ut til snittet.
+//
+//  Kanten er den betongen faktisk har - er den flyttet av en utsparing eller
+//  en konsoll, foelger kila med. Klipper en utsparing bruddflata i to, tegnes
+//  den som to kiler, slik arealet ogsaa regnes.
+// ---------------------------------------------------------------------------
 function edgeWedges(m, res, dir) {
   if (!dir) return [];
   const all = anchorPositions(m);
@@ -5221,19 +5249,32 @@ function edgeWedges(m, res, dir) {
   const al = Math.min(...front.map(t)), ah = Math.max(...front.map(t));
 
   const [z0, z1] = anchorDepth(m);
-  const spans = intersectSpans(
+  // Flere bolter i samme rad gir overlappende rekkevidder naar de staar taett
+  // (c/c mindre enn 3*c_1) - uten sammenslaaing ville det blitt flere
+  // overlappende kile-legemer i stedet for ett sammenhengende.
+  const spans = mergeSpans(intersectSpans(
     front.map(p => [t(p) - 1.5 * c1, t(p) + 1.5 * c1]),
-    spansAlong(planMask(m, z0, z1), axisX ? 'y' : 'x', ax));
+    spansAlong(planMask(m, z0, z1), axisX ? 'y' : 'x', ax)));
   if (!spans.length) return [];
 
   const P = (u, w, z) => axisX ? [u, w, z] : [w, u, z];
-  const F = [[0,1,5],[0,5,4],[3,7,6],[3,6,2],[0,4,7],[0,7,3],[1,2,6],[1,6,5],
-             [4,5,6],[4,6,7],[0,3,2],[0,2,1]];
-  return spans.map(([tl, th]) => ({ F, V: [
-    P(face, tl, 0), P(face, th, 0), P(face, th, hv), P(face, tl, hv),   // kantflata
-    P(ax, Math.max(al, tl), 0), P(ax, Math.min(ah, th), 0),
-    P(ax, Math.min(ah, th), hv), P(ax, Math.max(al, tl), hv),           // boltlinja
-  ] }));
+  // 0-3 kantflata (den loddrette snittflata der kila gaar ut av betongen),
+  // 4-5 boltlinja - to punkter ved overflata, ikke fire: kila smalner til en
+  // linje der, den utvider seg ikke til en boks.
+  return spans.map(([tl, th]) => {
+    const bl = Math.max(al, tl), bh = Math.min(ah, th);
+    const V = [
+      P(face, tl, 0), P(face, th, 0), P(face, th, hv), P(face, tl, hv),   // 0-3
+      P(ax, bl, 0), P(ax, bh, 0),                                        // 4-5
+    ];
+    const F = [
+      [0, 3, 1], [1, 3, 2],   // kantflata (loddrett snitt)
+      [4, 5, 1], [4, 1, 0],   // taket ved overflata, fra boltlinja til kantflata
+      [4, 0, 3],              // skraa side mot tl
+      [5, 2, 1],              // skraa side mot th
+    ];
+    return { V, F };
+  });
 }
 
 // ---------------------------------------------------------------------------
