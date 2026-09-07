@@ -85,10 +85,6 @@ export const FIELDS = [
     { p: 'concrete.freeEdges.yPos', l: 'Fri kant +y', t: 'bool' },
   ] },
 
-  // Formene i plantegninga redigeres av si egen rute (renderShapes i app.js):
-  // lista er ikke fast, den vokser med det du tegner.
-  { group: 'Betongform', custom: 'shapes', items: [] },
-
   { group: 'Forankringsplate', items: [
     { p: 'plate.present', l: 'Stålplate i overflata', t: 'bool',
       hint: 'Uten plate står boltene som enkeltstående dybler. Plata holder ' +

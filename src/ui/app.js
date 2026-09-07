@@ -9,10 +9,10 @@
 import { defaultModel, CONCRETE_GRADES, STUD_STEELS, studSize, rodSize,
          autoSpacing, boltsOutside, syncLoad, combo, nextComboId,
          LIMIT_STATES, anchorFoot, steelsFor, defaultSteel, endsFor,
-         syncPlan, migratePlan, setPlanBox } from '../core/model.js';
+         syncPlan, migratePlan } from '../core/model.js';
 import { verify } from '../engine/verify.js';
 import { buildScene } from '../viz/scene-builder.js';
-import { FIELDS, barSizes, get, set, shapeFields, shapeName } from './fields.js';
+import { FIELDS, barSizes, get, set } from './fields.js';
 import { planShapes, shapeLoop, shapeZ, loopArea, isShaped,
          SHAPE_LABEL, OP_LABEL } from '../engine/solid.js';
 import { PlanEditor, TOOLS } from './plan-editor.js';
@@ -47,11 +47,6 @@ let viewTab = '3d';
 const SUMMARY = {
   'Regelverk': m => m.code.standard === 'EN1992-4' ? 'EN 1992-4' : 'B19',
   'Betongdel': m => m.concrete.grade,
-  'Betongform': m => {
-    const list = planShapes(m);
-    if (!isShaped(m)) return 'rett kloss';
-    return `${list.length} form${list.length > 1 ? 'er' : ''}`;
-  },
   'Forankringsplate': m => m.plate.present
     ? `${m.plate.bx}×${m.plate.by}` : 'uten plate',
   'Bolter': m => `${m.anchors.nx * m.anchors.ny} × ` +
@@ -162,7 +157,6 @@ function renderForm() {
   const grp = visibleGroups().find(g => g.group === activeGroup);
   if (!grp) return;
   host.appendChild(el('h3', null, grp.group));
-  if (grp.custom === 'shapes') { renderShapes(host); return; }
   for (const f of grp.items) {
     if (f.when && !f.when(model)) continue;
     host.appendChild(field(f));
@@ -217,73 +211,6 @@ function pickShapeAt(p) {
     if (A < bestA) { bestA = A; best = sh; }
   }
   return best;
-}
-
-function renderShapes(host) {
-  host.appendChild(el('p', 'hint',
-    'Betongdelen er tegnet i plan. Hver form er et rektangel, en sirkel ' +
-    'eller ei lukka linjefigur, og legger betong til eller tar den bort. ' +
-    'Ligger flere former oppi hverandre, blir de skåret der linjene møtes: ' +
-    'det er omrisset som er delen. Tegn og mål i <b>Plan</b>-fana.'));
-
-  const row = el('div', 'feat-add');
-  const goPlan = el('button', 'btn', 'Åpne plantegninga');
-  goPlan.onclick = () => { setViewTab('plan'); };
-  const box = el('button', 'btn ghost', 'Tilbake til rektangel');
-  box.title = 'Erstatter hele tegninga med ett rektangel på dagens utstrekning';
-  box.onclick = () => {
-    setPlanBox(model, model.concrete.Lx, model.concrete.Ly);
-    selectShape(null);
-    refresh(true);
-  };
-  row.append(goPlan, box);
-  host.appendChild(row);
-
-  const list = planShapes(model);
-  list.forEach((sh, i) => {
-    const card = el('div', 'feat' + (sh.id === selectedShape ? ' on' : ''));
-    const head = el('div', 'feat-head');
-    const nm = el('button', 'nm', esc(shapeName(sh, i)));
-    nm.onclick = () => { selectShape(sh.id === selectedShape ? null : sh.id); refresh(true); };
-    head.appendChild(nm);
-    head.appendChild(el('span', 'kind',
-      esc(sh.op === 'cut' ? 'tar betong bort' : 'legger betong')));
-    const del = el('button', 'btn ghost', 'Slett');
-    del.title = 'Fjern denne forma';
-    del.onclick = () => {
-      model.concrete.plan.splice(i, 1);
-      if (selectedShape === sh.id) selectShape(null);
-      refresh(true);
-    };
-    head.appendChild(del);
-    card.appendChild(head);
-
-    // Høyda: enten følger forma tykkelsen, eller så har den sin egen
-    // over- og underkant. Boksen er inngangen til begge deler.
-    const [z0, z1] = shapeZ(model, sh);
-    const auto = sh.z0 == null && sh.z1 == null;
-    const fld = el('label', 'fld bool');
-    fld.appendChild(el('span', 'lbl', 'Gjennom hele tykkelsen'));
-    const cb = el('input'); cb.type = 'checkbox'; cb.checked = auto;
-    cb.onchange = () => {
-      if (cb.checked) { sh.z0 = null; sh.z1 = null; }
-      else { sh.z0 = z0; sh.z1 = z1; }
-      refresh(true);
-    };
-    fld.appendChild(cb);
-    card.appendChild(fld);
-
-    for (const f of shapeFields(model, i)) card.appendChild(field(f));
-    if (sh.kind === 'poly')
-      card.appendChild(el('p', 'hint',
-        `${sh.pts.length} hjørner. Målene på linjene redigeres i plantegninga.`));
-    host.appendChild(card);
-  });
-
-  host.appendChild(el('p', 'hint',
-    'Den valgte forma står fram i 3D med to piler: dra i dem for å flytte ' +
-    'over- og underkanten. Da får forma sin egen høyde i stedet for å følge ' +
-    'tykkelsen h.'));
 }
 
 function field(f) {
