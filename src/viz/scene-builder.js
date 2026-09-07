@@ -9,8 +9,8 @@ import * as THREE from 'three';
 import { anchorPositions, edgeDistances, anchorFoot, mounting,
          shaftProps, memberThickness } from '../core/model.js';
 import { solidBoxes, boundaryEdges, facePlane, faceRect, surfaceZ, planMask,
-         spansAlong, intersectSpans, mergeSpans, anchorDepth, FACE_INFO,
-         FACE_LABEL } from '../engine/solid.js';
+         anchorDepth, FACE_INFO, FACE_LABEL } from '../engine/solid.js';
+import { edgeBreakout } from '../engine/geometry.js';
 import { n } from '../engine/calc.js';
 
 // ---------------------------------------------------------------------------
@@ -818,20 +818,11 @@ function coneMesh(m, b, ccr, hef) {
 }
 
 // ---------------------------------------------------------------------------
-//  Kantbruddlegemet: en kile, ikke en boks.
+//  Kantbruddlegemet.
 //
-//  Bruddflata er skraa i hele sin lengde: den staar i overflata (z=0) ved
-//  boltraden og skraaner jevnt nedover mot kanten, der den gaar ut av den
-//  loddrette snittflata i dybden h_v = min(1,5*a_1 ; h). Det er den samme
-//  vinkelen uansett hvor kanten ligger - er kanten naermere enn 1,5*a_1
-//  skulle rukket, ville det betydd en annen a_1, ikke en justert vinkel paa
-//  samme kile. Boltlinja er derfor en LINJE ved z=0, ikke en loddrett flate:
-//  det finnes ingen vegg rett under bolten, bare den skraa flata som gaar
-//  derfra og ut til snittet.
-//
-//  Kanten er den betongen faktisk har - er den flyttet av en utsparing eller
-//  en konsoll, foelger kila med. Klipper en utsparing bruddflata i to, tegnes
-//  den som to kiler, slik arealet ogsaa regnes.
+//  Geometrien kommer fra edgeBreakout() i geometry.js - det samme legemet
+//  A_c,V regnes av, saa bildet og tallet ikke kan komme i utakt. Her gjenstaar
+//  bare aa finne hvilken boltrad og hvilken kant som gjelder.
 // ---------------------------------------------------------------------------
 function edgeWedges(m, res, dir) {
   if (!dir) return [];
@@ -840,40 +831,7 @@ function edgeWedges(m, res, dir) {
   const c1 = Math.min(...ds);
   if (!Number.isFinite(c1)) return [];
   const front = all.filter((p, i) => Math.abs(ds[i] - c1) < 1e-6);
-  const hv = -Math.min(1.5 * c1, memberThickness(m, front));
-  const axisX = dir.startsWith('x');
-  const t = p => (axisX ? p.y : p.x);
-  const ax = axisX ? front[0].x : front[0].y;    // boltradens posisjon i lastretning
-  const face = dir.endsWith('Pos') ? ax + c1 : ax - c1;
-  const al = Math.min(...front.map(t)), ah = Math.max(...front.map(t));
-
-  const [z0, z1] = anchorDepth(m);
-  // Flere bolter i samme rad gir overlappende rekkevidder naar de staar taett
-  // (c/c mindre enn 3*c_1) - uten sammenslaaing ville det blitt flere
-  // overlappende kile-legemer i stedet for ett sammenhengende.
-  const spans = mergeSpans(intersectSpans(
-    front.map(p => [t(p) - 1.5 * c1, t(p) + 1.5 * c1]),
-    spansAlong(planMask(m, z0, z1), axisX ? 'y' : 'x', ax)));
-  if (!spans.length) return [];
-
-  const P = (u, w, z) => axisX ? [u, w, z] : [w, u, z];
-  // 0-3 kantflata (den loddrette snittflata der kila gaar ut av betongen),
-  // 4-5 boltlinja - to punkter ved overflata, ikke fire: kila smalner til en
-  // linje der, den utvider seg ikke til en boks.
-  return spans.map(([tl, th]) => {
-    const bl = Math.max(al, tl), bh = Math.min(ah, th);
-    const V = [
-      P(face, tl, 0), P(face, th, 0), P(face, th, hv), P(face, tl, hv),   // 0-3
-      P(ax, bl, 0), P(ax, bh, 0),                                        // 4-5
-    ];
-    const F = [
-      [0, 3, 1], [1, 3, 2],   // kantflata (loddrett snitt)
-      [4, 5, 1], [4, 1, 0],   // taket ved overflata, fra boltlinja til kantflata
-      [4, 0, 3],              // skraa side mot tl
-      [5, 2, 1],              // skraa side mot th
-    ];
-    return { V, F };
-  });
+  return edgeBreakout(m, dir, c1, front, memberThickness(m, front)).bodies;
 }
 
 // ---------------------------------------------------------------------------

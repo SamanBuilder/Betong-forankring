@@ -12,7 +12,7 @@
 
 import { defaultModel, syncLoad, edgeDistances, memberThickness,
          anchorPositions, anchorFoot } from '../src/core/model.js';
-import { coneProjection, frontWidth } from '../src/engine/geometry.js';
+import { coneProjection, frontWidth, edgeBreakout } from '../src/engine/geometry.js';
 import { solidBoxes, boundaryEdges, surfaceZ } from '../src/engine/solid.js';
 
 let fails = 0, runs = 0;
@@ -129,6 +129,72 @@ console.log('\nSide som ikke er fri: betongen fortsetter forbi klossen');
   m.concrete.freeEdges.yPos = false;
   eq('bredde 1,5·c_1 hver vei, uklippet',
     frontWidth(m, 'y', -100, [[-400, 400]]), 800);
+}
+
+console.log('\nKantbruddlegemet: fast vinkel 1,5 : 1, betongen bestemmer hvor det slutter');
+{
+  // Bruddflata går ut fra fremste boltrad (x = 100) mot kanten i x = 600, og
+  // faller 1,5 mm pr. mm utover. Vinkelen er den samme uansett tykkelse: er
+  // delen tynn, treffer flata underflata før den når kanten - den blir ikke
+  // slakkere for å lande i nedre kantlinje.
+  const wedge = (h) => {
+    const m = build();
+    m.concrete.h = h;
+    const pts = anchorPositions(m);
+    const ds = pts.map(p => edgeDistances(m, p.x, p.y).xPos);
+    const c = Math.min(...ds);
+    const front = pts.filter((p, i) => Math.abs(ds[i] - c) < 1e-6);
+    return edgeBreakout(m, 'xPos', c, front, memberThickness(m, front));
+  };
+  // Helninga leses av legemet: hvor langt ut fra boltraden det dypeste punktet
+  // først opptrer, mot hvor dypt det ligger.
+  const slope = (r) => {
+    const V = r.bodies[0].V;
+    const zMin = Math.min(...V.map(v => v[2]));
+    const xAt = Math.min(...V.filter(v => Math.abs(v[2] - zMin) < 1e-6).map(v => v[0]));
+    return -zMin / (xAt - 100);
+  };
+  eq('h = 300: helning', slope(wedge(300)), 1.5);
+  eq('h = 500: helning', slope(wedge(500)), 1.5);
+  eq('h = 900: helning', slope(wedge(900)), 1.5);
+  // c_1 = 500, så flata når 1,5·500 = 750 mm ned om betongen rekker.
+  eq('h = 300: dybde ved kanten er tykkelsen', wedge(300).height, 300);
+  eq('h = 900: dybde ved kanten er 1,5·c_1', wedge(900).height, 750);
+
+  // A_c,V er legemet projisert på kantflata: bredde 1200 (fra −600 til 600,
+  // klippet mot sidekantene) ganger den dybden flata faktisk går ut i.
+  eq('h = 300: A_c,V', wedge(300).Ac, 1200 * 300);
+  eq('h = 900: A_c,V', wedge(900).Ac, 1200 * 750);
+
+  // Legemet er lukket, og volumet er regnet for hånd i tre stykker:
+  //   0–200 mm ut:  ∫ (200 + 3u)·1,5u du            =  18e6
+  //   200–333⅓:     ∫ (200 + 3u)·300 du             =  40e6
+  //   333⅓–500:     1200 · 300 · 166⅔               =  60e6
+  const vol = (r) => {
+    const { V, F } = r.bodies[0];
+    const d = (a, b) => [a[0] - b[0], a[1] - b[1], a[2] - b[2]];
+    let v = 0;
+    for (const [i, j, k] of F) {
+      const [a, b, c] = [V[i], V[j], V[k]];
+      const p = d(b, a), q = d(c, a);
+      v += (a[0] * (p[1] * q[2] - p[2] * q[1])
+          + a[1] * (p[2] * q[0] - p[0] * q[2])
+          + a[2] * (p[0] * q[1] - p[1] * q[0])) / 6;
+    }
+    return v;
+  };
+  eq('h = 300: volum', vol(wedge(300)), 118e6);
+
+  // Samme legeme mot hver av de fire kantene - speiling skal ikke vrenge det.
+  for (const dir of ['xNeg', 'yPos', 'yNeg']) {
+    const m = build();
+    const pts = anchorPositions(m);
+    const ds = pts.map(p => edgeDistances(m, p.x, p.y)[dir]);
+    const c = Math.min(...ds);
+    const front = pts.filter((p, i) => Math.abs(ds[i] - c) < 1e-6);
+    eq(`volum mot ${dir}`,
+      vol(edgeBreakout(m, dir, c, front, memberThickness(m, front))), 118e6);
+  }
 }
 
 console.log(`\n${runs - fails} av ${runs} stemmer.`);

@@ -1302,6 +1302,120 @@ function frontWidth(m, axis, at, spans) {
   return unionLength(intersectSpans(spans, solidSpans));
 }
 
+// ---------------------------------------------------------------------------
+//  Kantbruddlegemet.
+//
+//  Bruddflata gaar ut fra fremste boltrad i betongoverflata og sprer seg med
+//  FAST helning 1,5 : 1 - 1,5 mm nedover og 1,5 mm til hver side pr. mm utover.
+//  Vinkelen er en egenskap ved bruddet, ikke ved betongklossen: den justeres
+//  ALDRI for aa treffe et hjoerne. Flata loeper i den vinkelen til den gaar ut
+//  av betongen, og det er betongen som avgjoer hvor det skjer:
+//
+//    tykk del  (h >= 1,5*c_1)  flata naar kantflata i dybden 1,5*c_1
+//    tynn del  (h <  1,5*c_1)  flata treffer underflata alt etter h/1,5 mm,
+//                              og resten ut til kanten river hele tykkelsen
+//
+//  Legemet er derfor en pyramide med spissen i boltraden, eventuelt kappet av
+//  underflata. Med c_1 = 500 og h = 300 stopper skraaflata 200 mm ut fra
+//  boltraden; de siste 300 mm ut til kanten staar loddrett gjennom hele
+//  tykkelsen. Foer gikk skraaflata i ett strekk fra boltraden til nedre
+//  kantlinje - helning 0,6 : 1 i det tilfellet, altsaa en vinkel som endret seg
+//  med betongen.
+//
+//  A_c,V er dette legemet prosjektert paa kantflata, ikke en formel ved sida
+//  av: hoeyden er den dybden flata faktisk gaar ut i, og bredden er der
+//  legemet faktisk har betong aa rive i.
+// ---------------------------------------------------------------------------
+const EDGE_SLOPE = 1.5;
+
+const ETOL = 1e-6;
+
+function edgeBreakout(m, dir, c1, front, hLoc) {
+  const S = EDGE_SLOPE;
+  const axisX = dir.startsWith('x');
+  const t = p => (axisX ? p.y : p.x);
+  const ax = axisX ? front[0].x : front[0].y;      // boltradens plass i lastretninga
+  const sgn = dir.endsWith('Pos') ? 1 : -1;
+  const al = Math.min(...front.map(t)), ah = Math.max(...front.map(t));
+
+  // Dybden flata naar ut i ved kanten: 1,5*c_1 om betongen rekker, ellers hele
+  // tykkelsen - flata gaar da ut av underflata foer den naar kantflata.
+  const height = Math.min(S * c1, hLoc);
+
+  // Bredden klippes mot betongen slik den faktisk staar i boltradens plan.
+  const [z0, z1] = anchorDepth(m);
+  const spans = mergeSpans(intersectSpans(
+    front.map(p => [t(p) - S * c1, t(p) + S * c1]),
+    spansAlong(planMask(m, z0, z1), axisX ? 'y' : 'x', ax)));
+  const width = spans.reduce((s, iv) => s + (iv[1] - iv[0]), 0);
+
+  const ctx = { S, c1, al, ah, height, ax, sgn, axisX };
+  return { dir, axisX, ax, sgn, c1, face: ax + sgn * c1, height, spans, width,
+           Ac: width * height,
+           bodies: spans.map(iv => wedgeBody(iv, ctx)) };
+}
+
+// ---------------------------------------------------------------------------
+//  Ett bruddlegeme, som en rekke tverrsnitt langs veien ut mot kanten.
+//
+//  I avstanden u fra boltraden er tverrsnittet rektangelet
+//    t fra al - 1,5*u til ah + 1,5*u   (klippet mot betongen)
+//    z fra 0 ned til -min(1,5*u, hoeyden)
+//  Alle knekkene - der skraaflata naar bunnen, og der sidespredninga naar
+//  klippet - legges inn som egne snitt, saa flatene mellom dem blir plane og
+//  legemet eksakt. Ingen triangulering av en skraa flate i et rutenett.
+// ---------------------------------------------------------------------------
+function wedgeBody([tl, th], { S, c1, al, ah, height, ax, sgn, axisX }) {
+  const cuts = new Set([0, c1]);
+  for (const u of [height / S,                 // skraaflata naar underflata
+                   (al - tl) / S, (th - ah) / S,   // spredninga naar klippet
+                   (al - th) / S, (tl - ah) / S])  // legemet begynner i det hele tatt
+    if (u > ETOL && u < c1 - ETOL) cuts.add(u);
+  const us = [...cuts].sort((a, b) => a - b);
+
+  const V = [], F = [];
+  const P = (u, tt, z) => {
+    const a = ax + sgn * u;
+    V.push(axisX ? [a, tt, z] : [tt, a, z]);
+    return V.length - 1;
+  };
+  const tri = (a, b, c) => { if (a !== b && b !== c && a !== c) F.push([a, b, c]); };
+  const quad = (a, b, c, d) => { tri(a, b, c); tri(a, c, d); };
+
+  // Tverrsnittet som en loekke: overkant venstre -> overkant hoeyre -> bunn
+  // hoeyre -> bunn venstre. Punkter som faller sammen deles, saa degenererte
+  // trekanter faller ut av seg selv naar snittet er en linje eller et punkt.
+  const cut = (u) => {
+    const lo = Math.max(tl, al - S * u), hi = Math.min(th, ah + S * u);
+    const dep = Math.min(S * u, height);
+    if (hi < lo - ETOL) return null;
+    const wide = hi > lo + ETOL, deep = dep > ETOL;
+    const tL = P(u, lo, 0);
+    const tR = wide ? P(u, hi, 0) : tL;
+    const bL = deep ? P(u, lo, -dep) : tL;
+    const bR = deep ? (wide ? P(u, hi, -dep) : bL) : tR;
+    return [tL, tR, bR, bL];
+  };
+
+  let prev = null;
+  for (const u of us) {
+    const s = cut(u);
+    if (!s) continue;
+    if (!prev) quad(s[0], s[1], s[2], s[3]);           // der legemet begynner
+    else for (let i = 0; i < 4; i++) {
+      const j = (i + 1) % 4;
+      quad(prev[i], s[i], s[j], prev[j]);              // mantelen mellom snittene
+    }
+    prev = s;
+  }
+  if (prev) quad(prev[3], prev[2], prev[1], prev[0]);  // kantflata
+  // Sveipen gaar mot uret sett utenfra bare naar (utover, langs kant, opp) er
+  // hoeyrehendt. Er den ikke det, snus alle trekantene, slik at normalene
+  // peker ut av legemet uansett hvilken av de fire kantene det er.
+  if ((axisX ? sgn : -sgn) < 0) for (const f of F) { const t0 = f[1]; f[1] = f[2]; f[2] = t0; }
+  return { V, F };
+}
+
 const clamp = (v, lo, hi) => Math.min(hi, Math.max(lo, v));
 
 // ===== src/core/model.js ===========================================
@@ -2504,14 +2618,13 @@ function shearConcreteEdge(m, res, g) {
     const axisX = cd.axis === 'x';
     const t = p => (axisX ? p.y : p.x);
     const sideNeg = axisX ? 'yNeg' : 'xNeg', sidePos = axisX ? 'yPos' : 'xPos';
-    // Bruddflata er like brei som betongen tillater i boltradens plan. Med en
-    // utsparing i kanten er ikke det «fra sidekant til sidekant», men de
-    // stykkene der det faktisk staar betong (se solid.js).
-    const width = frontWidth(m, axisX ? 'y' : 'x', axisX ? front[0].x : front[0].y,
-      front.map(p => [t(p) - 1.5 * c1, t(p) + 1.5 * c1]));
+    // Bruddlegemet med fast helning 1,5 : 1, klippet mot betongen slik den
+    // staar (se edgeBreakout() i geometry.js). A_c,V er det legemet prosjektert
+    // paa kantflata - hoeyden er dybden bruddflata faktisk gaar ut i, bredden
+    // er der den har betong aa rive i.
     const hLoc = memberThickness(m, front);
-    const height = Math.min(1.5 * c1, hLoc);
-    const Ac = width * height, A0 = 4.5 * c1 * c1;
+    const { width, height, Ac } = edgeBreakout(m, cd.dir, c1, front, hLoc);
+    const A0 = 4.5 * c1 * c1;
     const alpha = 0.1 * Math.sqrt(lf / c1);
     const beta = 0.1 * Math.pow(dnom / c1, 0.2);
     const V0 = k9 * Math.pow(dnom, alpha) * Math.pow(lf, beta)
@@ -2566,7 +2679,11 @@ function shearConcreteEdge(m, res, g) {
     value: w.V0, unit: 'N', ref: '(7.42)' });
   c.step({ sym: 'A⁰_c,V', desc: 'Referanseareal på kantflata for én bolt',
     formula: '4,5 · c_1²', subst: `4,5 · ${n(w.c1, 0)}²`, value: w.A0, unit: 'mm²' });
-  c.step({ sym: 'A_c,V', desc: 'Faktisk bruddflate langs kanten',
+  c.step({ sym: 'A_c,V', desc:
+    'Bruddlegemet projisert på kantflata. Bruddflata går ut fra forreste ' +
+    'boltrad med fast helning 1,5 : 1 og løper i den vinkelen til den går ut ' +
+    'av betongen – i kantflata, eller i underflata først når delen er tynnere ' +
+    'enn 1,5·c_1',
     formula: 'bredde · høyde,  bredde = union av 1,5·c_1 hver vei fra forreste bolter, ' +
              'klippet mot betongen slik den står',
     subst: `${n(w.width, 0)} · ${n(w.height, 0)}   ` +
@@ -5227,20 +5344,11 @@ function coneMesh(m, b, ccr, hef) {
 }
 
 // ---------------------------------------------------------------------------
-//  Kantbruddlegemet: en kile, ikke en boks.
+//  Kantbruddlegemet.
 //
-//  Bruddflata er skraa i hele sin lengde: den staar i overflata (z=0) ved
-//  boltraden og skraaner jevnt nedover mot kanten, der den gaar ut av den
-//  loddrette snittflata i dybden h_v = min(1,5*a_1 ; h). Det er den samme
-//  vinkelen uansett hvor kanten ligger - er kanten naermere enn 1,5*a_1
-//  skulle rukket, ville det betydd en annen a_1, ikke en justert vinkel paa
-//  samme kile. Boltlinja er derfor en LINJE ved z=0, ikke en loddrett flate:
-//  det finnes ingen vegg rett under bolten, bare den skraa flata som gaar
-//  derfra og ut til snittet.
-//
-//  Kanten er den betongen faktisk har - er den flyttet av en utsparing eller
-//  en konsoll, foelger kila med. Klipper en utsparing bruddflata i to, tegnes
-//  den som to kiler, slik arealet ogsaa regnes.
+//  Geometrien kommer fra edgeBreakout() i geometry.js - det samme legemet
+//  A_c,V regnes av, saa bildet og tallet ikke kan komme i utakt. Her gjenstaar
+//  bare aa finne hvilken boltrad og hvilken kant som gjelder.
 // ---------------------------------------------------------------------------
 function edgeWedges(m, res, dir) {
   if (!dir) return [];
@@ -5249,40 +5357,7 @@ function edgeWedges(m, res, dir) {
   const c1 = Math.min(...ds);
   if (!Number.isFinite(c1)) return [];
   const front = all.filter((p, i) => Math.abs(ds[i] - c1) < 1e-6);
-  const hv = -Math.min(1.5 * c1, memberThickness(m, front));
-  const axisX = dir.startsWith('x');
-  const t = p => (axisX ? p.y : p.x);
-  const ax = axisX ? front[0].x : front[0].y;    // boltradens posisjon i lastretning
-  const face = dir.endsWith('Pos') ? ax + c1 : ax - c1;
-  const al = Math.min(...front.map(t)), ah = Math.max(...front.map(t));
-
-  const [z0, z1] = anchorDepth(m);
-  // Flere bolter i samme rad gir overlappende rekkevidder naar de staar taett
-  // (c/c mindre enn 3*c_1) - uten sammenslaaing ville det blitt flere
-  // overlappende kile-legemer i stedet for ett sammenhengende.
-  const spans = mergeSpans(intersectSpans(
-    front.map(p => [t(p) - 1.5 * c1, t(p) + 1.5 * c1]),
-    spansAlong(planMask(m, z0, z1), axisX ? 'y' : 'x', ax)));
-  if (!spans.length) return [];
-
-  const P = (u, w, z) => axisX ? [u, w, z] : [w, u, z];
-  // 0-3 kantflata (den loddrette snittflata der kila gaar ut av betongen),
-  // 4-5 boltlinja - to punkter ved overflata, ikke fire: kila smalner til en
-  // linje der, den utvider seg ikke til en boks.
-  return spans.map(([tl, th]) => {
-    const bl = Math.max(al, tl), bh = Math.min(ah, th);
-    const V = [
-      P(face, tl, 0), P(face, th, 0), P(face, th, hv), P(face, tl, hv),   // 0-3
-      P(ax, bl, 0), P(ax, bh, 0),                                        // 4-5
-    ];
-    const F = [
-      [0, 3, 1], [1, 3, 2],   // kantflata (loddrett snitt)
-      [4, 5, 1], [4, 1, 0],   // taket ved overflata, fra boltlinja til kantflata
-      [4, 0, 3],              // skraa side mot tl
-      [5, 2, 1],              // skraa side mot th
-    ];
-    return { V, F };
-  });
+  return edgeBreakout(m, dir, c1, front, memberThickness(m, front)).bodies;
 }
 
 // ---------------------------------------------------------------------------

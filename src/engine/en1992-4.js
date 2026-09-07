@@ -17,7 +17,7 @@
 
 import { anchorPositions, shaftProps, anchorFoot, edgeDistances,
          memberThickness } from '../core/model.js';
-import { clamp, coneProjection, frontWidth } from './geometry.js';
+import { clamp, coneProjection, edgeBreakout } from './geometry.js';
 import { Calc, skipped, n } from './calc.js';
 
 export const K = {
@@ -506,14 +506,13 @@ export function shearConcreteEdge(m, res, g) {
     const axisX = cd.axis === 'x';
     const t = p => (axisX ? p.y : p.x);
     const sideNeg = axisX ? 'yNeg' : 'xNeg', sidePos = axisX ? 'yPos' : 'xPos';
-    // Bruddflata er like brei som betongen tillater i boltradens plan. Med en
-    // utsparing i kanten er ikke det «fra sidekant til sidekant», men de
-    // stykkene der det faktisk staar betong (se solid.js).
-    const width = frontWidth(m, axisX ? 'y' : 'x', axisX ? front[0].x : front[0].y,
-      front.map(p => [t(p) - 1.5 * c1, t(p) + 1.5 * c1]));
+    // Bruddlegemet med fast helning 1,5 : 1, klippet mot betongen slik den
+    // staar (se edgeBreakout() i geometry.js). A_c,V er det legemet prosjektert
+    // paa kantflata - hoeyden er dybden bruddflata faktisk gaar ut i, bredden
+    // er der den har betong aa rive i.
     const hLoc = memberThickness(m, front);
-    const height = Math.min(1.5 * c1, hLoc);
-    const Ac = width * height, A0 = 4.5 * c1 * c1;
+    const { width, height, Ac } = edgeBreakout(m, cd.dir, c1, front, hLoc);
+    const A0 = 4.5 * c1 * c1;
     const alpha = 0.1 * Math.sqrt(lf / c1);
     const beta = 0.1 * Math.pow(dnom / c1, 0.2);
     const V0 = k9 * Math.pow(dnom, alpha) * Math.pow(lf, beta)
@@ -568,7 +567,11 @@ export function shearConcreteEdge(m, res, g) {
     value: w.V0, unit: 'N', ref: '(7.42)' });
   c.step({ sym: 'A⁰_c,V', desc: 'Referanseareal på kantflata for én bolt',
     formula: '4,5 · c_1²', subst: `4,5 · ${n(w.c1, 0)}²`, value: w.A0, unit: 'mm²' });
-  c.step({ sym: 'A_c,V', desc: 'Faktisk bruddflate langs kanten',
+  c.step({ sym: 'A_c,V', desc:
+    'Bruddlegemet projisert på kantflata. Bruddflata går ut fra forreste ' +
+    'boltrad med fast helning 1,5 : 1 og løper i den vinkelen til den går ut ' +
+    'av betongen – i kantflata, eller i underflata først når delen er tynnere ' +
+    'enn 1,5·c_1',
     formula: 'bredde · høyde,  bredde = union av 1,5·c_1 hver vei fra forreste bolter, ' +
              'klippet mot betongen slik den står',
     subst: `${n(w.width, 0)} · ${n(w.height, 0)}   ` +

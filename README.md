@@ -457,10 +457,17 @@ stage.exportGLB('navn');
 Modellen bygges i **ingeniørkoordinater** (x, y i planet, z ut av betongen, mm)
 og rotgruppa roteres −90° om X, slik at ingeniør-z blir Three sin Y.
 
-Bruddlegemene tegnes geometrisk riktige: strekkjegla som en avkortet pyramide
-fra hodenivå med 1,5·h_ef spredning, kantbruddet som en kile fra forreste
-boltrad ut til kantflata, begge klippet mot betongdelens kanter – de er de
-samme arealene som brukes i `A_c,N` og `A_c,V`.
+Bruddlegemene tegnes geometrisk riktige, og med **fast vinkel**: strekkjegla
+som en avkortet pyramide fra hodenivå med 1,5·h_ef spredning, kantbruddet som
+en pyramide med spissen i forreste boltrad og 1,5 : 1 spredning både nedover og
+til sidene. Vinkelen justeres aldri for å treffe et hjørne – den er en egenskap
+ved bruddet, ikke ved betongklossen. Flata løper i den vinkelen til den går ut
+av betongen, og det er betongen som avgjør hvor det skjer: i kantflata i dybden
+1,5·c_1, eller i underflata allerede etter h/1,5 mm når delen er tynnere enn
+1,5·c_1. Begge legemene klippes mot betongdelen slik den faktisk står, og de er
+de samme arealene som brukes i `A_c,N` og `A_c,V` – kantbruddlegemet ligger i
+`edgeBreakout()` i `src/engine/geometry.js`, og både beregninga og 3D-visninga
+henter det derfra.
 
 ## Betongelementboka B19
 
