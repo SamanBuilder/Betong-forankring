@@ -271,7 +271,9 @@ export function defaultModel() {
 
     // ---- Regelverk -------------------------------------------------------
     code: {
-      standard: 'EN1992-4',      // 'EN1992-4' | 'B19'
+      standard: 'EN1992-4',      // 'EN1992-4' | 'B19' - stål og samvirkning
+      tensionConcreteStandard: 'EN1992-4', // 'EN1992-4' | 'B19' - kjeglebrudd/heft
+      shearConcreteStandard: 'EN1992-4',   // 'EN1992-4' | 'B19' - kantbrudd/dybelskjær
       cracked: true,             // opprisset betong i strekksonen
       gammaC: 1.5,               // NA: Norge
       gammaInst: 1.0,            // støpt inn -> 1.0

@@ -620,8 +620,11 @@ export function interaction(checks) {
     expr: '(β_N)² + (β_V)² ≤ 1', util: bNs ** 2 + bVs ** 2, calc: cs,
     NRk: NaN, NRd: NaN, NEd: NaN });
 
-  const tension = ['N-cone', 'N-pullout', 'N-blowout', 'N-split'];
-  const shear = ['V-pryout', 'V-edge'];
+  // Listene dekker også id-ene fra B19-motoren (N-conc/N-foot, V-conc), i
+  // tilfelle strekk eller skjær mot betong er valgt fra den boka mens
+  // samvirkningen fortsatt regnes etter EN 1992-4.
+  const tension = ['N-cone', 'N-pullout', 'N-blowout', 'N-split', 'N-conc', 'N-foot'];
+  const shear = ['V-pryout', 'V-edge', 'V-conc'];
   const tw = tension.map(id => get(id)).filter(Boolean)
     .reduce((a, b) => ((b.util || 0) > (a?.util || 0) ? b : a), null);
   const sw = shear.map(id => get(id)).filter(Boolean)

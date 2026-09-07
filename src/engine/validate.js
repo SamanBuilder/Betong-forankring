@@ -86,20 +86,21 @@ export function validate(m) {
   }
 
   // --- regelverket mot forbindelsen -------------------------------------
-  if (m.code.standard === 'EN1992-4' && !foot.hasFoot)
+  if (m.code.tensionConcreteStandard === 'EN1992-4' && !foot.hasFoot)
     warn('NS-EN 1992-4 dekker bare forankringer med fot. Uten endemutter ' +
-         'faller strekkontrollene bort – bytt til Betongelementboka B19, som ' +
-         'har heftforankring av kamstål og gjengestang (pkt. 19.3.3/19.3.4).');
-  if (m.code.standard === 'B19') {
+         'faller strekkontrollene mot betong bort – velg Betongelementboka ' +
+         'B19 for «Strekk mot betong», som har heftforankring av kamstål og ' +
+         'gjengestang (pkt. 19.3.3/19.3.4).');
+  if (m.code.tensionConcreteStandard === 'B19' || m.code.shearConcreteStandard === 'B19') {
     const g = grade(c.grade);
     if (g.fck < 25 || g.fck > 55)
       warn(`B19 gir formler og tabeller for B25–B55. ${g.id} ligger utenfor; ` +
            `f_ck,cube = ${g.fckCube} N/mm² er ekstrapolert.`);
-    if (m.code.supplementaryReinf)
-      warn('Forankringsarmering regnes etter NS-EN 1992-4 tillegg C. B19 ' +
-           'dimensjonerer tilsvarende armering med stavmodell (pkt. 19.3.2.6 ' +
-           'og 19.4.3.5) – den er ikke lagt inn, så armeringa teller ikke med her.');
   }
+  if (m.code.tensionConcreteStandard === 'B19' && m.code.supplementaryReinf)
+    warn('Forankringsarmering regnes etter NS-EN 1992-4 tillegg C. B19 ' +
+         'dimensjonerer tilsvarende armering med stavmodell (pkt. 19.3.2.6 ' +
+         'og 19.4.3.5) – den er ikke lagt inn, så armeringa teller ikke med her.');
 
   // --- minstekrav (veiledende, skal hentes fra ETA/produktdata) ----------
   const sMin = 5 * a.d, cMin = 5 * a.d;

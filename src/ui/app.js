@@ -233,7 +233,9 @@ function renderResults(v) {
   const rows = [
     ['Lastkombinasjon', `${model.load.name} · ${
       model.load.limit === 'uls' ? 'bruddgrense' : 'bruksgrense'}`],
-    ['Regelverk', v.standard],
+    ['Regelverk (stål/samvirkning)', v.standards.generalLabel],
+    ['— strekk mot betong', v.standards.tcLabel],
+    ['— skjær mot betong', v.standards.scLabel],
     ['Betong', `${m.concrete.grade} · f_ck ${m.concrete.fck} N/mm²`],
     ['Tilstand', m.code.cracked ? 'Opprisset' : 'Uopprisset'],
     ['Bolter', `${a.nx}×${a.ny} ${a.barType === 'rod' ? 'M' : '⌀'}${a.d} · ` +
@@ -429,7 +431,7 @@ function renderSheet(v) {
   const cal = c.calc, ok = applicable(c);
   const H = [];
   H.push(`<div class="hdr"><h2>${esc(c.mode)}</h2>` +
-    `<div class="ref">${esc(v.standard)}<br>pkt. ${esc(c.clause)}</div></div>`);
+    `<div class="ref">${esc(c.standard ?? v.standard)}<br>pkt. ${esc(c.clause)}</div></div>`);
 
   if (ok) {
     H.push(`<div class="verdict"><span class="pc" style="color:${utilCss(c.util)}">` +
@@ -754,7 +756,9 @@ function buildReport(v) {
   const L = [], line = ch => ch.repeat(72);
   const m = model;
   L.push('BEREGNING – FORANKRING I BETONG', line('='), '',
-    `Regelverk:  ${v.standard}`,
+    `Regelverk (stål/samvirkning):  ${v.standards.generalLabel}`,
+    `Regelverk (strekk mot betong): ${v.standards.tcLabel}`,
+    `Regelverk (skjær mot betong):  ${v.standards.scLabel}`,
     `Dato:       ${new Date().toLocaleString('no-NO')}`, '');
   L.push('GEOMETRI', line('-'));
   L.push(`Betong ${m.concrete.grade} (f_ck = ${m.concrete.fck} N/mm²), ` +
@@ -784,7 +788,7 @@ function buildReport(v) {
   L.push('');
 
   for (const c of v.checks) {
-    L.push(line('='), `${c.mode}   [pkt. ${c.clause}]`, line('='));
+    L.push(line('='), `${c.mode}   [${c.standard ?? v.standard} · pkt. ${c.clause}]`, line('='));
     const cal = c.calc;
     if (cal?.skipped) { L.push(`  ${cal.skipped}`, ''); continue; }
     if (!cal) { L.push('  (ingen utregning registrert)', ''); continue; }

@@ -984,7 +984,9 @@ function defaultModel() {
 
     // ---- Regelverk -------------------------------------------------------
     code: {
-      standard: 'EN1992-4',      // 'EN1992-4' | 'B19'
+      standard: 'EN1992-4',      // 'EN1992-4' | 'B19' - stål og samvirkning
+      tensionConcreteStandard: 'EN1992-4', // 'EN1992-4' | 'B19' - kjeglebrudd/heft
+      shearConcreteStandard: 'EN1992-4',   // 'EN1992-4' | 'B19' - kantbrudd/dybelskjær
       cracked: true,             // opprisset betong i strekksonen
       gammaC: 1.5,               // NA: Norge
       gammaInst: 1.0,            // støpt inn -> 1.0
@@ -2013,8 +2015,11 @@ function interaction(checks) {
     expr: '(β_N)² + (β_V)² ≤ 1', util: bNs ** 2 + bVs ** 2, calc: cs,
     NRk: NaN, NRd: NaN, NEd: NaN });
 
-  const tension = ['N-cone', 'N-pullout', 'N-blowout', 'N-split'];
-  const shear = ['V-pryout', 'V-edge'];
+  // Listene dekker også id-ene fra B19-motoren (N-conc/N-foot, V-conc), i
+  // tilfelle strekk eller skjær mot betong er valgt fra den boka mens
+  // samvirkningen fortsatt regnes etter EN 1992-4.
+  const tension = ['N-cone', 'N-pullout', 'N-blowout', 'N-split', 'N-conc', 'N-foot'];
+  const shear = ['V-pryout', 'V-edge', 'V-conc'];
   const tw = tension.map(id => get(id)).filter(Boolean)
     .reduce((a, b) => ((b.util || 0) > (a?.util || 0) ? b : a), null);
   const sw = shear.map(id => get(id)).filter(Boolean)
@@ -2853,6 +2858,10 @@ function b19ShearConcrete(m, res) {
 function b19Interaction(m, res, checks) {
   const pick = id => checks.find(c => c.id === id);
   const u = id => { const c = pick(id); return Number.isFinite(c?.util) ? c.util : 0; };
+  // Dekker også id-ene fra EN 1992-4-motoren (N-cone/N-pullout/N-blowout/
+  // N-split, V-pryout/V-edge), i tilfelle strekk eller skjær mot betong er
+  // valgt fra den standarden mens samvirkningen fortsatt regnes etter B19.
+  const uMax = ids => Math.max(0, ...ids.map(u));
   const out = [];
   const sh = shaftProps(m);
   const e = res.leverArm;
@@ -2883,7 +2892,8 @@ function b19Interaction(m, res, checks) {
     util: uS, calc: cs, NRk: NaN, NRd: NaN, NEd: NaN });
 
   // --- betong -----------------------------------------------------------
-  const nC = u('N-conc'), vC = u('V-conc');
+  const nC = uMax(['N-conc', 'N-cone', 'N-pullout', 'N-blowout', 'N-split']);
+  const vC = uMax(['V-conc', 'V-pryout', 'V-edge']);
   const cc = new Calc('19.6');
   cc.in('n', nC, '–', 'Utrivning av betong – utnyttelse');
   cc.in('v', vC, '–', 'Dybelskjær i betong – utnyttelse');
@@ -3027,20 +3037,21 @@ function validate(m) {
   }
 
   // --- regelverket mot forbindelsen -------------------------------------
-  if (m.code.standard === 'EN1992-4' && !foot.hasFoot)
+  if (m.code.tensionConcreteStandard === 'EN1992-4' && !foot.hasFoot)
     warn('NS-EN 1992-4 dekker bare forankringer med fot. Uten endemutter ' +
-         'faller strekkontrollene bort – bytt til Betongelementboka B19, som ' +
-         'har heftforankring av kamstål og gjengestang (pkt. 19.3.3/19.3.4).');
-  if (m.code.standard === 'B19') {
+         'faller strekkontrollene mot betong bort – velg Betongelementboka ' +
+         'B19 for «Strekk mot betong», som har heftforankring av kamstål og ' +
+         'gjengestang (pkt. 19.3.3/19.3.4).');
+  if (m.code.tensionConcreteStandard === 'B19' || m.code.shearConcreteStandard === 'B19') {
     const g = grade(c.grade);
     if (g.fck < 25 || g.fck > 55)
       warn(`B19 gir formler og tabeller for B25–B55. ${g.id} ligger utenfor; ` +
            `f_ck,cube = ${g.fckCube} N/mm² er ekstrapolert.`);
-    if (m.code.supplementaryReinf)
-      warn('Forankringsarmering regnes etter NS-EN 1992-4 tillegg C. B19 ' +
-           'dimensjonerer tilsvarende armering med stavmodell (pkt. 19.3.2.6 ' +
-           'og 19.4.3.5) – den er ikke lagt inn, så armeringa teller ikke med her.');
   }
+  if (m.code.tensionConcreteStandard === 'B19' && m.code.supplementaryReinf)
+    warn('Forankringsarmering regnes etter NS-EN 1992-4 tillegg C. B19 ' +
+         'dimensjonerer tilsvarende armering med stavmodell (pkt. 19.3.2.6 ' +
+         'og 19.4.3.5) – den er ikke lagt inn, så armeringa teller ikke med her.');
 
   // --- minstekrav (veiledende, skal hentes fra ETA/produktdata) ----------
   const sMin = 5 * a.d, cMin = 5 * a.d;
@@ -3096,34 +3107,91 @@ function bearingCheck(m, res) {
 
 // ===== src/engine/verify.js ========================================
 // Orkestrering: loes kraftfordeling, kjoer valgt regelverk, sorter resultat.
+//
+// Regelverket kan velges separat for tre grupper: stål/samvirkning (generelt),
+// strekk mot betong (kjeglebrudd/heft), og skjær mot betong (kantbrudd/
+// dybelskjær). Kontroller som bare finnes i én av bøkene - utblåsing og
+// spalting (kun EN1992-4), heftforankring og trykk mot fot (kun B19) - følger
+// automatisk med når den boka er valgt for sin gruppe, og har ikke noe eget
+// valg. Samvirkningsformlene følger alltid det generelle regelverksvalget,
+// men leter blant ALLE strekk-/skjærkontrollene mot betong uansett hvilken
+// bok som produserte dem.
 
-const CODES = { 'EN1992-4': runEN1992_4, 'B19': runB19 };
+const STD_LABEL = {
+  'EN1992-4': 'NS-EN 1992-4:2018',
+  'B19': 'Betongelementboka bind B, kap. B19',
+};
+const std = s => (s === 'B19' ? 'B19' : 'EN1992-4');
+const tag = (checks, s) => checks.map(c => ({ ...c, standardId: s, standard: STD_LABEL[s] }));
 
 function verify(m) {
   const issues = validate(m);
   const res = solvePlate(m);
-  const run = CODES[m.code.standard] || runEN1992_4;
-  const out = run(m, res);
+  const gEN = partialFactors(m);
 
-  let checks = out.checks;
+  const general = std(m.code.standard);
+  const tcStd = std(m.code.tensionConcreteStandard);
+  const scStd = std(m.code.shearConcreteStandard);
+
+  const steelChecks = general === 'B19'
+    ? tag([b19TensionSteel(m, res), b19ShearSteel(m, res), b19ShearBending(m, res)], 'B19')
+    : tag([tensionSteel(m, res, gEN), shearSteel(m, res, gEN)], 'EN1992-4');
+
+  let tensionConcChecks;
+  if (tcStd === 'B19') {
+    tensionConcChecks = tag([b19TensionConcrete(m, res), b19FootPressure(m, res)], 'B19');
+  } else {
+    const cone = tensionConcreteCone(m, res, gEN);
+    tensionConcChecks = tag([
+      tensionPullout(m, res, gEN), cone,
+      tensionBlowout(m, res, gEN), tensionSplitting(m, res, gEN, cone),
+    ], 'EN1992-4');
+  }
+
+  const shearConcChecks = scStd === 'B19'
+    ? tag([b19ShearConcrete(m, res)], 'B19')
+    : tag([shearPryout(m, res, gEN), shearConcreteEdge(m, res, gEN)], 'EN1992-4');
+
+  const primary = [...steelChecks, ...tensionConcChecks, ...shearConcChecks];
+
+  const interactionChecks = general === 'B19'
+    ? tag(b19Interaction(m, res, primary), 'B19')
+    : tag(interaction(primary), 'EN1992-4');
+
+  let checks = [...primary, ...interactionChecks];
+
   // Forankringsarmering er bare implementert etter EN 1992-4 tillegg C. B19
   // dimensjonerer tilsvarende armering med stavmodell (19.3.2.6 / 19.4.3.5),
   // som ikke er lagt inn.
-  if (m.code.standard === 'EN1992-4' && m.code.supplementaryReinf && m.reinf) {
-    const extra = [
+  if (tcStd === 'EN1992-4' && m.code.supplementaryReinf && m.reinf) {
+    const extra = tag([
       ...tensionReinforcement(m, res, m.reinf),
       ...(m.reinf.nV > 0 ? shearReinforcement(m, res, m.reinf) : []),
-    ];
+    ], 'EN1992-4');
     // Med forankringsarmering erstattes betongkjegla av armeringskontrollen
     checks = checks.filter(c => c.id !== 'N-cone').concat(extra);
   }
+
+  const gamma = general === 'B19'
+    ? (() => {
+        const cd = b19Concrete(m), st = b19Steel(m);
+        return { gc: cd.gc, gM0: 1.05, gM2: 1.25, gS: 1.15, steel: st.kind };
+      })()
+    : gEN;
 
   const valid = checks.filter(c => Number.isFinite(c.util));
   const governing = valid.length
     ? valid.reduce((a, b) => (b.util > a.util ? b : a)) : null;
 
   return {
-    model: m, res, standard: out.standard, gamma: out.gamma,
+    model: m, res, standard: STD_LABEL[general],
+    standards: {
+      general, tcStd, scStd,
+      generalLabel: STD_LABEL[general],
+      tcLabel: STD_LABEL[tcStd],
+      scLabel: STD_LABEL[scStd],
+    },
+    gamma,
     issues, bearing: bearingCheck(m, res),
     checks, governing,
     maxUtil: governing ? governing.util : NaN,
@@ -4386,8 +4454,20 @@ const END_LABEL = {
 
 const FIELDS = [
   { group: 'Regelverk', items: [
-    { p: 'code.standard', l: 'Regelverk', t: 'select', o: [
-      ['EN1992-4', 'NS-EN 1992-4:2018'], ['B19', 'Betongelementboka B19']] },
+    { p: 'code.standard', l: 'Regelverk (stål og samvirkning)', t: 'select', o: [
+      ['EN1992-4', 'NS-EN 1992-4:2018'], ['B19', 'Betongelementboka B19']],
+      hint: 'Styrer hvilket regelverk stålbrudd og samvirkningskontrollene ' +
+            'regnes etter. De to kontrollene under lar deg i tillegg velge ' +
+            'regelverk for hver av bruddformene mot betong for seg.' },
+    { p: 'code.tensionConcreteStandard', l: 'Strekk mot betong', t: 'select', o: [
+      ['EN1992-4', 'NS-EN 1992-4:2018 – kjeglebrudd'],
+      ['B19', 'Betongelementboka B19 – kjeglebrudd/heft']],
+      hint: 'NS-EN 1992-4 dekker bare forankring med fot (kjeglebrudd, ' +
+            'uttrekk, utblåsing, spalting). B19 dekker i tillegg ' +
+            'heftforankring uten fot (kamstål/gjengestang).' },
+    { p: 'code.shearConcreteStandard', l: 'Skjær mot betong', t: 'select', o: [
+      ['EN1992-4', 'NS-EN 1992-4:2018 – kantbrudd/pry-out'],
+      ['B19', 'Betongelementboka B19 – dybelskjær']] },
     { p: 'code.cracked', l: 'Opprisset betong', t: 'bool' },
     { p: 'code.gammaC', l: 'γ_c', t: 'num', step: 0.05 },
     { p: 'code.denseReinf', l: 'Tett armering (c/c < 150)', t: 'bool' },
@@ -4766,7 +4846,9 @@ function renderResults(v) {
   const rows = [
     ['Lastkombinasjon', `${model.load.name} · ${
       model.load.limit === 'uls' ? 'bruddgrense' : 'bruksgrense'}`],
-    ['Regelverk', v.standard],
+    ['Regelverk (stål/samvirkning)', v.standards.generalLabel],
+    ['— strekk mot betong', v.standards.tcLabel],
+    ['— skjær mot betong', v.standards.scLabel],
     ['Betong', `${m.concrete.grade} · f_ck ${m.concrete.fck} N/mm²`],
     ['Tilstand', m.code.cracked ? 'Opprisset' : 'Uopprisset'],
     ['Bolter', `${a.nx}×${a.ny} ${a.barType === 'rod' ? 'M' : '⌀'}${a.d} · ` +
@@ -4962,7 +5044,7 @@ function renderSheet(v) {
   const cal = c.calc, ok = applicable(c);
   const H = [];
   H.push(`<div class="hdr"><h2>${esc(c.mode)}</h2>` +
-    `<div class="ref">${esc(v.standard)}<br>pkt. ${esc(c.clause)}</div></div>`);
+    `<div class="ref">${esc(c.standard ?? v.standard)}<br>pkt. ${esc(c.clause)}</div></div>`);
 
   if (ok) {
     H.push(`<div class="verdict"><span class="pc" style="color:${utilCss(c.util)}">` +
@@ -5287,7 +5369,9 @@ function buildReport(v) {
   const L = [], line = ch => ch.repeat(72);
   const m = model;
   L.push('BEREGNING – FORANKRING I BETONG', line('='), '',
-    `Regelverk:  ${v.standard}`,
+    `Regelverk (stål/samvirkning):  ${v.standards.generalLabel}`,
+    `Regelverk (strekk mot betong): ${v.standards.tcLabel}`,
+    `Regelverk (skjær mot betong):  ${v.standards.scLabel}`,
     `Dato:       ${new Date().toLocaleString('no-NO')}`, '');
   L.push('GEOMETRI', line('-'));
   L.push(`Betong ${m.concrete.grade} (f_ck = ${m.concrete.fck} N/mm²), ` +
@@ -5317,7 +5401,7 @@ function buildReport(v) {
   L.push('');
 
   for (const c of v.checks) {
-    L.push(line('='), `${c.mode}   [pkt. ${c.clause}]`, line('='));
+    L.push(line('='), `${c.mode}   [${c.standard ?? v.standard} · pkt. ${c.clause}]`, line('='));
     const cal = c.calc;
     if (cal?.skipped) { L.push(`  ${cal.skipped}`, ''); continue; }
     if (!cal) { L.push('  (ingen utregning registrert)', ''); continue; }

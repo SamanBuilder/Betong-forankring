@@ -27,8 +27,20 @@ const END_LABEL = {
 
 export const FIELDS = [
   { group: 'Regelverk', items: [
-    { p: 'code.standard', l: 'Regelverk', t: 'select', o: [
-      ['EN1992-4', 'NS-EN 1992-4:2018'], ['B19', 'Betongelementboka B19']] },
+    { p: 'code.standard', l: 'Regelverk (stål og samvirkning)', t: 'select', o: [
+      ['EN1992-4', 'NS-EN 1992-4:2018'], ['B19', 'Betongelementboka B19']],
+      hint: 'Styrer hvilket regelverk stålbrudd og samvirkningskontrollene ' +
+            'regnes etter. De to kontrollene under lar deg i tillegg velge ' +
+            'regelverk for hver av bruddformene mot betong for seg.' },
+    { p: 'code.tensionConcreteStandard', l: 'Strekk mot betong', t: 'select', o: [
+      ['EN1992-4', 'NS-EN 1992-4:2018 – kjeglebrudd'],
+      ['B19', 'Betongelementboka B19 – kjeglebrudd/heft']],
+      hint: 'NS-EN 1992-4 dekker bare forankring med fot (kjeglebrudd, ' +
+            'uttrekk, utblåsing, spalting). B19 dekker i tillegg ' +
+            'heftforankring uten fot (kamstål/gjengestang).' },
+    { p: 'code.shearConcreteStandard', l: 'Skjær mot betong', t: 'select', o: [
+      ['EN1992-4', 'NS-EN 1992-4:2018 – kantbrudd/pry-out'],
+      ['B19', 'Betongelementboka B19 – dybelskjær']] },
     { p: 'code.cracked', l: 'Opprisset betong', t: 'bool' },
     { p: 'code.gammaC', l: 'γ_c', t: 'num', step: 0.05 },
     { p: 'code.denseReinf', l: 'Tett armering (c/c < 150)', t: 'bool' },

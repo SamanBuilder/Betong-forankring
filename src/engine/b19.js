@@ -690,6 +690,10 @@ export function b19ShearConcrete(m, res) {
 export function b19Interaction(m, res, checks) {
   const pick = id => checks.find(c => c.id === id);
   const u = id => { const c = pick(id); return Number.isFinite(c?.util) ? c.util : 0; };
+  // Dekker også id-ene fra EN 1992-4-motoren (N-cone/N-pullout/N-blowout/
+  // N-split, V-pryout/V-edge), i tilfelle strekk eller skjær mot betong er
+  // valgt fra den standarden mens samvirkningen fortsatt regnes etter B19.
+  const uMax = ids => Math.max(0, ...ids.map(u));
   const out = [];
   const sh = shaftProps(m);
   const e = res.leverArm;
@@ -720,7 +724,8 @@ export function b19Interaction(m, res, checks) {
     util: uS, calc: cs, NRk: NaN, NRd: NaN, NEd: NaN });
 
   // --- betong -----------------------------------------------------------
-  const nC = u('N-conc'), vC = u('V-conc');
+  const nC = uMax(['N-conc', 'N-cone', 'N-pullout', 'N-blowout', 'N-split']);
+  const vC = uMax(['V-conc', 'V-pryout', 'V-edge']);
   const cc = new Calc('19.6');
   cc.in('n', nC, '–', 'Utrivning av betong – utnyttelse');
   cc.in('v', vC, '–', 'Dybelskjær i betong – utnyttelse');
