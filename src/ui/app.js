@@ -222,14 +222,15 @@ function bar(u, cls = '') {
 
 // Kortere navn enn c.mode, kun for den trange stolpeoversikten.
 const SHORT_NAME = { 'V-pryout': 'Pry-out' };
+// Uten mellomrom foran %-tegnet - kun her, resten av appen bruker pct().
+const pctTight = u => Number.isFinite(u) ? Math.round(u * 100) + '%' : '–';
 
-// Alle utnyttelsene i ett samlet oversiktsbilde: loddrette stolper med
-// prosenten vannrett under, navnet loddrett under der igjen, og en felles
-// 100 %-strek på tvers. Trykk for å hoppe til utregningsarket, akkurat som
-// radene lenger ned i lista.
+// Alle utnyttelsene i ett samlet oversiktsbilde: loddrette stolper med navnet
+// loddrett til venstre for stolpen, prosenten vannrett rett under, og en
+// felles 100 %-strek på tvers. Trykk for å hoppe til utregningsarket,
+// akkurat som radene lenger ned i lista.
 const USUM_CAP = 1.3;      // stolpen klippes ved 130 % av grensa
-const USUM_H = 84;         // px – høyden som tilsvarer 100 % (padding-top i .usum-plot
-                            // i style.css reserverer rom for de siste 30 % over streken)
+const USUM_H = 84;         // px – høyden som tilsvarer 100 %
 
 function renderUtilSummary(v) {
   const list = v.checks.filter(applicable);
@@ -237,16 +238,18 @@ function renderUtilSummary(v) {
   const wrap = el('div', 'usum');
   const track = el('div', 'usum-track');
   const plot = el('div', 'usum-plot');
-  plot.appendChild(el('div', 'usum-100', `<b>100 %</b>`));
+  plot.appendChild(el('div', 'usum-100', `<b>100%</b>`));
   for (const c of list) {
     const item = el('button', 'usum-item' + (c.util > 1 ? ' over' : ''));
     item.setAttribute('aria-current', String(activeCheck === c.id));
     item.title = `${c.mode} · ${pct(c.util)}`;
     const h = Math.round(Math.min(c.util, USUM_CAP) * USUM_H);
     item.innerHTML =
-      `<span class="col"><i style="height:${h}px;background:${utilCss(c.util)}"></i></span>` +
-      `<span class="pc">${pct(c.util)}</span>` +
-      `<span class="nm">${esc(SHORT_NAME[c.id] ?? c.mode)}</span>`;
+      `<span class="nm">${esc(SHORT_NAME[c.id] ?? c.mode)}</span>` +
+      `<span class="stack">` +
+        `<span class="col"><i style="height:${h}px;background:${utilCss(c.util)}"></i></span>` +
+        `<span class="pc">${pctTight(c.util)}</span>` +
+      `</span>`;
     item.onclick = () => { activeCheck = c.id; setViewTab('calc'); refresh(false); };
     plot.appendChild(item);
   }
