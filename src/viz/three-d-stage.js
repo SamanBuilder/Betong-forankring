@@ -5,6 +5,13 @@
 //  API:
 //    stage.setContent(object3d)      bytt ut modellen
 //    stage.frameAll()                zoom til modellen
+//    stage.pickMode = 'face'         neste klikk plukker en flate i stedet
+//                                    for aa rotere; gir 'face-pick'
+//
+//  Hendelser:
+//    'handle'      { path, value, id }   drahaandtak flyttet (kontinuerlig)
+//    'handle-end'  { path, value, id }   dratt ferdig
+//    'face-pick'   { point, normal }     flate valgt, i modellens koordinater
 //    stage.setView('iso'|'top'|'front'|'side')
 //    stage.exportOBJ(basename)       laster ned .obj + .mtl
 //    stage.exportGLB(basename)       laster ned .glb
@@ -135,6 +142,8 @@ export class ThreeDStage extends HTMLElement {
     root.querySelector('[data-a="fit"]')?.addEventListener('click', () => this.frameAll());
     root.querySelector('[data-a="obj"]')?.addEventListener('click', () => this.exportOBJ());
     root.querySelector('[data-a="glb"]')?.addEventListener('click', () => this.exportGLB());
+
+    this._initPointer();
 
     this._ro = new ResizeObserver(() => this._resize());
     this._ro.observe(this);
@@ -268,6 +277,134 @@ export class ThreeDStage extends HTMLElement {
     }
   }
 
+  // -----------------------------------------------------------------------
+  //  Drahaandtak og flatevalg.
+  //
+  //  Et haandtak er hvilken som helst gruppe i modellen med userData.handle:
+  //    { path, value, dir, step, min, max }
+  //  Pila peker langs sin egen lokale +y, saa dragaksen leses rett ut av
+  //  verdensmatrisa - da trenger ikke visninga vite noe om ingenioerakser.
+  //
+  //  Under draget regnes verdien ut av hvor langt PEKEREN har flyttet seg
+  //  langs aksen, ikke av hvor pila staar. Da kan modellen bygges om for hver
+  //  eneste ramme uten at draget mister taket: haandtaket er tall, ikke mesh.
+  // -----------------------------------------------------------------------
+  _initPointer() {
+    this._ray = new THREE.Raycaster();
+    this._ray.params.Line.threshold = 0;
+    this._handleObjs = [];
+    // Lyttes av i fangstfasen paa verten, ikke paa lerretet: da kommer vi til
+    // foer OrbitControls og kan stanse rotasjonen naar draget er vaart.
+    const opt = { capture: true };
+    this.addEventListener('pointerdown', e => this._onPointerDown(e), opt);
+    this.addEventListener('pointermove', e => this._onPointerMove(e), opt);
+    this.addEventListener('pointerup', e => this._onPointerUp(e), opt);
+    this.addEventListener('pointercancel', e => this._onPointerUp(e), opt);
+  }
+
+  _ndc(e) {
+    const r = this.renderer.domElement.getBoundingClientRect();
+    return { x: ((e.clientX - r.left) / r.width) * 2 - 1,
+             y: -((e.clientY - r.top) / r.height) * 2 + 1 };
+  }
+
+  _hits(e, objs) {
+    this._ray.setFromCamera(this._ndc(e), this.camera);
+    return this._ray.intersectObjects(objs || this.content.children, true)
+      .filter(h => h.object.visible && h.object.type !== 'LineSegments');
+  }
+
+  // Bare haandtakene testes, ikke hele modellen: gjengespiraler og kammer er
+  // tunge aa stryke en straale gjennom for hver musebevegelse.
+  _handleAt(e) {
+    if (!this._handleObjs.length) return null;
+    for (const hit of this._hits(e, this._handleObjs)) {
+      let o = hit.object;
+      while (o && !o.userData.handle) o = o.parent;
+      if (o) return { obj: o, handle: o.userData.handle };
+    }
+    return null;
+  }
+
+  // Naermeste punkt paa dragaksen til pekerstraalen, som parameter langs aksen.
+  _axisParam(e, origin, axis) {
+    this._ray.setFromCamera(this._ndc(e), this.camera);
+    const ro = this._ray.ray.origin, rd = this._ray.ray.direction;
+    const w = new THREE.Vector3().subVectors(origin, ro);
+    const b = axis.dot(rd), d = axis.dot(w), f = rd.dot(w);
+    const den = 1 - b * b;
+    if (Math.abs(den) < 1e-6) return null;      // ser rett langs aksen
+    return (b * f - d) / den;
+  }
+
+  _onPointerDown(e) {
+    if (e.button !== 0) return;
+    if (this.pickMode === 'face') {
+      const hit = this._hits(e).find(h => h.face && h.object.name.startsWith('betong'));
+      if (!hit) return;
+      const inv = new THREE.Matrix4().copy(this.content.children[0].matrixWorld).invert();
+      const point = hit.point.clone().applyMatrix4(inv);
+      const normal = hit.face.normal.clone()
+        .transformDirection(hit.object.matrixWorld).transformDirection(inv).normalize();
+      e.preventDefault(); e.stopPropagation();
+      this.dispatchEvent(new CustomEvent('face-pick', {
+        detail: { point: { x: point.x, y: point.y, z: point.z },
+                  normal: { x: normal.x, y: normal.y, z: normal.z } } }));
+      return;
+    }
+    const h = this._handleAt(e);
+    if (!h) return;
+    const origin = new THREE.Vector3().setFromMatrixPosition(h.obj.matrixWorld);
+    const axis = new THREE.Vector3(0, 1, 0)
+      .transformDirection(h.obj.matrixWorld).normalize();
+    const p0 = this._axisParam(e, origin, axis);
+    if (p0 == null) return;
+    e.preventDefault(); e.stopPropagation();
+    this.controls.enabled = false;
+    try { this.renderer.domElement.setPointerCapture(e.pointerId); } catch { /* uten peker */ }
+    this._drag = { h: h.handle, origin, axis, p0, v0: +h.handle.value || 0,
+                   id: e.pointerId, moved: false };
+  }
+
+  _onPointerMove(e) {
+    if (!this._drag) {
+      if (!this.pickMode) {
+        const over = !!this._handleAt(e);
+        if (over !== this._overHandle) {
+          this._overHandle = over;
+          this.renderer.domElement.style.cursor = over ? 'grab' : '';
+        }
+      } else this.renderer.domElement.style.cursor = 'crosshair';
+      return;
+    }
+    const d = this._drag;
+    e.preventDefault(); e.stopPropagation();
+    const p = this._axisParam(e, d.origin, d.axis);
+    if (p == null) return;
+    const step = d.h.step || 1;
+    let v = d.v0 + (p - d.p0);
+    v = Math.round(v / step) * step;
+    if (d.h.min != null) v = Math.max(d.h.min, v);
+    if (d.h.max != null) v = Math.min(d.h.max, v);
+    if (v === d.last) return;
+    d.last = v; d.moved = true;
+    this.renderer.domElement.style.cursor = 'grabbing';
+    this.dispatchEvent(new CustomEvent('handle', {
+      detail: { path: d.h.path, id: d.h.id, value: v } }));
+  }
+
+  _onPointerUp(e) {
+    if (!this._drag) return;
+    const d = this._drag;
+    this._drag = null;
+    this.controls.enabled = true;
+    this.renderer.domElement.style.cursor = '';
+    try { this.renderer.domElement.releasePointerCapture(d.id); } catch { /* sluppet */ }
+    if (d.moved)
+      this.dispatchEvent(new CustomEvent('handle-end', {
+        detail: { path: d.h.path, id: d.h.id, value: d.last } }));
+  }
+
   setContent(obj) {
     this.content.traverse(o => {
       if (o.geometry) o.geometry.dispose();
@@ -275,6 +412,14 @@ export class ThreeDStage extends HTMLElement {
     });
     this.content.clear();
     this.content.add(obj);
+    // Bare det oeverste leddet i hvert haandtak samles - resten av pila henger
+    // under det og treffes likevel av straalen.
+    this._handleObjs = [];
+    obj.traverse(o => {
+      if (!o.userData.handle) return;
+      for (let q = o.parent; q; q = q.parent) if (q.userData.handle) return;
+      this._handleObjs.push(o);
+    });
     if (!this._framed) { this.frameAll(); this._framed = true; }
   }
 

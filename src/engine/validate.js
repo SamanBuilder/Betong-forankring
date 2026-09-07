@@ -5,7 +5,9 @@
 // ---------------------------------------------------------------------------
 
 import { anchorPositions, edgeDistances, mounting, boltsOutside, EDGE_MIN,
-         shaftProps, anchorFoot, grade, endsFor } from '../core/model.js';
+         shaftProps, anchorFoot, grade, endsFor,
+         memberThickness } from '../core/model.js';
+import { featureBox, features, surfaceZ, FACE_LABEL } from './solid.js';
 
 export function validate(m) {
   const out = [];
@@ -25,13 +27,41 @@ export function validate(m) {
       break;
     }
   }
-  if (a.hef >= c.h) err(`h_ef = ${a.hef} mm er ikke mindre enn tykkelsen h = ${c.h} mm.`);
-  else if (a.hef > 0.8 * c.h)
-    warn(`h_ef = ${a.hef} mm er over 80 % av tykkelsen (h = ${c.h} mm) – kontroller ` +
+  // Tykkelsen som gjelder er den lokale: en utsparing i over- eller underflata
+  // gjoer betongen tynnere akkurat der forankringen staar.
+  const hLoc = memberThickness(m, pos);
+  const hTxt = hLoc === c.h ? `h = ${c.h} mm`
+    : `lokal tykkelse ${Math.round(hLoc)} mm (h = ${c.h} mm utenfor formene)`;
+  if (a.hef >= hLoc) err(`h_ef = ${a.hef} mm er ikke mindre enn ${hTxt}.`);
+  else if (a.hef > 0.8 * hLoc)
+    warn(`h_ef = ${a.hef} mm er over 80 % av tykkelsen (${hTxt}) – kontroller ` +
          `gjennomlokking og plass til hodet.`);
   if (p.present && (p.bx > c.Lx || p.by > c.Ly))
     warn('Forankringsplata er større enn betongdelen.');
   if (a.nx * a.ny < 1) err('Minst én bolt kreves.');
+
+  // --- formene i betongen -----------------------------------------------
+  const fts = features(m);
+  fts.forEach((ft, i) => {
+    const nm = `Form ${i + 1} (${FACE_LABEL[ft.face] || ft.face})`;
+    if (!(ft.bu > 0) || !(ft.bv > 0)) { warn(`${nm}: snittet har ingen utstrekning.`); return; }
+    if (Math.abs(+ft.depth || 0) < 1e-6) {
+      warn(`${nm} er ikke dratt ut ennå – den endrer ingenting. Dra i pila i ` +
+           `3D, eller skriv et uttrekk.`);
+      return;
+    }
+    if (!featureBox(m, ft))
+      warn(`${nm} ligger helt utenfor flata den er tegnet i, og gir ingen betong. ` +
+           `Snittet klippes alltid mot flata, så tillagt betong henger fast i den.`);
+  });
+  const zRef = surfaceZ(m);
+  if (zRef < 0)
+    warn(`Plata står i en utsparing: betongoverflata under plata ligger ` +
+         `${Math.round(-zRef)} mm under overkant av grunnformen. h_ef og ` +
+         `bruddkjegla regnes fra den flata som faktisk finnes der.`);
+  else if (zRef > 0)
+    warn(`Plata står på en pute som er ${Math.round(zRef)} mm høyere enn ` +
+         `grunnformen. h_ef regnes fra puta si overflate.`);
 
   // --- forankringsende og stangtype -------------------------------------
   const sh = shaftProps(m), foot = anchorFoot(m);
@@ -91,6 +121,13 @@ export function validate(m) {
          'faller strekkontrollene mot betong bort – velg Betongelementboka ' +
          'B19 for «Strekk mot betong», som har heftforankring av kamstål og ' +
          'gjengestang (pkt. 19.3.3/19.3.4).');
+  if (m.code.shearConcreteStandard === 'EN1992-4' && !mounting(m).contact)
+    warn('NS-EN 1992-4 har ingen formel for lokal betongknusing under en ' +
+         'dybel uten trykkflate mot betongen (verken uten plate, eller med ' +
+         'avstandsmontert plate) – det forutsettes dekket av produkt-' +
+         'godkjenningen (ETA) for det valgte ankersystemet. Velg ' +
+         'Betongelementboka B19 for «Skjær mot betong» for å få denne ' +
+         'kontrollen (pkt. 19.4.2.3).');
   if (m.code.tensionConcreteStandard === 'B19' || m.code.shearConcreteStandard === 'B19') {
     const g = grade(c.grade);
     if (g.fck < 25 || g.fck > 55)

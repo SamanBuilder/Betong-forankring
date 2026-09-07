@@ -12,7 +12,8 @@ import { defaultModel, CONCRETE_GRADES, STUD_STEELS, studSize, rodSize,
          endsFor } from '../core/model.js';
 import { verify } from '../engine/verify.js';
 import { buildScene } from '../viz/scene-builder.js';
-import { FIELDS, barSizes, get, set } from './fields.js';
+import { FIELDS, barSizes, get, set, featureFields, newFeature } from './fields.js';
+import { FACES, FACE_LABEL, surfaceZ, isShaped } from '../engine/solid.js';
 import { n, kN } from '../engine/calc.js';
 import { saveFile, saveError } from '../core/download.js';
 import '../viz/three-d-stage.js';
@@ -44,6 +45,10 @@ let viewTab = '3d';
 const SUMMARY = {
   'Regelverk': m => m.code.standard === 'EN1992-4' ? 'EN 1992-4' : 'B19',
   'Betongdel': m => m.concrete.grade,
+  'Betongform': m => {
+    const n2 = (m.concrete.features || []).length;
+    return n2 ? `${n2} snitt` : 'rett kloss';
+  },
   'Forankringsplate': m => m.plate.present
     ? `${m.plate.bx}×${m.plate.by}` : 'uten plate',
   'Bolter': m => `${m.anchors.nx * m.anchors.ny} × ` +
@@ -146,6 +151,7 @@ function renderForm() {
   const grp = visibleGroups().find(g => g.group === activeGroup);
   if (!grp) return;
   host.appendChild(el('h3', null, grp.group));
+  if (grp.custom === 'features') { renderFeatures(host); return; }
   for (const f of grp.items) {
     if (f.when && !f.when(model)) continue;
     host.appendChild(field(f));
@@ -165,6 +171,87 @@ function renderForm() {
       'Uten plate regnes boltene som dybler: skjærkapasiteten i betongen ' +
       'faller til ⌀²·√(f_cd·f_yd), og stålets bøyning over utkraginga blir ' +
       'ofte begrensende (B19 pkt. 19.4.2).'));
+}
+
+// === betongform ===========================================================
+//  Snitt i en flate, dratt ut eller inn. Lista er ikke fast som de andre
+//  gruppene, saa den bygges her i stedet for i fields.js.
+let pickFace = false;
+
+function nextFeatureId(m) {
+  return Math.max(0, ...(m.concrete.features || [])
+    .map(f => parseInt(String(f.id).replace(/\D/g, ''), 10) || 0)) + 1;
+}
+
+function addFeature(face, u = 0, v = null) {
+  const list = model.concrete.features || (model.concrete.features = []);
+  list.push(newFeature(model, face, u, v, nextFeatureId(model)));
+  activeGroup = 'Betongform';
+  refresh(true);
+}
+
+function setPickFace(on) {
+  pickFace = on;
+  const st = $('#stage');
+  if (st) st.pickMode = on ? 'face' : null;
+}
+
+function renderFeatures(host) {
+  host.appendChild(el('p', 'hint',
+    'Et snitt er et rektangel tegnet i en av flatene på betongdelen. ' +
+    'Uttrekket drar betongen ut av flata (konsoll, fortanning) eller inn i ' +
+    'den (utsparing, spor), målt fra grunnformens flate. Kjeglebrudd, ' +
+    'kantbrudd og lokal tykkelse regnes av betongen slik den står etter ' +
+    'alle formene.'));
+
+  const row = el('div', 'feat-add');
+  const sel = el('select');
+  for (const f of FACES) {
+    const o = el('option', null, esc(FACE_LABEL[f])); o.value = f; sel.appendChild(o);
+  }
+  const add = el('button', 'btn', 'Nytt snitt');
+  add.onclick = () => addFeature(sel.value);
+  const pick = el('button', 'btn', pickFace ? 'Klikk en flate i 3D …' : 'Velg flate i 3D');
+  pick.setAttribute('aria-pressed', String(pickFace));
+  pick.onclick = () => { setPickFace(!pickFace); renderForm(); };
+  row.append(sel, add, pick);
+  host.appendChild(row);
+
+  const list = model.concrete.features || [];
+  if (!list.length) {
+    host.appendChild(el('p', 'hint',
+      'Ingen former ennå – betongdelen er en rett kloss.'));
+    return;
+  }
+  const KIND = d => d > 0 ? 'legger til betong' : d < 0 ? 'tar bort betong'
+                                                : 'ikke dratt ut ennå';
+  list.forEach((ft, i) => {
+    const card = el('div', 'feat');
+    const head = el('div', 'feat-head');
+    head.appendChild(el('span', 'nm',
+      `${i + 1} · ${esc(FACE_LABEL[ft.face] || ft.face)}`));
+    head.appendChild(el('span', 'kind', esc(KIND(+ft.depth || 0))));
+    const del = el('button', 'btn ghost', 'Slett');
+    del.title = 'Fjern denne forma';
+    del.onclick = () => { list.splice(i, 1); refresh(true); };
+    head.appendChild(del);
+    card.appendChild(head);
+    const kind = head.querySelector('.kind');
+    for (const f of featureFields(model, i)) {
+      const fld = field(f);
+      // Uttrekket skrives uten at skjemaet bygges om (ellers rykkes markøren
+      // ut av feltet), så overskrifta må holdes i takt for seg.
+      if (f.p.endsWith('.depth'))
+        fld.querySelector('input').addEventListener('input', ev => {
+          kind.textContent = KIND(parseFloat(ev.target.value) || 0);
+        });
+      card.appendChild(fld);
+    }
+    host.appendChild(card);
+  });
+  host.appendChild(el('p', 'hint',
+    'I 3D står det en pil ut av hver form. Dra i den for å trekke betongen ' +
+    'ut eller inn – forbi null snur formen fra tillegg til utsparing.'));
 }
 
 function field(f) {
@@ -258,6 +345,20 @@ function renderUtilSummary(v) {
   return wrap;
 }
 
+// Formen på betongdelen hører hjemme i forutsetningene: leseren av en
+// beregning må se at kapasitetene ikke er regnet av en rett kloss.
+function concreteShapeTxt(m) {
+  const c = m.concrete;
+  const base = `${c.Lx}×${c.Ly}×${c.h} mm`;
+  if (!isShaped(m)) return base;
+  const list = c.features.filter(f => Math.abs(+f.depth || 0) > 1e-6);
+  const cuts = list.filter(f => f.depth < 0).length;
+  const adds = list.length - cuts;
+  const txt = [cuts ? `${cuts} utsparing${cuts > 1 ? 'er' : ''}` : null,
+               adds ? `${adds} tillegg` : null].filter(Boolean).join(' · ');
+  return `${base} + ${txt}`;
+}
+
 function renderResults(v) {
   const m = model, a = m.anchors, g = v.gamma;
   const foot = anchorFoot(m);
@@ -275,6 +376,7 @@ function renderResults(v) {
     ['— strekk mot betong', v.standards.tcLabel],
     ['— skjær mot betong', v.standards.scLabel],
     ['Betong', `${m.concrete.grade} · f_ck ${m.concrete.fck} N/mm²`],
+    ['Betongdel', concreteShapeTxt(m)],
     ['Tilstand', m.code.cracked ? 'Opprisset' : 'Uopprisset'],
     ['Bolter', `${a.nx}×${a.ny} ${a.barType === 'rod' ? 'M' : '⌀'}${a.d} · ` +
       `${a.endType === 'none' ? 'l_b' : 'h_ef'} ${a.hef} mm`],
@@ -740,6 +842,38 @@ export function boot() {
   $('#tab-3d').onclick = () => setViewTab('3d');
   $('#tab-calc').onclick = () => setViewTab('calc');
 
+  // ---- geometri rett i 3D ------------------------------------------------
+  // Uttrekkspilene er drahaandtak. Under draget skrives verdien rett i
+  // modellen og alt regnes om; naar du slipper, bygges skjemaet om saa
+  // tallfeltet viser det samme som pila.
+  const stage = $('#stage');
+  stage.addEventListener('handle', e => {
+    set(model, e.detail.path, e.detail.value);
+    refresh(false);
+  });
+  stage.addEventListener('handle-end', () => refresh(true));
+
+  // Klikk paa en flate for aa legge et snitt der. Flata leses av normalen i
+  // treffpunktet, og snittet legges der du traff - som naar du starter en
+  // skisse paa en flate i SpaceClaim.
+  stage.addEventListener('face-pick', e => {
+    if (!pickFace) return;
+    const { point, normal } = e.detail;
+    const c = model.concrete;
+    const z = point.z + surfaceZ(model);      // tilbake til betongdelens z
+    const ax = Math.abs(normal.x) >= Math.abs(normal.y) &&
+               Math.abs(normal.x) >= Math.abs(normal.z) ? 'x'
+             : Math.abs(normal.y) >= Math.abs(normal.z) ? 'y' : 'z';
+    const pos = normal[ax] >= 0;
+    const face = ax === 'x' ? (pos ? 'xPos' : 'xNeg')
+               : ax === 'y' ? (pos ? 'yPos' : 'yNeg') : (pos ? 'top' : 'bottom');
+    const r5 = v => Math.round(v / 5) * 5;
+    setPickFace(false);
+    if (ax === 'x') addFeature(face, r5(point.y + c.ey), r5(z));
+    else if (ax === 'y') addFeature(face, r5(point.x + c.ex), r5(z));
+    else addFeature(face, r5(point.x + c.ex), r5(point.y + c.ey));
+  });
+
   const code = $('#code');
   code.value = model.code.standard;
   code.onchange = () => { model.code.standard = code.value; refresh(true); };
@@ -747,6 +881,7 @@ export function boot() {
   $('#reset').onclick = () => {
     model = Object.assign(defaultModel(), { reinf: REINF_DEFAULT() });
     activeCheck = null; activeGroup = 'Betongdel';
+    setPickFace(false);
     $('#code').value = model.code.standard;
     setViewTab('3d');
     refresh(true, true);

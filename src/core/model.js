@@ -4,6 +4,8 @@
 //  Fortegn:  +N = strekk (plata trekkes av betongen),  z = ut av betongen.
 // ---------------------------------------------------------------------------
 import { unionRectArea } from '../engine/geometry.js';
+import { edgeDistancesAt, anchorDepth, baseBox,
+         minThickness } from '../engine/solid.js';
 
 // fckCube = terningfasthet f_ck,cube, fctk = f_ctk,0,05.  Begge etter
 // NS-EN 1992-1-1 tab. 3.1 (parene C20/25 ... C55/67).  B65-B85 har ingen
@@ -295,6 +297,10 @@ export function defaultModel() {
       ey: 0,
       // Hvilke sider som er frie kanter. Er en side ikke fri, regnes den uendelig.
       freeEdges: { xNeg: true, xPos: true, yNeg: true, yPos: true },
+      // Formene som er lagt oppaa grunnklossen. Hver form er et rektangel
+      // tegnet i en av de seks flatene og dratt ut (mer betong) eller inn
+      // (utsparing) - se src/engine/solid.js.
+      features: [],
     },
 
     // ---- Stålplate -------------------------------------------------------
@@ -439,29 +445,35 @@ export function anchorPositions(m) {
   return out;
 }
 
-// Kantavstander fra et punkt (x,y) i platas system til betongdelens frie kanter.
-// Ikke-frie kanter returneres som Infinity.
+// Kantavstander fra et punkt (x,y) i platas system til betongdelens frie
+// kanter. Avstanden maales i betongen slik den faktisk staar: er det lagt inn
+// en utsparing eller en konsoll i kanten, er det den nye kanten som gjelder.
+// For den rene klossen gir dette de samme tallene som L/2 +/- e.
+// Ikke-frie sider returneres som Infinity - der fortsetter konstruksjonen.
 export function edgeDistances(m, x, y) {
-  const c = m.concrete;
-  const X = x + c.ex, Y = y + c.ey;   // punkt i betongdelens system
-  const big = Infinity;
+  const [z0, z1] = anchorDepth(m);
+  return edgeDistancesAt(m, x, y, z0, z1);
+}
+
+// Grunnklossens ytterkanter i platas system. Ikke-frie sider regnes uendelige.
+// Brukes der det er selve klossen som er referansen (endeplata, maalsettinga).
+// Bruddarealene klippes mot den virkelige formen, ikke mot dette - se
+// coneProjection() og solid.js.
+export function memberLimits(m) {
+  const c = m.concrete, big = 1e9, b = baseBox(m);
   return {
-    xNeg: c.freeEdges.xNeg ? c.Lx / 2 + X : big,
-    xPos: c.freeEdges.xPos ? c.Lx / 2 - X : big,
-    yNeg: c.freeEdges.yNeg ? c.Ly / 2 + Y : big,
-    yPos: c.freeEdges.yPos ? c.Ly / 2 - Y : big,
+    x0: c.freeEdges.xNeg ? b.x0 : -big,
+    x1: c.freeEdges.xPos ? b.x1 : big,
+    y0: c.freeEdges.yNeg ? b.y0 : -big,
+    y1: c.freeEdges.yPos ? b.y1 : big,
   };
 }
 
-// Betongdelens ytterkanter i platas system. Ikke-frie sider regnes uendelige.
-export function memberLimits(m) {
-  const c = m.concrete, big = 1e9;
-  return {
-    x0: c.freeEdges.xNeg ? -(c.Lx / 2 + c.ex) : -big,
-    x1: c.freeEdges.xPos ? (c.Lx / 2 - c.ex) : big,
-    y0: c.freeEdges.yNeg ? -(c.Ly / 2 + c.ey) : -big,
-    y1: c.freeEdges.yPos ? (c.Ly / 2 - c.ey) : big,
-  };
+// Tykkelsen som gjelder under boltene. Uten former er det h; med en utsparing
+// i over- eller underflata er betongen tynnere akkurat der, og det er den
+// lokale tykkelsen bruddformlene skal ha.
+export function memberThickness(m, pts) {
+  return minThickness(m, pts && pts.length ? pts : anchorPositions(m));
 }
 
 export function minEdgeDistance(m, positions) {

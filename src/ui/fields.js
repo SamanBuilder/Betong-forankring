@@ -4,6 +4,7 @@
 // avhenger av noe annet - som boltdiameteren, der utvalget foelger stangtypen.
 import { CONCRETE_GRADES, STUD_SIZES, REBAR_SIZES, ROD_SIZES,
          steelsFor, endsFor } from '../core/model.js';
+import { FACES, FACE_INFO, FACE_LABEL, faceRect } from '../engine/solid.js';
 
 // Diameterne som finnes for hver stangtype.
 export function barSizes(m) {
@@ -40,7 +41,11 @@ export const FIELDS = [
             'heftforankring uten fot (kamstål/gjengestang).' },
     { p: 'code.shearConcreteStandard', l: 'Skjær mot betong', t: 'select', o: [
       ['EN1992-4', 'NS-EN 1992-4:2018 – kantbrudd/pry-out'],
-      ['B19', 'Betongelementboka B19 – dybelskjær']] },
+      ['B19', 'Betongelementboka B19 – dybelskjær']],
+      hint: 'NS-EN 1992-4 har ingen formel for lokal betongknusing under en ' +
+            'dybel uten trykkflate (uten plate, eller med avstandsmontert ' +
+            'plate) – den forutsetter en produktgodkjenning (ETA). Velg B19 ' +
+            'for å få dybelskjærformelen (pkt. 19.4.2.3) i det tilfellet.' },
     { p: 'code.cracked', l: 'Opprisset betong', t: 'bool' },
     { p: 'code.gammaC', l: 'γ_c', t: 'num', step: 0.05 },
     { p: 'code.denseReinf', l: 'Tett armering (c/c < 150)', t: 'bool' },
@@ -66,6 +71,10 @@ export const FIELDS = [
     { p: 'concrete.freeEdges.yNeg', l: 'Fri kant −y', t: 'bool' },
     { p: 'concrete.freeEdges.yPos', l: 'Fri kant +y', t: 'bool' },
   ] },
+
+  // Formene i betongen redigeres av sin egen rute (renderFeatures i app.js):
+  // lista er ikke fast, den vokser med snittene du legger inn.
+  { group: 'Betongform', custom: 'features', items: [] },
 
   { group: 'Forankringsplate', items: [
     { p: 'plate.present', l: 'Stålplate i overflata', t: 'bool',
@@ -186,6 +195,45 @@ export const FIELDS = [
   ] },
 
 ];
+
+// ---------------------------------------------------------------------------
+//  Feltene for ett snitt i betongen.
+//
+//  Navnene foelger flata snittet er tegnet i, ikke en fast u/v-notasjon:
+//  staar du paa en sideflate er den andre retninga hoeyden, staar du paa
+//  overflata er begge plane mål. Da slipper du aa oversette i hodet.
+// ---------------------------------------------------------------------------
+export function featureFields(m, i) {
+  const ft = m.concrete.features[i];
+  const inf = FACE_INFO[ft.face] || FACE_INFO.top;
+  const flat = inf.axis === 'z';          // topp/bunn: begge retningene er plane
+  const uN = inf.uAxis, vN = inf.vAxis;
+  const P = k => `concrete.features.${i}.${k}`;
+  return [
+    { p: P('face'), l: 'Flate', t: 'select', o: FACES.map(f => [f, FACE_LABEL[f]]),
+      hint: 'Flata snittet er tegnet i. Uttrekket gaar vinkelrett ut av den.' },
+    { p: P('bu'), l: `Bredde ${uN}`, t: 'num', u: 'mm', step: 10, min: 0 },
+    { p: P('bv'), l: flat ? `Bredde ${vN}` : 'Høyde z', t: 'num', u: 'mm', step: 10, min: 0 },
+    { p: P('u'), l: `Senter ${uN}`, t: 'num', u: 'mm', step: 10 },
+    { p: P('v'), l: `Senter ${vN}`, t: 'num', u: 'mm', step: 10,
+      hint: flat ? 'Målt fra betongdelens senter.'
+                 : 'Målt fra betongoverflata og nedover, så −h/2 er midt i tverrsnittet.' },
+    { p: P('depth'), l: 'Uttrekk', t: 'num', u: 'mm', step: 5,
+      hint: 'Positivt drar betongen ut av flata (konsoll, fortanning). ' +
+            'Negativt drar den inn (utsparing, spor). Du kan også dra i pila i 3D.' },
+  ];
+}
+
+// Snittets utstrekning i flata det ligger i - brukes til å sette fornuftige
+// startmål når et nytt snitt legges inn.
+export function newFeature(m, face, u = 0, v = null, id = 1) {
+  const r = faceRect(m, face);
+  const inf = FACE_INFO[face];
+  const bu = Math.max(50, Math.round((r.u1 - r.u0) / 3 / 10) * 10);
+  const bv = Math.max(50, Math.round((r.v1 - r.v0) / 3 / 10) * 10);
+  const vDef = v == null ? (inf.axis === 'z' ? 0 : (r.v0 + r.v1) / 2) : v;
+  return { id: `f${id}`, face, u, v: vDef, bu, bv, depth: 0 };
+}
 
 export const get = (o, p) => p.split('.').reduce((a, k) => a?.[k], o);
 export function set(o, p, v) {

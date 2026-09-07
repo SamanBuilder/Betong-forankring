@@ -15,6 +15,7 @@ frie kanter, med eller uten forankringsplate i overflata.
 | Stangtype | sveisebolt · gjengestang/bolt · kamstål |
 | Forankringsende | endemutter/bolthode · felles endeplate over gruppa · uten endemutter (heftforankring) |
 | Innfesting | stålplate, sveist eller gjennomboltet · uten plate (enkeltstående dybler) |
+| Betongform | grunnkloss L_x × L_y × h, pluss snitt i flatene som dras ut eller inn |
 
 **Regelverk:** NS-EN 1992-4:2018 og Betongelementboka bind B kap. B19 er begge
 implementert. De dekker delvis ulike ting:
@@ -96,16 +97,25 @@ uten det cacher nettleseren ES-modulene hardt under utvikling.
 node build.mjs
 ```
 
+Testene:
+
+```bash
+node test/b19-examples.mjs     # regner om bokas egne eksempler og tabeller
+node test/solid-shapes.mjs     # betongforma: volum, bruddareal, kantavstand
+```
+
 ## Filstruktur
 
 ```
 src/core/model.js               datamodell, materialtabeller, boltgeometri
+src/engine/solid.js             betongdelen som legeme: grunnkloss + snitt
 src/engine/geometry.js          arealunion (A_c,N, A_c,V)
 src/engine/plate-solver.js      kraftfordeling i boltegruppa
 src/engine/en1992-4.js          NS-EN 1992-4 – alle konstanter samlet i K
 src/engine/anchor-reinforcement.js  forankringsarmering (7.2.1.8 / 7.2.2.6)
 src/engine/b19.js               Betongelementboka B19 – alle konstanter i KB
 test/b19-examples.mjs           regner om bokas egne eksempler
+test/solid-shapes.mjs           betongforma: volum, areal, kantavstand
 src/engine/validate.js          inndatakontroll
 src/engine/verify.js            orkestrering
 src/viz/three-d-stage.js        <three-d-stage> web component
@@ -189,6 +199,54 @@ høyrehåndsregelen. Alle seks komponentene tegnes alltid – de uten last vises
 bleknet og pekende i positiv retning, så triaden er komplett og
 fortegnskonvensjonen er synlig. Alt er solid geometri, så det skyggelegges og
 blir med i OBJ/GLB-eksporten.
+
+### Betongform: snitt i en flate, dratt ut eller inn
+
+Betongdelen er ikke bare en kloss. Under **Betongform** legger du et *snitt* –
+et rektangel tegnet i en av de seks flatene – og drar det ut eller inn:
+
+* **ut** legger betong til: konsoll, fortanning, forsterkning under plata
+* **inn** tar betong bort: utsparing, spor, avtrapping, grop rundt plata
+
+Det er samme prinsipp som pull/push i SpaceClaim. Hver form har sine egne mål
+(bredde, høyde, senter og uttrekksdybde) som kan skrives i skjemaet eller dras
+i 3D: pila som står ut av forma er et drahåndtak, og 1 mm musebevegelse langs
+pila er 1 mm uttrekk. Drar du forbi null, snur forma fra tillegg til utsparing.
+Knappen **Velg flate i 3D** lar deg i stedet klikke på en flate i modellen –
+snittet legges der du traff.
+
+Uttrekket måles alltid fra **grunnformens** flate, ikke fra der betongen
+tilfeldigvis slutter nå. Da er hvert mål absolutt og kan leses rett av
+tegninga uten å kjenne de andre formene – men det betyr også at tillegg alltid
+legger seg utenpå klossen og aldri kan fylle igjen en utsparing. Snittet
+klippes mot flata det er tegnet i, så betong som legges til alltid henger fast
+i noe.
+
+#### Hvordan formen påvirker beregninga
+
+Legemet er bygd av akseparallelle kasser, og representeres **eksakt** med
+koordinatkompresjon (`src/engine/solid.js`): hver kasse deler opp x-, y- og
+z-aksen, og hver celle i rutenettet som oppstår er enten helt full eller helt
+tom. Ingen triangulering og ingen toleranser. Ut av det leses:
+
+| Størrelse | Før | Nå |
+|---|---|---|
+| Kantavstand `c` / `a_1` | L/2 ± e | avstanden ut til der betongen faktisk slutter |
+| `A_c,N` | rektangel klippet mot fire kanter | klippet mot formen, søyle for søyle |
+| Bredden av `A_c,V` | fra sidekant til sidekant | de stykkene der det står betong i boltradens plan |
+| `h` i ψ_h,V og tykkelseskontrollene | `concrete.h` | lokal tykkelse under boltene |
+| Referanseplan for `h_ef` | overkant kloss | betongoverflata under plata |
+
+To forutsetninger er verdt å merke seg:
+
+* **En søyle teller bare når den har hel betong gjennom hele
+  forankringsdybden.** En kjegle som på veien opp passerer et hull har
+  ingenting å rive ut der. Det er konservativt, og eksakt når formen er hel.
+* **Sider som ikke er frie fortsetter.** Utenfor grunnklossen på en slik side
+  regnes betongen som hel – samme forutsetning som de uendelige kantene før.
+* Står plata i en grop, er det **gropas bunn** `h_ef` måles fra, ikke et plan
+  som er skåret vekk. Inndatakontrollen sier fra når referansen har flyttet
+  seg.
 
 ### Målsetting og påskrifter
 
@@ -505,3 +563,14 @@ eksempelet B 19.4.2 med innstøpt plate og fire forankringer. 25 av 25 stemmer.
   når bakre bolter også bidrar.
 * ψ_M,N (pkt. 7.2.1.4) er ikke tatt med; det er konservativt.
 * Ett lasttilfelle om gangen. Lastkombinasjoner er ikke implementert.
+* Formene i betongen er akseparallelle kasser. Skrå flater, sylindriske hull
+  og radier finnes ikke – en skrå avtrapping må trappes i flere snitt.
+* Snittet tegnes alltid i en av grunnklossens seks flater, og uttrekket måles
+  fra den flata. Du kan altså ikke skissere på en flate en tidligere form har
+  laget, og et tillegg kan ikke fylle igjen en utsparing. Det holder til
+  utsparinger, konsoller og avtrappinger, men det er ikke et fritt
+  feature-tre.
+* Hvordan et hull eller en utsparing inne i bruddflata påvirker kapasiteten er
+  ikke normert i verken EN 1992-4 eller B19. Regelen som brukes her – at bare
+  søyler med hel betong gjennom forankringsdybden teller – er en konservativ
+  tolkning, ikke en formel fra standarden.

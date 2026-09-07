@@ -20,6 +20,7 @@ const ROOT = dirname(fileURLToPath(import.meta.url));
 const ORDER = [
   'src/core/download.js',
   'src/engine/calc.js',
+  'src/engine/solid.js',
   'src/engine/geometry.js',
   'src/core/model.js',
   'src/engine/plate-solver.js',

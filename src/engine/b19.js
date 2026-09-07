@@ -34,9 +34,9 @@
 //  som gir lavest utnyttelse når det er fot.
 // ---------------------------------------------------------------------------
 
-import { anchorPositions, edgeDistances, memberLimits, shaftProps, anchorFoot,
-         grade, steelGrade } from '../core/model.js';
-import { unionLength, clamp, clippedSquares, coneProjection } from './geometry.js';
+import { anchorPositions, edgeDistances, shaftProps, anchorFoot,
+         grade, steelGrade, mounting } from '../core/model.js';
+import { clamp, coneProjection, frontWidth } from './geometry.js';
 import { Calc, skipped, n } from './calc.js';
 
 export const KB = {
@@ -219,7 +219,7 @@ function b19ConeBranch(m, res, c) {
       ? `felles endeplate ${n(foot.plate.bx, 0)} × ${n(foot.plate.by, 0)} mm, ` +
         `1,5·h_ef = ${n(1.5 * hef, 0)} mm`
       : `${pts.length} bolter i strekk, 1,5·h_ef = ${n(1.5 * hef, 0)} mm`,
-    value: coneProjection(foot, pts, 1.5 * hef, memberLimits(m)), unit: 'mm²',
+    value: coneProjection(m, foot, pts, 1.5 * hef), unit: 'mm²',
     ref: 'fig. B 19.11' });
 
   const cmin = minEdgeDist(m, pts);
@@ -535,11 +535,10 @@ export function b19ShearBending(m, res) {
 function b19FrontWidth(m, dir, a1, front) {
   const axisX = B19_AXIS[dir] === 'x';
   const t = p => (axisX ? p.y : p.x);
-  const lim = memberLimits(m);
-  const lo = axisX ? lim.y0 : lim.x0;
-  const hi = axisX ? lim.y1 : lim.x1;
-  return unionLength(front.map(p =>
-    [Math.max(t(p) - 1.5 * a1, lo), Math.min(t(p) + 1.5 * a1, hi)]));
+  // Klippet foelger betongen slik den faktisk staar i boltradens plan, ikke
+  // bare grunnklossens sidekanter - se frontWidth() i geometry.js.
+  return frontWidth(m, axisX ? 'y' : 'x', axisX ? front[0].x : front[0].y,
+    front.map(p => [t(p) - 1.5 * a1, t(p) + 1.5 * a1]));
 }
 
 // 19.4.2.3 / 19.4.4 Betongens avskjæringskapasitet.
@@ -555,17 +554,27 @@ export function b19ShearConcrete(m, res) {
   const cc = m.concrete, a = m.anchors, all = anchorPositions(m);
   const plate = m.plate.present;
   const welded = a.attachment !== 'bolted';
+  // Uten trykkflate mot betongen - verken fordi det ikke finnes noen plate,
+  // eller fordi plata er avstandsmontert - virker skjæret med momentarm i
+  // bolten før det når betongen. Lokal knusing der bolten går inn i betongen
+  // blir da det samme som for en fritt stående dybel, selv om det finnes en
+  // plate lenger oppe: forhøyelsen i 19.4.4 forutsetter at plata selv gir
+  // betongen lokal støtte, og det gjør den ikke uten kontaktflate.
+  const bearing = mounting(m).contact;
 
-  const kind = !plate ? 'dowel' : welded ? 'welded' : 'bolted';
+  const kind = !bearing ? 'dowel' : welded ? 'welded' : 'bolted';
   const factor = { dowel: KB.dowel, welded: KB.dowelWelded, bolted: KB.dowelBolted }[kind];
   const FTXT = {
-    dowel: 'Dybel uten stålplate – kombinasjonsformelen (19.4.2.3)',
+    dowel: plate
+      ? 'Plata er avstandsmontert – ingen trykkflate mot betongen, så lokal ' +
+        'knusing regnes som for en fritt stående dybel: kombinasjonsformelen (19.4.2.3)'
+      : 'Dybel uten stålplate – kombinasjonsformelen (19.4.2.3)',
     welded: 'Innstøpt stålplate med påsveiste forankringer: 86 % høyere enn ' +
             'ren dybel, avrundet til 1,8 (19.4.4)',
     bolted: 'Påskrudd stålplate: 1,8 · 0,5/0,6 = 1,5 (19.4.4)',
   };
 
-  const c = new Calc(plate ? '19.4.4' : '19.4.2.3');
+  const c = new Calc(bearing ? '19.4.4' : '19.4.2.3');
   c.in('⌀', sh.d, 'mm', 'Bolter · nominell diameter');
   c.in('f_cd', cd.fcd, 'N/mm²', `Betongdel · 0,85 · f_ck / γ_c`);
   c.in(st.kind === 'rebar' ? 'f_yd' : st.fSym, st.fDowel, 'N/mm²',
@@ -576,14 +585,14 @@ export function b19ShearConcrete(m, res) {
 
   const kf = c.step({ sym: 'faktor', desc: FTXT[kind],
     formula: 'V⁰_Rd,c = faktor · ⌀² · √(f_cd · f_sd)', subst: `${n(factor, 1)}`,
-    value: factor, unit: '–', ref: plate ? '19.4.4' : '19.4.2.3' });
+    value: factor, unit: '–', ref: bearing ? '19.4.4' : '19.4.2.3' });
   const V0 = c.step({ sym: 'V⁰_Rd,c', desc: 'Kapasitet pr. stang ved stor kantavstand',
     formula: 'faktor · ⌀² · √(f_cd · f_sd)',
     subst: `${n(kf, 1)} · ${n(sh.d, 0)}² · √(${n(cd.fcd, 1)} · ${n(st.fDowel, 0)})`,
     value: factor * sh.d * sh.d * Math.sqrt(cd.fcd * st.fDowel), unit: 'N',
-    ref: plate ? '19.4.4' : '19.4.2.3' });
+    ref: bearing ? '19.4.4' : '19.4.2.3' });
 
-  if (!plate)
+  if (kind === 'dowel')
     c.step({ sym: 'sammenlikning', desc:
       'De to enkeltmodellene kombinasjonsformelen ligger mellom: stålets ' +
       'bøyning og ren knusing av betongen foran dybelen',
@@ -632,7 +641,7 @@ export function b19ShearConcrete(m, res) {
       ref: '19.4.4' });
     c.util({ formula: 'V_Ed,g / V_Rd,c', subst: `${n(V.Vres)} / ${n(VRd)}`,
       value: V.Vres / VRd });
-    return { id: 'V-conc', mode: 'Dybelskjær i betong', clause: plate ? '19.4.4' : '19.4.2.3',
+    return { id: 'V-conc', mode: 'Dybelskjær i betong', clause: bearing ? '19.4.4' : '19.4.2.3',
              scope: 'gruppe', NRk: VRd, NRd: VRd, NEd: V.Vres, util: V.Vres / VRd,
              calc: c, note: 'Ingen fri kant i skjærkraftas retning – øvre grense ' +
                             'for lokal knusing av betongen styrer.' };
@@ -680,7 +689,7 @@ export function b19ShearConcrete(m, res) {
     value: w.util });
 
   return { id: 'V-conc', mode: `Dybelskjær mot kant ${B19_EDGE[w.dir]}`,
-           clause: plate ? '19.4.4' : '19.4.2.3', scope: 'gruppe', edgeDir: w.dir,
+           clause: bearing ? '19.4.4' : '19.4.2.3', scope: 'gruppe', edgeDir: w.dir,
            NRk: VRd, NRd: VRd, NEd: V.Vres, util: w.util, calc: c };
 }
 

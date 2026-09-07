@@ -16,8 +16,8 @@
 // ---------------------------------------------------------------------------
 
 import { anchorPositions, shaftProps, anchorFoot, edgeDistances,
-         memberLimits } from '../core/model.js';
-import { unionLength, clamp, clippedSquares, coneProjection } from './geometry.js';
+         memberThickness } from '../core/model.js';
+import { clamp, coneProjection, frontWidth } from './geometry.js';
 import { Calc, skipped, n } from './calc.js';
 
 export const K = {
@@ -80,7 +80,7 @@ export function partialFactors(m) {
 // Prosjektert areal for betongkjegle, 7.2.1.4 - union av rektangler klippet
 // mot betongdelens frie kanter.
 function coneArea(m, pts, ccr) {
-  return coneProjection(anchorFoot(m), pts, ccr, memberLimits(m));
+  return coneProjection(m, anchorFoot(m), pts, ccr);
 }
 
 function minEdge(m, pts) {
@@ -506,11 +506,13 @@ export function shearConcreteEdge(m, res, g) {
     const axisX = cd.axis === 'x';
     const t = p => (axisX ? p.y : p.x);
     const sideNeg = axisX ? 'yNeg' : 'xNeg', sidePos = axisX ? 'yPos' : 'xPos';
-    const lo = cc.freeEdges[sideNeg] ? -(axisX ? cc.Ly / 2 + cc.ey : cc.Lx / 2 + cc.ex) : -1e9;
-    const hi = cc.freeEdges[sidePos] ? (axisX ? cc.Ly / 2 - cc.ey : cc.Lx / 2 - cc.ex) : 1e9;
-    const width = unionLength(front.map(p =>
-      [Math.max(t(p) - 1.5 * c1, lo), Math.min(t(p) + 1.5 * c1, hi)]));
-    const height = Math.min(1.5 * c1, cc.h);
+    // Bruddflata er like brei som betongen tillater i boltradens plan. Med en
+    // utsparing i kanten er ikke det «fra sidekant til sidekant», men de
+    // stykkene der det faktisk staar betong (se solid.js).
+    const width = frontWidth(m, axisX ? 'y' : 'x', axisX ? front[0].x : front[0].y,
+      front.map(p => [t(p) - 1.5 * c1, t(p) + 1.5 * c1]));
+    const hLoc = memberThickness(m, front);
+    const height = Math.min(1.5 * c1, hLoc);
     const Ac = width * height, A0 = 4.5 * c1 * c1;
     const alpha = 0.1 * Math.sqrt(lf / c1);
     const beta = 0.1 * Math.pow(dnom / c1, 0.2);
@@ -519,7 +521,7 @@ export function shearConcreteEdge(m, res, g) {
     const c2 = Math.min(...front.map(p => {
       const e = edgeDistances(m, p.x, p.y); return Math.min(e[sideNeg], e[sidePos]); }));
     const psi_s = Number.isFinite(c2) ? clamp(0.7 + 0.3 * c2 / (1.5 * c1), 0, 1) : 1.0;
-    const psi_h = Math.max(1, Math.sqrt(1.5 * c1 / cc.h));
+    const psi_h = Math.max(1, Math.sqrt(1.5 * c1 / hLoc));
     const comp = axisX ? Math.abs(V.Vx) : Math.abs(V.Vy);
     const cosA = clamp(comp / V.Vres, 0, 1);
     const sinA = Math.sqrt(Math.max(0, 1 - cosA * cosA));
@@ -528,7 +530,7 @@ export function shearConcreteEdge(m, res, g) {
     const psi_ec = clamp(1 / (1 + 2 * eV / (3 * c1)), 0, 1);
     const VRk = V0 * (Ac / A0) * psi_s * psi_h * psi_a * psi_ec * psi_re;
     const VRd = VRk / g.gMc;
-    const cand = { dir: cd.dir, c1, c2, front, width, height, Ac, A0, alpha, beta, V0,
+    const cand = { dir: cd.dir, c1, c2, front, width, height, hLoc, Ac, A0, alpha, beta, V0,
                    psi_s, psi_h, psi_a, psi_ec, eV, VRk, VRd, util: V.Vres / VRd };
     if (!worst || cand.util > worst.util) worst = cand;
   }
@@ -543,7 +545,8 @@ export function shearConcreteEdge(m, res, g) {
   const c = new Calc('7.2.2.5');
   c.in('c_1', w.c1, 'mm', `Kantavstand til kant ${EDGE_LABEL[w.dir]}, forreste boltrad`);
   c.in('⌀_nom', dnom, 'mm', 'Bolter');
-  c.in('h', cc.h, 'mm', 'Betongdel · tykkelse');
+  c.in('h', w.hLoc, 'mm', w.hLoc === cc.h ? 'Betongdel · tykkelse'
+    : 'Betongdel · lokal tykkelse ved fremste boltrad (formene tatt med)');
   c.in('f_ck', cc.fck, 'N/mm²', `Betongdel · ${cc.grade}`);
   c.in('k_9', k9, '–', `Regelverk · ${cracked ? 'opprisset' : 'uopprisset'}`);
   c.in('γ_Mc', g.gMc, '–', '4.4.3.1');
@@ -566,9 +569,10 @@ export function shearConcreteEdge(m, res, g) {
   c.step({ sym: 'A⁰_c,V', desc: 'Referanseareal på kantflata for én bolt',
     formula: '4,5 · c_1²', subst: `4,5 · ${n(w.c1, 0)}²`, value: w.A0, unit: 'mm²' });
   c.step({ sym: 'A_c,V', desc: 'Faktisk bruddflate langs kanten',
-    formula: 'bredde · høyde,  bredde = union av 1,5·c_1 hver vei fra forreste bolter',
+    formula: 'bredde · høyde,  bredde = union av 1,5·c_1 hver vei fra forreste bolter, ' +
+             'klippet mot betongen slik den står',
     subst: `${n(w.width, 0)} · ${n(w.height, 0)}   ` +
-           `(høyde = min(1,5·c_1 ; h) = min(${n(1.5 * w.c1, 0)} ; ${n(cc.h, 0)}))`,
+           `(høyde = min(1,5·c_1 ; h) = min(${n(1.5 * w.c1, 0)} ; ${n(w.hLoc, 0)}))`,
     value: w.Ac, unit: 'mm²', ref: '(7.41)' });
   c.step({ sym: 'ψ_s,V', desc: 'Sidekant vinkelrett på lastretninga',
     formula: '0,7 + 0,3 · c_2 / (1,5·c_1) ≤ 1,0',
@@ -577,7 +581,7 @@ export function shearConcreteEdge(m, res, g) {
     value: w.psi_s, unit: '–' });
   c.step({ sym: 'ψ_h,V', desc: 'Tynn betongdel – bruddflata får ikke utvikle seg fritt',
     formula: '√(1,5·c_1 / h) ≥ 1,0',
-    subst: `√(${n(1.5 * w.c1, 0)} / ${n(cc.h, 0)})`, value: w.psi_h, unit: '–' });
+    subst: `√(${n(1.5 * w.c1, 0)} / ${n(w.hLoc, 0)})`, value: w.psi_h, unit: '–' });
   c.step({ sym: 'ψ_α,V', desc: 'Skjærkraft på skrå mot kanten',
     formula: '√(1 / (cos²α_V + (0,5·sin α_V)²)) ≥ 1,0',
     subst: `V mot kant ${EDGE_LABEL[w.dir]}`, value: w.psi_a, unit: '–' });

@@ -155,6 +155,22 @@ body { margin:0; height:100vh; overflow:hidden; background:var(--bg); color:var(
 .fld input[type=checkbox] { width:15px; height:15px; accent-color:var(--acc); }
 .hint { color:var(--tx3); font-size:11px; line-height:1.5; margin:14px 0 0; }
 
+/* --- former i betongen ------------------------------------------------- */
+.feat-add { display:flex; gap:5px; margin:14px 0 4px; flex-wrap:wrap; }
+.feat-add select { flex:1 1 120px; min-width:0;
+  font:11.5px var(--sans); color:var(--tx); background:var(--panel);
+  border:1px solid var(--line2); border-radius:5px; padding:5px 6px; }
+.feat-add select:hover { border-color:var(--acc); }
+.feat { border:1px solid var(--line); border-radius:7px; padding:4px 10px 10px;
+  margin:12px 0 0; background:var(--panel2); }
+.feat-head { display:flex; align-items:center; gap:8px; padding:6px 0 4px;
+  border-bottom:1px solid var(--line); margin-bottom:4px; }
+.feat-head .nm { font-size:11.5px; font-weight:500; color:var(--tx); }
+.feat-head .kind { font:10.5px var(--mono); color:var(--tx3); margin-left:auto; }
+.feat-head .btn { padding:3px 7px; font-size:10.5px; }
+/* Flatenavnet er langt - snittfeltene får en bredere kolonne enn de vanlige. */
+.feat .fld { grid-template-columns:1fr 122px; }
+
 /* === 3D ================================================================= */
 .stage-wrap { flex:1 1 auto; position:relative; min-height:0; }
 three-d-stage { position:absolute; inset:0; }
