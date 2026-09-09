@@ -2433,7 +2433,8 @@ function newReinforcement(id, purpose = 'tension', over = {}) {
     anchorIds: 'all',                 // 'all' eller liste med bolt-id-er
     placement: 'auto',                // 'auto' | 'manual'
     clearance: 10,                    // innvendig avstand til bolt, §4
-    cover: 30,                        // overdekning til bøylen
+    coverTop: 30,                     // overdekning fra overkant betong
+    coverBottom: 30,                  // overdekning fra underkant betong
     height: null,                     // bein-lengde; null = autogenerert
     width: null,                      // avstand mellom beina; null = autogenerert
     lapToExisting: { present: false, lapLength: 0 },   // §2/§7
@@ -2497,6 +2498,11 @@ function migrateReinforcements(m) {
     r.geometryType = GEOMETRY_ALIAS[r.geometryType] ?? r.geometryType;
     const allowed = GEOMETRY_FOR[r.purpose] || GEOMETRY_TYPES;
     if (!allowed.includes(r.geometryType)) r.geometryType = allowed[0];
+    // Overdekning var ett tall for begge sider - delt i overkant/underkant.
+    if (r.cover != null) {
+      r.coverTop ??= r.cover; r.coverBottom ??= r.cover;
+      delete r.cover;
+    }
   }
   return m;
 }
@@ -2726,7 +2732,8 @@ function edgeDirFor(m, pts) {
 //  supplementary-reinforcement.js leser disse; punktene tegnes av buildBars().
 // ---------------------------------------------------------------------------
 function barGeometry(m, r, anchor) {
-  const a = m.anchors, ds = r.ds, cover = r.cover ?? DEFAULT_COVER;
+  const a = m.anchors, ds = r.ds;
+  const coverTop = r.coverTop ?? DEFAULT_COVER, coverBottom = r.coverBottom ?? DEFAULT_COVER;
   const bent = r.geometryType !== 'straight';
   const mandrel = mandrelDiameter(ds) / 2;
   // Bøyeradien kan ikke være mindre enn mandrelen, så en tett bøyle rundt en
@@ -2739,12 +2746,12 @@ function barGeometry(m, r, anchor) {
   // Bøyen ligger i sin helhet inne i bruddlegemet og teller som forankring
   // der. Den deles på to bein, derfor halve buelengden pr. bein.
   const bendInside = bent ? Math.PI * rOff / 2 : 0;
-  const base = { rOff, mandrel, cover, ds, bent, lbd, bendInside };
+  const base = { rOff, mandrel, coverTop, coverBottom, ds, bent, lbd, bendInside };
 
   // --- pkt. 4: lukka ringer rundt bolten -----------------------------------
   if (r.purpose === 'generic') {
-    const dTop = cover + ds / 2;
-    const dAvail = Math.max(0, memberThickness(m, [anchor]) - cover);
+    const dTop = coverTop + ds / 2;
+    const dAvail = Math.max(0, memberThickness(m, [anchor]) - coverBottom);
     const rings = Math.max(1, Math.round(r.count / 2));
     const spacing = manualLeg ?? Math.max(3 * ds, 50);
     const dBot = dTop + (rings - 1) * spacing;
@@ -2755,6 +2762,8 @@ function barGeometry(m, r, anchor) {
   }
 
   // --- pkt. 3: liggende bøyle langs kanten ---------------------------------
+  // Bøylen ligger i ett vannrett nivå - underkant betong er ikke aktuell her,
+  // så bare coverTop (avstand ned fra overflata) brukes.
   if (r.purpose === 'shear') {
     const dir = edgeDirFor(m, anchorsServed(m, r));
     if (!dir) {
@@ -2766,18 +2775,18 @@ function barGeometry(m, r, anchor) {
     const c1 = ed[dir], cOpp = ed[AXIS[dir].opp];
     // s = avstand innover fra kanten. Bøyens krone står med overdekning fra
     // kanten, beina går innover forbi bolten (s = c_1) og videre l_bd.
-    const sCrown = cover;
+    const sCrown = coverTop;
     const sLegTop = sCrown + (bent ? rOff : 0);
     const sWanted = c1 + lbd;
-    const sMax = Number.isFinite(cOpp) ? c1 + cOpp - cover : Infinity;
+    const sMax = Number.isFinite(cOpp) ? c1 + cOpp - coverTop : Infinity;
     const sEnd = Math.min(manualLeg != null ? sLegTop + manualLeg : sWanted, sMax);
     return { ...base, kind: 'shear-u', edgeDir: dir, c1,
-             sCrown, sLegTop, sEnd, zLevel: -(cover + ds / 2),
+             sCrown, sLegTop, sEnd, zLevel: -(coverTop + ds / 2),
              legLen: Math.max(0, sEnd - sLegTop),
              insideLen: Math.max(0, Math.min(sEnd, c1) - sLegTop) + bendInside,
              outsideLen: Math.max(0, sEnd - Math.max(c1, sLegTop)),
              wanted: sWanted, available: sMax, fits: sWanted <= sMax + 1e-6,
-             stmH: Math.max(1, a.hef - (cover + ds / 2)) };
+             stmH: Math.max(1, a.hef - (coverTop + ds / 2)) };
   }
 
   // --- pkt. 2: bøylene ligger ved siden av boltene, ikke i samme snitt ----
@@ -2818,16 +2827,19 @@ function fitInside(m, pointAt, target, cover) {
 }
 
 function tensionLayout(m, r) {
-  const a = m.anchors, ds = r.ds, cover = r.cover ?? DEFAULT_COVER, hef = a.hef;
+  const a = m.anchors, ds = r.ds, hef = a.hef;
+  // Overkant styrer hvor den vannrette delen ligger (og dermed trykkstavens
+  // sprang), underkant hvor langt ned beina får lov å gå.
+  const coverTop = r.coverTop ?? DEFAULT_COVER, coverBottom = r.coverBottom ?? DEFAULT_COVER;
   const rm = mandrelDiameter(ds) / 2;
   const th = (r.direction || 0) / DEG;
   const u = { x: Math.cos(th), y: Math.sin(th) };
   const n = { x: -Math.sin(th), y: Math.cos(th) };
   const pts = anchorsServed(m, r);
 
-  const dCrown = cover + ds / 2;                  // vannrett del, under plata
-  const dLegTop = dCrown + rm;                    // der de rette beina starter
-  const dAvail = Math.max(0, memberThickness(m, pts) - cover);
+  const dCrown = coverTop + ds / 2;                // vannrett del, under plata
+  const dLegTop = dCrown + rm;                     // der de rette beina starter
+  const dAvail = Math.max(0, memberThickness(m, pts) - coverBottom);
   const { lbd } = anchorageLength(m.concrete.fck, ds, r.fyk / 1.15, true);
   const dWanted = hef + lbd;                      // forbi kjegla, pluss l_bd
   const dBot = Math.min(dWanted, dAvail);
@@ -2876,8 +2888,8 @@ function tensionLayout(m, r) {
     for (const d of offsets)
       for (const sgn of [1, -1]) {
         const v = row.v + sgn * d;
-        L = Math.min(L, fitInside(m, s => at(uMaxAll + s, v), L, cover),
-                        fitInside(m, s => at(uMinAll - s, v), L, cover));
+        L = Math.min(L, fitInside(m, s => at(uMaxAll + s, v), L, coverTop),
+                        fitInside(m, s => at(uMinAll - s, v), L, coverTop));
       }
 
   let alphaMin = Infinity, alphaMax = -Infinity;
@@ -2911,7 +2923,7 @@ function tensionLayout(m, r) {
     .reduce((a, b) => (!a || b.alpha < a.alpha ? b : a), null);
 
   return {
-    kind: 'tension-u', u, n, rows, rm, cover, ds, bent: true,
+    kind: 'tension-u', u, n, rows, rm, coverTop, coverBottom, ds, bent: true,
     dCrown, dLegTop, dBot, rise, lbd,
     legLen: Math.max(0, dBot - dLegTop),
     // Bein inne i kjegla + kvartbøyen i hjørnet, pr. bein.
@@ -3226,7 +3238,7 @@ function tensionSupplementary(m, res, r) {
     const NCorner = NEd / nLegs;                   // ett hjørne pr. bein
     const stm = endplateToLoopSTM(m, {
       NEd: NCorner, hStrut: bar.diag, wTie: bar.L,
-      bStrut: 2 * (r.cover ?? DEFAULT_COVER), dBolt: m.anchors.d,
+      bStrut: 2 * (r.coverTop ?? DEFAULT_COVER), dBolt: m.anchors.d,
       fck: m.concrete.fck, fcd, cracked: m.code.cracked,
     });
     const spanTxt = `Alle bøylene er like: ${n(L.barLength, 0)} mm vannrett, ` +
@@ -7220,46 +7232,53 @@ function reinforcementFields(m, i) {
       o: (GEOMETRY_FOR[r.purpose] || Object.keys(GEOMETRY_LABEL))
         .map(v => [v, GEOMETRY_LABEL[v]]) },
     { p: P('count'), l: tension ? 'Bøyler pr. boltrad' : 'Antall bein',
-      t: 'num', step: 2, min: 2, live: true,
+      t: 'num', step: 2, min: 2,
       hint: tension
         ? 'Fordeles symmetrisk om boltraden, minst én bøyle på hver side, alle ' +
           'innenfor 0,75·h_ef fra bolten.' : undefined },
     { p: P('ds'), l: 'Diameter ⌀', t: 'select', num: true,
       o: REINF_DIAMETERS.map(d => [d, `⌀${d}`]) },
-    { p: P('fyk'), l: 'f_yk', t: 'num', u: 'MPa', step: 50, live: true,
+    { p: P('fyk'), l: 'f_yk', t: 'num', u: 'MPa', step: 50,
       hint: 'Ribbet armeringsstål, f_yk ≤ 600 N/mm² – pkt. 7.2.2.6.' },
   ];
   if (tension)
-    out.push({ p: P('direction'), l: 'Retning', t: 'num', u: '°', step: 15, live: true,
+    out.push({ p: P('direction'), l: 'Retning', t: 'num', u: '°', step: 15,
       hint: 'Hvilken vei bøylene ligger, dreid om loddaksen. Boltene deles i ' +
             'rader på tvers av denne retninga, og hver rad spennes av sine ' +
             'egne bøyler.' });
   else
     out.push({ p: P('placement'), l: 'Plassering', t: 'select', o: [
       ['auto', 'Automatisk'], ['manual', 'Manuell']] });
-  out.push(
-    { p: P('clearance'), l: 'Innvendig avstand til bolt', t: 'num', u: 'mm', step: 5, live: true },
-    { p: P('cover'), l: 'Overdekning', t: 'num', u: 'mm', step: 5, live: true,
-      hint: tension
-        ? 'Fra betongoverflata ned til den vannrette delen av bøylen. Styrer ' +
-          'hvor langt bøylen må stikke ut forbi bolten for å få trykkstaven i 45°.'
-        : 'Avstand fra betongoverflata og fra kanten til bøylen.' });
+  out.push({ p: P('clearance'), l: 'Innvendig avstand til bolt', t: 'num', u: 'mm', step: 5 });
+  // Kjeglebrudd og bøylene rundt bolten har en reell underkant (beina går
+  // ned mot den); kantbruddbøylen ligger i ett vannrett nivå og har bare en
+  // overkant å forholde seg til.
+  const hasDepth = tension || r.purpose === 'generic';
+  out.push({ p: P('coverTop'), l: hasDepth ? 'Overdekning, overkant' : 'Overdekning',
+    t: 'num', u: 'mm', step: 5,
+    hint: tension
+      ? 'Fra betongoverflata ned til den vannrette delen av bøylen. Styrer ' +
+        'hvor langt bøylen må stikke ut forbi bolten for å få trykkstaven i 45°.'
+      : 'Avstand fra betongoverflata (og fra kanten for kantbruddbøyler) til bøylen.' });
+  if (hasDepth)
+    out.push({ p: P('coverBottom'), l: 'Overdekning, underkant', t: 'num', u: 'mm', step: 5,
+      hint: 'Hvor nær underkant betong beina får gå.' });
   if (!tension && r.placement === 'manual') {
     const G = groupGeometry(m, null, r);
     out.push(
-      { p: P('height'), l: 'Bein-lengde', t: 'num', u: 'mm', step: 10, live: true,
+      { p: P('height'), l: 'Bein-lengde', t: 'num', u: 'mm', step: 10,
         val: r.height ?? Math.round(G.geo?.legLen ?? 0),
         hint: r.purpose === 'shear'
           ? 'Hvor langt beina går innover fra bøyen.'
           : 'Hvor langt beina går nedover fra bøyen.' },
-      { p: P('width'), l: 'Avstand mellom beina', t: 'num', u: 'mm', step: 10, live: true,
+      { p: P('width'), l: 'Avstand mellom beina', t: 'num', u: 'mm', step: 10,
         val: r.width ?? Math.round(2 * (G.geo?.rOff ?? 0)) });
   }
   if (r.purpose === 'tension') {
     out.push(
       { p: P('lapToExisting.present'), l: 'Overlapp mot konstruksjonsarmering', t: 'bool' },
       { p: P('lapToExisting.lapLength'), l: 'Overlappslengde', t: 'num', u: 'mm', step: 10,
-        live: true, when: () => r.lapToExisting?.present });
+        when: () => r.lapToExisting?.present });
   }
   return out.filter(f => !f.when || f.when(m));
 }
@@ -8122,6 +8141,36 @@ function reinforcementSummary(v, r) {
   return { need, worst: worstAny, ok: need <= r.count && worstAny <= 1, replaced };
 }
 
+// Innholdet i statuskortet under skjemaet - bygges både når kortet lages og
+// hver gang tallene endrer seg (se updateReinforcementStatus). Selve
+// skjemafeltene røres ikke da: patcher du dem inn på nytt for hvert tastetrykk
+// mister feltet fokus midt i tallet du skriver.
+function reinforcementStatusHtml(v, r) {
+  const issues = requirementIssues(r);
+  const s = reinforcementSummary(v, r);
+  const okAll = s.ok && !issues.length;
+  let html = `<div class="assump reinf-sum">` +
+    `<div class="row"><span class="k">Nødvendig</span><span class="v">${s.need}×⌀${r.ds}</span></div>` +
+    `<div class="row"><span class="k">Valgt</span><span class="v">${r.count}×⌀${r.ds}</span></div>` +
+    `<div class="row"><span class="k">Status</span><span class="v" style="color:${
+      okAll ? 'var(--ok)' : 'var(--bad)'}">${okAll ? 'OK' : 'IKKE OK'}</span></div></div>`;
+  if (issues.length) html += `<p class="msg err">${esc(issues.join(' '))}</p>`;
+  if (s.replaced)
+    html += `<p class="hint">Erstatter ${r.purpose === 'tension' ? 'betongkjeglebrudd' : 'kantbrudd'} ` +
+      'som dimensjonerende bruddform for boltene denne gruppa betjener.</p>';
+  return html;
+}
+
+// Kalles fra refresh() på HVER endring (også de som ikke bygger skjemaet om).
+// Går rett i DOM-en, uavhengig av om «Tilleggsarmering»-fanen er åpen - da
+// finnes ingen elementer å treffe, og løkka er en no-op.
+function updateReinforcementStatus(v) {
+  for (const node of document.querySelectorAll('[data-reinf-status]')) {
+    const r = model.reinforcements.find(x => x.id === node.dataset.reinfStatus);
+    if (r) node.innerHTML = reinforcementStatusHtml(v, r);
+  }
+}
+
 function renderReinforcementGroups(host) {
   const addRow = el('div', 'feat-add');
   const add = el('button', 'btn', '+ Legg til tilleggsarmering');
@@ -8146,21 +8195,10 @@ function renderReinforcementGroups(host) {
 
     for (const f of reinforcementFields(model, i)) card.appendChild(field(f));
 
-    const issues = requirementIssues(r);
-    const s = reinforcementSummary(v, r);
-    const okAll = s.ok && !issues.length;
-    const sum = el('div', 'assump reinf-sum');
-    sum.innerHTML =
-      `<div class="row"><span class="k">Nødvendig</span><span class="v">${s.need}×⌀${r.ds}</span></div>` +
-      `<div class="row"><span class="k">Valgt</span><span class="v">${r.count}×⌀${r.ds}</span></div>` +
-      `<div class="row"><span class="k">Status</span><span class="v" style="color:${
-        okAll ? 'var(--ok)' : 'var(--bad)'}">${okAll ? 'OK' : 'IKKE OK'}</span></div>`;
-    card.appendChild(sum);
-    if (issues.length) card.appendChild(el('p', 'msg err', issues.join(' ')));
-    if (s.replaced)
-      card.appendChild(el('p', 'hint',
-        `Erstatter ${r.purpose === 'tension' ? 'betongkjeglebrudd' : 'kantbrudd'} som ` +
-        'dimensjonerende bruddform for boltene denne gruppa betjener.'));
+    const status = el('div');
+    status.dataset.reinfStatus = r.id;
+    status.innerHTML = reinforcementStatusHtml(v, r);
+    card.appendChild(status);
 
     host.appendChild(card);
   }
@@ -8236,10 +8274,7 @@ function field(f) {
       if (!Number.isFinite(v)) return;
       set(model, f.p, f.t === 'kn' ? v * 1000 : f.t === 'knm' ? v * 1e6 : v);
       if (f.auto) applyAutoSpacing(f.auto);
-      // `live`: skjemaet må bygges om for hver endring (uten sideeffekten
-      // f.auto har) - brukt for tilleggsarmering, der et sammendrag i samme
-      // panel (nødvendig vs. valgt) skal følge tallet mens du skriver.
-      refresh(!!f.auto || !!f.live);
+      refresh(!!f.auto);
     };
     // Felt som bygger om skjemaet må vente til du er ferdig å skrive, ellers
     // rives feltet vekk under fingrene på deg midt i et tall.
@@ -8775,6 +8810,7 @@ function refresh(rebuildForm, rebuildCombos) {
   const v = verify(model);
   window.__v = v;               // for feilsøking i konsollet
   window.__m = model;
+  updateReinforcementStatus(v);
   renderResults(v);
   renderSheet(v);
   paintComboUtils(utilForCombos());
