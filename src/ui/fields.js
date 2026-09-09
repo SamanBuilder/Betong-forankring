@@ -262,46 +262,53 @@ export function reinforcementFields(m, i) {
       o: (GEOMETRY_FOR[r.purpose] || Object.keys(GEOMETRY_LABEL))
         .map(v => [v, GEOMETRY_LABEL[v]]) },
     { p: P('count'), l: tension ? 'Bøyler pr. boltrad' : 'Antall bein',
-      t: 'num', step: 2, min: 2, live: true,
+      t: 'num', step: 2, min: 2,
       hint: tension
         ? 'Fordeles symmetrisk om boltraden, minst én bøyle på hver side, alle ' +
           'innenfor 0,75·h_ef fra bolten.' : undefined },
     { p: P('ds'), l: 'Diameter ⌀', t: 'select', num: true,
       o: REINF_DIAMETERS.map(d => [d, `⌀${d}`]) },
-    { p: P('fyk'), l: 'f_yk', t: 'num', u: 'MPa', step: 50, live: true,
+    { p: P('fyk'), l: 'f_yk', t: 'num', u: 'MPa', step: 50,
       hint: 'Ribbet armeringsstål, f_yk ≤ 600 N/mm² – pkt. 7.2.2.6.' },
   ];
   if (tension)
-    out.push({ p: P('direction'), l: 'Retning', t: 'num', u: '°', step: 15, live: true,
+    out.push({ p: P('direction'), l: 'Retning', t: 'num', u: '°', step: 15,
       hint: 'Hvilken vei bøylene ligger, dreid om loddaksen. Boltene deles i ' +
             'rader på tvers av denne retninga, og hver rad spennes av sine ' +
             'egne bøyler.' });
   else
     out.push({ p: P('placement'), l: 'Plassering', t: 'select', o: [
       ['auto', 'Automatisk'], ['manual', 'Manuell']] });
-  out.push(
-    { p: P('clearance'), l: 'Innvendig avstand til bolt', t: 'num', u: 'mm', step: 5, live: true },
-    { p: P('cover'), l: 'Overdekning', t: 'num', u: 'mm', step: 5, live: true,
-      hint: tension
-        ? 'Fra betongoverflata ned til den vannrette delen av bøylen. Styrer ' +
-          'hvor langt bøylen må stikke ut forbi bolten for å få trykkstaven i 45°.'
-        : 'Avstand fra betongoverflata og fra kanten til bøylen.' });
+  out.push({ p: P('clearance'), l: 'Innvendig avstand til bolt', t: 'num', u: 'mm', step: 5 });
+  // Kjeglebrudd og bøylene rundt bolten har en reell underkant (beina går
+  // ned mot den); kantbruddbøylen ligger i ett vannrett nivå og har bare en
+  // overkant å forholde seg til.
+  const hasDepth = tension || r.purpose === 'generic';
+  out.push({ p: P('coverTop'), l: hasDepth ? 'Overdekning, overkant' : 'Overdekning',
+    t: 'num', u: 'mm', step: 5,
+    hint: tension
+      ? 'Fra betongoverflata ned til den vannrette delen av bøylen. Styrer ' +
+        'hvor langt bøylen må stikke ut forbi bolten for å få trykkstaven i 45°.'
+      : 'Avstand fra betongoverflata (og fra kanten for kantbruddbøyler) til bøylen.' });
+  if (hasDepth)
+    out.push({ p: P('coverBottom'), l: 'Overdekning, underkant', t: 'num', u: 'mm', step: 5,
+      hint: 'Hvor nær underkant betong beina får gå.' });
   if (!tension && r.placement === 'manual') {
     const G = groupGeometry(m, null, r);
     out.push(
-      { p: P('height'), l: 'Bein-lengde', t: 'num', u: 'mm', step: 10, live: true,
+      { p: P('height'), l: 'Bein-lengde', t: 'num', u: 'mm', step: 10,
         val: r.height ?? Math.round(G.geo?.legLen ?? 0),
         hint: r.purpose === 'shear'
           ? 'Hvor langt beina går innover fra bøyen.'
           : 'Hvor langt beina går nedover fra bøyen.' },
-      { p: P('width'), l: 'Avstand mellom beina', t: 'num', u: 'mm', step: 10, live: true,
+      { p: P('width'), l: 'Avstand mellom beina', t: 'num', u: 'mm', step: 10,
         val: r.width ?? Math.round(2 * (G.geo?.rOff ?? 0)) });
   }
   if (r.purpose === 'tension') {
     out.push(
       { p: P('lapToExisting.present'), l: 'Overlapp mot konstruksjonsarmering', t: 'bool' },
       { p: P('lapToExisting.lapLength'), l: 'Overlappslengde', t: 'num', u: 'mm', step: 10,
-        live: true, when: () => r.lapToExisting?.present });
+        when: () => r.lapToExisting?.present });
   }
   return out.filter(f => !f.when || f.when(m));
 }

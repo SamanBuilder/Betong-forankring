@@ -118,7 +118,8 @@ export function edgeDirFor(m, pts) {
 //  supplementary-reinforcement.js leser disse; punktene tegnes av buildBars().
 // ---------------------------------------------------------------------------
 export function barGeometry(m, r, anchor) {
-  const a = m.anchors, ds = r.ds, cover = r.cover ?? DEFAULT_COVER;
+  const a = m.anchors, ds = r.ds;
+  const coverTop = r.coverTop ?? DEFAULT_COVER, coverBottom = r.coverBottom ?? DEFAULT_COVER;
   const bent = r.geometryType !== 'straight';
   const mandrel = mandrelDiameter(ds) / 2;
   // Bøyeradien kan ikke være mindre enn mandrelen, så en tett bøyle rundt en
@@ -131,12 +132,12 @@ export function barGeometry(m, r, anchor) {
   // Bøyen ligger i sin helhet inne i bruddlegemet og teller som forankring
   // der. Den deles på to bein, derfor halve buelengden pr. bein.
   const bendInside = bent ? Math.PI * rOff / 2 : 0;
-  const base = { rOff, mandrel, cover, ds, bent, lbd, bendInside };
+  const base = { rOff, mandrel, coverTop, coverBottom, ds, bent, lbd, bendInside };
 
   // --- pkt. 4: lukka ringer rundt bolten -----------------------------------
   if (r.purpose === 'generic') {
-    const dTop = cover + ds / 2;
-    const dAvail = Math.max(0, memberThickness(m, [anchor]) - cover);
+    const dTop = coverTop + ds / 2;
+    const dAvail = Math.max(0, memberThickness(m, [anchor]) - coverBottom);
     const rings = Math.max(1, Math.round(r.count / 2));
     const spacing = manualLeg ?? Math.max(3 * ds, 50);
     const dBot = dTop + (rings - 1) * spacing;
@@ -147,6 +148,8 @@ export function barGeometry(m, r, anchor) {
   }
 
   // --- pkt. 3: liggende bøyle langs kanten ---------------------------------
+  // Bøylen ligger i ett vannrett nivå - underkant betong er ikke aktuell her,
+  // så bare coverTop (avstand ned fra overflata) brukes.
   if (r.purpose === 'shear') {
     const dir = edgeDirFor(m, anchorsServed(m, r));
     if (!dir) {
@@ -158,18 +161,18 @@ export function barGeometry(m, r, anchor) {
     const c1 = ed[dir], cOpp = ed[AXIS[dir].opp];
     // s = avstand innover fra kanten. Bøyens krone står med overdekning fra
     // kanten, beina går innover forbi bolten (s = c_1) og videre l_bd.
-    const sCrown = cover;
+    const sCrown = coverTop;
     const sLegTop = sCrown + (bent ? rOff : 0);
     const sWanted = c1 + lbd;
-    const sMax = Number.isFinite(cOpp) ? c1 + cOpp - cover : Infinity;
+    const sMax = Number.isFinite(cOpp) ? c1 + cOpp - coverTop : Infinity;
     const sEnd = Math.min(manualLeg != null ? sLegTop + manualLeg : sWanted, sMax);
     return { ...base, kind: 'shear-u', edgeDir: dir, c1,
-             sCrown, sLegTop, sEnd, zLevel: -(cover + ds / 2),
+             sCrown, sLegTop, sEnd, zLevel: -(coverTop + ds / 2),
              legLen: Math.max(0, sEnd - sLegTop),
              insideLen: Math.max(0, Math.min(sEnd, c1) - sLegTop) + bendInside,
              outsideLen: Math.max(0, sEnd - Math.max(c1, sLegTop)),
              wanted: sWanted, available: sMax, fits: sWanted <= sMax + 1e-6,
-             stmH: Math.max(1, a.hef - (cover + ds / 2)) };
+             stmH: Math.max(1, a.hef - (coverTop + ds / 2)) };
   }
 
   // --- pkt. 2: bøylene ligger ved siden av boltene, ikke i samme snitt ----
@@ -210,16 +213,19 @@ function fitInside(m, pointAt, target, cover) {
 }
 
 export function tensionLayout(m, r) {
-  const a = m.anchors, ds = r.ds, cover = r.cover ?? DEFAULT_COVER, hef = a.hef;
+  const a = m.anchors, ds = r.ds, hef = a.hef;
+  // Overkant styrer hvor den vannrette delen ligger (og dermed trykkstavens
+  // sprang), underkant hvor langt ned beina får lov å gå.
+  const coverTop = r.coverTop ?? DEFAULT_COVER, coverBottom = r.coverBottom ?? DEFAULT_COVER;
   const rm = mandrelDiameter(ds) / 2;
   const th = (r.direction || 0) / DEG;
   const u = { x: Math.cos(th), y: Math.sin(th) };
   const n = { x: -Math.sin(th), y: Math.cos(th) };
   const pts = anchorsServed(m, r);
 
-  const dCrown = cover + ds / 2;                  // vannrett del, under plata
-  const dLegTop = dCrown + rm;                    // der de rette beina starter
-  const dAvail = Math.max(0, memberThickness(m, pts) - cover);
+  const dCrown = coverTop + ds / 2;                // vannrett del, under plata
+  const dLegTop = dCrown + rm;                     // der de rette beina starter
+  const dAvail = Math.max(0, memberThickness(m, pts) - coverBottom);
   const { lbd } = anchorageLength(m.concrete.fck, ds, r.fyk / 1.15, true);
   const dWanted = hef + lbd;                      // forbi kjegla, pluss l_bd
   const dBot = Math.min(dWanted, dAvail);
@@ -268,8 +274,8 @@ export function tensionLayout(m, r) {
     for (const d of offsets)
       for (const sgn of [1, -1]) {
         const v = row.v + sgn * d;
-        L = Math.min(L, fitInside(m, s => at(uMaxAll + s, v), L, cover),
-                        fitInside(m, s => at(uMinAll - s, v), L, cover));
+        L = Math.min(L, fitInside(m, s => at(uMaxAll + s, v), L, coverTop),
+                        fitInside(m, s => at(uMinAll - s, v), L, coverTop));
       }
 
   let alphaMin = Infinity, alphaMax = -Infinity;
@@ -303,7 +309,7 @@ export function tensionLayout(m, r) {
     .reduce((a, b) => (!a || b.alpha < a.alpha ? b : a), null);
 
   return {
-    kind: 'tension-u', u, n, rows, rm, cover, ds, bent: true,
+    kind: 'tension-u', u, n, rows, rm, coverTop, coverBottom, ds, bent: true,
     dCrown, dLegTop, dBot, rise, lbd,
     legLen: Math.max(0, dBot - dLegTop),
     // Bein inne i kjegla + kvartbøyen i hjørnet, pr. bein.

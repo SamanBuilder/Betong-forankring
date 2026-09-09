@@ -213,6 +213,36 @@ function reinforcementSummary(v, r) {
   return { need, worst: worstAny, ok: need <= r.count && worstAny <= 1, replaced };
 }
 
+// Innholdet i statuskortet under skjemaet - bygges både når kortet lages og
+// hver gang tallene endrer seg (se updateReinforcementStatus). Selve
+// skjemafeltene røres ikke da: patcher du dem inn på nytt for hvert tastetrykk
+// mister feltet fokus midt i tallet du skriver.
+function reinforcementStatusHtml(v, r) {
+  const issues = requirementIssues(r);
+  const s = reinforcementSummary(v, r);
+  const okAll = s.ok && !issues.length;
+  let html = `<div class="assump reinf-sum">` +
+    `<div class="row"><span class="k">Nødvendig</span><span class="v">${s.need}×⌀${r.ds}</span></div>` +
+    `<div class="row"><span class="k">Valgt</span><span class="v">${r.count}×⌀${r.ds}</span></div>` +
+    `<div class="row"><span class="k">Status</span><span class="v" style="color:${
+      okAll ? 'var(--ok)' : 'var(--bad)'}">${okAll ? 'OK' : 'IKKE OK'}</span></div></div>`;
+  if (issues.length) html += `<p class="msg err">${esc(issues.join(' '))}</p>`;
+  if (s.replaced)
+    html += `<p class="hint">Erstatter ${r.purpose === 'tension' ? 'betongkjeglebrudd' : 'kantbrudd'} ` +
+      'som dimensjonerende bruddform for boltene denne gruppa betjener.</p>';
+  return html;
+}
+
+// Kalles fra refresh() på HVER endring (også de som ikke bygger skjemaet om).
+// Går rett i DOM-en, uavhengig av om «Tilleggsarmering»-fanen er åpen - da
+// finnes ingen elementer å treffe, og løkka er en no-op.
+function updateReinforcementStatus(v) {
+  for (const node of document.querySelectorAll('[data-reinf-status]')) {
+    const r = model.reinforcements.find(x => x.id === node.dataset.reinfStatus);
+    if (r) node.innerHTML = reinforcementStatusHtml(v, r);
+  }
+}
+
 function renderReinforcementGroups(host) {
   const addRow = el('div', 'feat-add');
   const add = el('button', 'btn', '+ Legg til tilleggsarmering');
@@ -237,21 +267,10 @@ function renderReinforcementGroups(host) {
 
     for (const f of reinforcementFields(model, i)) card.appendChild(field(f));
 
-    const issues = requirementIssues(r);
-    const s = reinforcementSummary(v, r);
-    const okAll = s.ok && !issues.length;
-    const sum = el('div', 'assump reinf-sum');
-    sum.innerHTML =
-      `<div class="row"><span class="k">Nødvendig</span><span class="v">${s.need}×⌀${r.ds}</span></div>` +
-      `<div class="row"><span class="k">Valgt</span><span class="v">${r.count}×⌀${r.ds}</span></div>` +
-      `<div class="row"><span class="k">Status</span><span class="v" style="color:${
-        okAll ? 'var(--ok)' : 'var(--bad)'}">${okAll ? 'OK' : 'IKKE OK'}</span></div>`;
-    card.appendChild(sum);
-    if (issues.length) card.appendChild(el('p', 'msg err', issues.join(' ')));
-    if (s.replaced)
-      card.appendChild(el('p', 'hint',
-        `Erstatter ${r.purpose === 'tension' ? 'betongkjeglebrudd' : 'kantbrudd'} som ` +
-        'dimensjonerende bruddform for boltene denne gruppa betjener.'));
+    const status = el('div');
+    status.dataset.reinfStatus = r.id;
+    status.innerHTML = reinforcementStatusHtml(v, r);
+    card.appendChild(status);
 
     host.appendChild(card);
   }
@@ -327,10 +346,7 @@ function field(f) {
       if (!Number.isFinite(v)) return;
       set(model, f.p, f.t === 'kn' ? v * 1000 : f.t === 'knm' ? v * 1e6 : v);
       if (f.auto) applyAutoSpacing(f.auto);
-      // `live`: skjemaet må bygges om for hver endring (uten sideeffekten
-      // f.auto har) - brukt for tilleggsarmering, der et sammendrag i samme
-      // panel (nødvendig vs. valgt) skal følge tallet mens du skriver.
-      refresh(!!f.auto || !!f.live);
+      refresh(!!f.auto);
     };
     // Felt som bygger om skjemaet må vente til du er ferdig å skrive, ellers
     // rives feltet vekk under fingrene på deg midt i et tall.
@@ -866,6 +882,7 @@ function refresh(rebuildForm, rebuildCombos) {
   const v = verify(model);
   window.__v = v;               // for feilsøking i konsollet
   window.__m = model;
+  updateReinforcementStatus(v);
   renderResults(v);
   renderSheet(v);
   paintComboUtils(utilForCombos());

@@ -16,7 +16,8 @@
 
 import { defaultModel, syncPlan, syncLoad } from '../src/core/model.js';
 import { newReinforcement, minAnchorageFactor, mandrelDiameter,
-         requirementIssues, bruddformFor, GEOMETRY_FOR } from '../src/core/reinforcement.js';
+         requirementIssues, bruddformFor, GEOMETRY_FOR,
+         migrateReinforcements } from '../src/core/reinforcement.js';
 import { fbd, anchorageLength, minInsideLength, effectiveCount,
          buildBars, tensionLayout } from '../src/engine/reinforcement-geometry.js';
 import { strutCapacity, nodeCapacity, nuPrime } from '../src/engine/stm.js';
@@ -144,7 +145,8 @@ console.log('\nForm: kjeglebrudd står loddrett under plata, kantbrudd ligger la
   syncPlan(m);
   const cover = 30;
 
-  const rt = newReinforcement('r1', 'tension', { count: 2, ds: 12, cover });
+  const rt = newReinforcement('r1', 'tension',
+    { count: 2, ds: 12, coverTop: cover, coverBottom: cover });
   const barT = buildBars(m, rt)[0];
   const gt = barT.geo;
   const bt = barT.paths[0].points;
@@ -156,7 +158,7 @@ console.log('\nForm: kjeglebrudd står loddrett under plata, kantbrudd ligger la
   ok('strekk: bøyen ligger i et loddrett plan (beina på hver side av bolten)',
     Math.abs(gt.rOff - (rt.clearance + m.anchors.d / 2 + rt.ds / 2)) < 1e-6);
 
-  const rs = newReinforcement('r2', 'shear', { count: 2, ds: 12, cover });
+  const rs = newReinforcement('r2', 'shear', { count: 2, ds: 12, coverTop: cover });
   const barS = buildBars(m, rs)[0];
   const gs = barS.geo;
   const bs = barS.paths[0].points;
@@ -176,6 +178,39 @@ console.log('\nForm: kjeglebrudd står loddrett under plata, kantbrudd ligger la
     ok('skjær: beina går innover forbi bolten', Math.max(...s) > gs.c1,
       `s_maks = ${Math.max(...s).toFixed(0)} mot c_1 = ${gs.c1.toFixed(0)}`);
   }
+}
+
+console.log('\nOverdekning: overkant og underkant er to forskjellige tall');
+{
+  const m = defaultModel();
+  m.concrete.h = 450; m.anchors.hef = 100;
+  syncLoad(m);
+  syncPlan(m);
+
+  // Kjeglebrudd: overkant styrer kronens nivå, underkant hvor langt ned
+  // beina får gå (uavhengig av hverandre).
+  const r = newReinforcement('r1', 'tension',
+    { count: 2, ds: 12, coverTop: 25, coverBottom: 80 });
+  const L = tensionLayout(m, r);
+  near('overkant styrer kronens nivå', L.dCrown, 25 + r.ds / 2, 1e-6);
+  near('underkant styrer hvor dypt beina kan gå', L.available, m.concrete.h - 80, 1e-6);
+
+  const rSame = newReinforcement('r2', 'tension', { count: 2, ds: 12, coverTop: 25, coverBottom: 25 });
+  const rDiff = newReinforcement('r3', 'tension', { count: 2, ds: 12, coverTop: 25, coverBottom: 200 });
+  ok('kronens nivå upåvirket av underkant alene',
+    tensionLayout(m, rSame).dCrown === tensionLayout(m, rDiff).dCrown);
+  ok('endret underkant endrer tilgjengelig dybde',
+    tensionLayout(m, rSame).available !== tensionLayout(m, rDiff).available);
+
+  // Gammel, flat `cover` skal migreres til begge - ikke tapes eller telle dobbelt.
+  const legacy = { id: 'r4', purpose: 'tension', geometryType: 'ubar', ds: 12, count: 2,
+    fyk: 500, anchorIds: 'all', placement: 'auto', clearance: 10, cover: 42,
+    height: null, width: null, lapToExisting: { present: false, lapLength: 0 } };
+  const mLegacy = { reinforcements: [legacy] };
+  migrateReinforcements(mLegacy);
+  ok('migrering: gammel cover -> coverTop og coverBottom',
+    mLegacy.reinforcements[0].coverTop === 42 && mLegacy.reinforcements[0].coverBottom === 42 &&
+    mLegacy.reinforcements[0].cover === undefined);
 }
 
 console.log('\nUtforming: U-bøyle, lukket bøyle og rett stang gir hver sin form');

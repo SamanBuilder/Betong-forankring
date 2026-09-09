@@ -155,7 +155,7 @@ export function tensionSupplementary(m, res, r) {
     const NCorner = NEd / nLegs;                   // ett hjørne pr. bein
     const stm = endplateToLoopSTM(m, {
       NEd: NCorner, hStrut: bar.diag, wTie: bar.L,
-      bStrut: 2 * (r.cover ?? DEFAULT_COVER), dBolt: m.anchors.d,
+      bStrut: 2 * (r.coverTop ?? DEFAULT_COVER), dBolt: m.anchors.d,
       fck: m.concrete.fck, fcd, cracked: m.code.cracked,
     });
     const spanTxt = `Alle bøylene er like: ${n(L.barLength, 0)} mm vannrett, ` +

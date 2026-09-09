@@ -77,7 +77,8 @@ export function newReinforcement(id, purpose = 'tension', over = {}) {
     anchorIds: 'all',                 // 'all' eller liste med bolt-id-er
     placement: 'auto',                // 'auto' | 'manual'
     clearance: 10,                    // innvendig avstand til bolt, §4
-    cover: 30,                        // overdekning til bøylen
+    coverTop: 30,                     // overdekning fra overkant betong
+    coverBottom: 30,                  // overdekning fra underkant betong
     height: null,                     // bein-lengde; null = autogenerert
     width: null,                      // avstand mellom beina; null = autogenerert
     lapToExisting: { present: false, lapLength: 0 },   // §2/§7
@@ -141,6 +142,11 @@ export function migrateReinforcements(m) {
     r.geometryType = GEOMETRY_ALIAS[r.geometryType] ?? r.geometryType;
     const allowed = GEOMETRY_FOR[r.purpose] || GEOMETRY_TYPES;
     if (!allowed.includes(r.geometryType)) r.geometryType = allowed[0];
+    // Overdekning var ett tall for begge sider - delt i overkant/underkant.
+    if (r.cover != null) {
+      r.coverTop ??= r.cover; r.coverBottom ??= r.cover;
+      delete r.cover;
+    }
   }
   return m;
 }
