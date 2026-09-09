@@ -192,12 +192,13 @@ export function validate(m) {
     if (G.geo && G.geo.kind === 'shear-u' && !G.geo.edgeDir)
       warn(`${tag}: ingen fri kant å legge kantbruddarmeringa langs.`);
     else if (G.geo && !G.geo.fits)
-      warn(`${tag}: trenger ${Math.round(G.geo.wanted)} mm ` +
-           (G.geo.kind === 'shear-u'
-             ? `innover fra kanten, men det er bare ${Math.round(G.geo.available)} mm ` +
-               'til motsatt kant (minus overdekning).'
-             : `dybde (h_ef + l_bd), men det er bare ${Math.round(G.geo.available)} mm ` +
-               '(betongtykkelse − overdekning).'));
+      warn(`${tag}: ` + (G.geo.kind === 'shear-u'
+        ? `trenger ${Math.round(G.geo.wanted)} mm innover fra kanten, men det er ` +
+          `bare ${Math.round(G.geo.available)} mm til motsatt kant (minus overdekning).`
+        : `forankringa utenfor kjegla er ${Math.round(G.geo.anchorageAvail)} mm mot ` +
+          `l_bd = ${Math.round(G.geo.lbd)} mm.` +
+          (G.geo.endBend ? '' : ' Prøv en bøy ut i enden av beina, som gir bøyen og ' +
+           'foten som forankring i tillegg.')));
     if (G.geo && G.insideLen < G.insideMin)
       warn(`${tag}: lengde inne i bruddlegemet ${Math.round(G.insideLen)} mm er kortere enn ` +
            `kravet ${Math.round(G.insideMin)} mm.`);

@@ -278,6 +278,31 @@ export function tensionLayout(m, r) {
                         fitInside(m, s => at(uMinAll - s, v), L, coverTop));
       }
 
+  // Bøy i enden av beina, ut fra gruppa (bare på åpen U-bøyle - den lukka har
+  // ingen frie ender). Bøyen med foten teller som forankring, og flytter
+  // samtidig punktet den nye kjegla regnes fra utover. Det er dette som
+  // redder en tynn plate: uten den må hele l_bd tas som rett bein nedover.
+  const endBend = !!r.endBend && r.geometryType === 'ubar';
+  const bendArc = Math.PI * rm / 2;                // kvartbøy
+  const legBottom = endBend ? Math.max(dLegTop, dBot - rm) : dBot;
+  const straightOutside = Math.max(0, legBottom - Math.max(hef, dLegTop));
+  let footLen = 0;
+  if (endBend) {
+    const need = r.endBendLength > 0
+      ? r.endBendLength
+      : Math.max(0, lbd - straightOutside - bendArc);
+    footLen = need;
+    for (const row of rows)
+      for (const d of offsets)
+        for (const sgn of [1, -1]) {
+          const v = row.v + sgn * d;
+          footLen = Math.min(footLen,
+            fitInside(m, s => at(uMaxAll + L + rm + s, v), need, coverTop),
+            fitInside(m, s => at(uMinAll - L - rm - s, v), need, coverTop));
+        }
+  }
+  const anchorageAvail = straightOutside + (endBend ? bendArc + footLen : 0);
+
   let alphaMin = Infinity, alphaMax = -Infinity;
   for (const row of rows) {
     row.bars = [];
@@ -293,10 +318,17 @@ export function tensionLayout(m, r) {
                                  Math.atan2(diag, Math.max(overEnd, 1e-6))) * DEG;
       alphaMin = Math.min(alphaMin, alpha);
       alphaMax = Math.max(alphaMax, alphaHigh);
-      for (const sgn of [1, -1])
-        row.bars.push({ d, v: row.v + sgn * d, sgn, L, alpha, diag,
-                        uStart: uMinAll - L, uEnd: uMaxAll + L,
+      const uStart = uMinAll - L, uEnd = uMaxAll + L;
+      // Punktene den nye kjegla regnes fra: enden av foten, ellers bunnen av
+      // beinet.
+      const reach = endBend ? rm + footLen : 0;
+      for (const sgn of [1, -1]) {
+        const v = row.v + sgn * d;
+        row.bars.push({ d, v, sgn, L, alpha, diag, uStart, uEnd,
+                        endBend, footLen, legBottom,
+                        endPoints: [at(uStart - reach, v), at(uEnd + reach, v)],
                         effective: d <= dMax + 1e-6 });
+      }
     }
   }
 
@@ -310,12 +342,14 @@ export function tensionLayout(m, r) {
 
   return {
     kind: 'tension-u', u, n, rows, rm, coverTop, coverBottom, ds, bent: true,
-    dCrown, dLegTop, dBot, rise, lbd,
-    legLen: Math.max(0, dBot - dLegTop),
+    dCrown, dLegTop, dBot, rise, lbd, endBend, footLen, legBottom, bendArc,
+    legLen: Math.max(0, legBottom - dLegTop),
     // Bein inne i kjegla + kvartbøyen i hjørnet, pr. bein.
-    insideLen: Math.max(0, Math.min(dBot, hef) - dLegTop) + Math.PI * rm / 2,
-    outsideLen: Math.max(0, dBot - Math.max(hef, dLegTop)),
-    wanted: dWanted, available: dAvail, fits: dWanted <= dAvail + 1e-6,
+    insideLen: Math.max(0, Math.min(legBottom, hef) - dLegTop) + bendArc,
+    outsideLen: straightOutside, anchorageAvail,
+    // Forankringa er nok når den rette biten under kjegla, pluss bøyen og
+    // foten, til sammen når l_bd.
+    wanted: dWanted, available: dAvail, fits: anchorageAvail + 1e-6 >= lbd,
     dMin, dMax, zoneOk, nSide, barsPerRow: 2 * nSide, effPerRow,
     effLegsPerRow: 2 * effPerRow, alphaMin, alphaMax, angleOk, windowOk,
     barLength: (uMaxAll - uMinAll) + 2 * L, overhang: L, govBar,
@@ -382,6 +416,21 @@ function tensionBarPath(layout, bar, geometryType) {
     arcTo(pts, P, uB, zLo, rm, 0, -Math.PI / 2, seg);                // bunn høyre
     arcTo(pts, P, uA, zLo, rm, -Math.PI / 2, -Math.PI, seg);         // bunn venstre
     return [{ points: pts, closed: true }];
+  }
+
+  // Med bøy i enden svinger beinet 90° UT fra gruppa nederst, og fortsetter i
+  // en vannrett fot. Bøyens senter ligger en mandrelradius inn og opp fra
+  // bunnpunktet, så foten havner i kote -dBot.
+  if (bar.endBend) {
+    const zLeg = -layout.legBottom;                  // der beinet møter endebøyen
+    const f = bar.footLen;
+    pts.push(P(bar.uStart - rm - f, zLeg - rm));     // fotenden, venstre
+    arcTo(pts, P, bar.uStart - rm, zLeg, rm, -Math.PI / 2, 0, seg);
+    arcTo(pts, P, uA, zTan, rm, Math.PI, Math.PI / 2, seg);
+    arcTo(pts, P, uB, zTan, rm, Math.PI / 2, 0, seg);
+    arcTo(pts, P, bar.uEnd + rm, zLeg, rm, Math.PI, -Math.PI / 2 + 2 * Math.PI, seg);
+    pts.push(P(bar.uEnd + rm + f, zLeg - rm));       // fotenden, høyre
+    return [{ points: pts, closed: false }];
   }
 
   pts.push(P(bar.uStart, zBot));

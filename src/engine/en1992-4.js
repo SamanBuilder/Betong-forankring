@@ -641,7 +641,7 @@ export function interaction(checks) {
   // for en fast liste.
   const tension = ['N-cone', 'N-pullout', 'N-blowout', 'N-split', 'N-conc', 'N-foot'];
   const shear = ['V-pryout', 'V-edge', 'V-conc'];
-  const isSreTension = id => /^N-sre-(steel|anchorage)-/.test(id);
+  const isSreTension = id => /^N-sre-(steel|anchorage|cone)-/.test(id);
   const isSreShear = id => /^V-sre-(steel|anchorage)-/.test(id);
   const tw = checks.filter(c => tension.includes(c.id) || isSreTension(c.id))
     .reduce((a, b) => ((b.util || 0) > (a?.util || 0) ? b : a), null);

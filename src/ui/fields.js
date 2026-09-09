@@ -293,6 +293,20 @@ export function reinforcementFields(m, i) {
   if (hasDepth)
     out.push({ p: P('coverBottom'), l: 'Overdekning, underkant', t: 'num', u: 'mm', step: 5,
       hint: 'Hvor nær underkant betong beina får gå.' });
+  // Endebøy finnes bare på den åpne U-bøylen - den lukka har ingen frie ender.
+  if (tension && r.geometryType === 'ubar') {
+    out.push({ p: P('endBend'), l: 'Bøy ut i enden av beina', t: 'bool',
+      hint: 'Beina bøyes 90° utover nederst og fortsetter i en vannrett fot. ' +
+            'Bøyen og foten teller som forankring – nyttig i tynne plater der ' +
+            'det ikke er dybde nok til l_bd – og flytter samtidig punktet ' +
+            'kjegla fra armeringsenden regnes fra utover, så den kjegla blir større.' });
+    if (r.endBend) {
+      const G = groupGeometry(m, null, r);
+      out.push({ p: P('endBendLength'), l: 'Fotlengde', t: 'num', u: 'mm', step: 10,
+        val: r.endBendLength ?? Math.round(G.geo?.footLen ?? 0),
+        hint: '0 / tomt = så lang som forankringa krever, begrenset av betongen.' });
+    }
+  }
   if (!tension && r.placement === 'manual') {
     const G = groupGeometry(m, null, r);
     out.push(

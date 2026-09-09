@@ -18,6 +18,9 @@
 //  trykt utgave av tillegg C før bruk i prosjektering.
 // ---------------------------------------------------------------------------
 import { Calc, n } from './calc.js';
+import { edgeDistances } from '../core/model.js';
+import { clamp, clippedSquares } from './geometry.js';
+import { K, partialFactors } from './en1992-4.js';
 import { requirementIssues, minAnchorageFactor } from '../core/reinforcement.js';
 import { fbd, anchorageLength, minInsideLength, barGeometry, anchorsServed,
          effectiveCount, minEdgeForAnchors, tensionLayout,
@@ -62,6 +65,83 @@ export function groupGeometry(m, res, r) {
     && effCount > 0;
   return { pts, hef, c1, zoneRef: c1, geo, effCount, insideLen, insideMin,
            reqIssues, qualifies };
+}
+
+// ---------------------------------------------------------------------------
+//  Kjeglebrudd regnet PÅ NYTT fra enden av armeringen.
+//
+//  Tilleggsarmeringa flytter lasta ned og ut i betongen, men den forsvinner
+//  ikke: legger du armering for å ta kjeglebruddet fra endeplata, må kjegla
+//  også kontrolleres fra det punktet armeringa leverer lasta - enden av
+//  beina. Den kjegla er mye større, fordi den starter dypere og på flere
+//  punkter, og med en bøy ut i enden flyttes punktene enda lenger ut.
+//
+//  Regnes med de samme konstantene som den vanlige kjeglekontrollen
+//  (en1992-4.js pkt. 7.2.1.4), bare med h_ef og punkter fra armeringa.
+// ---------------------------------------------------------------------------
+function reinforcementCone(m, res, r, L) {
+  const g = partialFactors(m);
+  const cracked = m.code.cracked;
+  const hef = L.dBot;                          // dybden armeringa leverer i
+  const ccr = 1.5 * hef, scr = 3 * hef;
+  const pts = L.rows.flatMap(row => row.bars.flatMap(b => b.endPoints));
+  const NEd = res.tension.Ntot;                // hele gruppa henger i denne kjegla
+
+  const c = new Calc('7.2.1.2');
+  c.in('h_ef,re', hef, 'mm', 'Dybde til enden av tilleggsarmeringa');
+  c.in('f_ck', m.concrete.fck, 'N/mm²', `Betongdel · ${m.concrete.grade}`);
+  const k1 = c.in('k_1', cracked ? K.k1_cracked : K.k1_uncracked, '–',
+    `Regelverk · ${cracked ? 'opprisset' : 'uopprisset'}`);
+  const gM = c.in('γ_Mc', g.gMc, '–', 'γ_c · γ_inst – 4.4.3.1');
+  c.in('n_punkt', pts.length, 'stk',
+    L.endBend ? 'Endene av føttene på bøylene' : 'Bunnen av bøylebeina');
+  c.in('N_Ed,g', NEd, 'N', 'Sum strekk i boltegruppa');
+
+  const N0 = c.step({ sym: 'N⁰_Rk,c', desc: 'Kjeglekapasitet for ett punkt, uten kant- eller gruppevirkning',
+    formula: 'k_1 · √f_ck · h_ef,re^1,5',
+    subst: `${n(k1)} · √${n(m.concrete.fck, 0)} · ${n(hef, 0)}^1,5`,
+    value: k1 * Math.sqrt(m.concrete.fck) * Math.pow(hef, 1.5), unit: 'N', ref: '(7.2)' });
+  const A0 = c.step({ sym: 'A⁰_c,N', desc: 'Referanseareal for ett punkt',
+    formula: 's_cr,N² = (3·h_ef,re)²', subst: `${n(scr, 0)}²`, value: scr * scr, unit: 'mm²' });
+  const Ac = c.step({ sym: 'A_c,N', desc: 'Faktisk utbruddsareal fra armeringsendene',
+    formula: 'union av (endepunkt ± 1,5·h_ef,re), klippet mot frie kanter',
+    subst: `${pts.length} punkt, c_cr,N = ${n(ccr, 0)} mm` +
+           (L.endBend ? `, flyttet ${n(L.rm + L.footLen, 0)} mm ut av endebøyen` : ''),
+    value: clippedSquares(m, pts, ccr), unit: 'mm²', ref: '(7.3)' });
+
+  let cmin = Infinity;
+  for (const p of pts) {
+    const e = edgeDistances(m, p.x, p.y);
+    cmin = Math.min(cmin, e.xNeg, e.xPos, e.yNeg, e.yPos);
+  }
+  const psi_s = c.step({ sym: 'ψ_s,N', desc: 'Kanteffekt',
+    formula: '0,7 + 0,3 · c / c_cr,N ≤ 1,0',
+    subst: Number.isFinite(cmin) ? `0,7 + 0,3 · ${n(cmin, 0)} / ${n(ccr, 0)}`
+      : 'ingen fri kant innenfor c_cr,N',
+    value: Number.isFinite(cmin) ? clamp(0.7 + 0.3 * cmin / ccr, 0, 1) : 1.0, unit: '–' });
+  const psi_re = c.step({ sym: 'ψ_re,N', desc: 'Tett armering gir finere oppsprekking',
+    formula: m.code.denseReinf ? '0,5 + h_ef,re / 200 ≤ 1,0' : '1,0 (ikke tett armering)',
+    subst: m.code.denseReinf ? `0,5 + ${n(hef, 0)} / 200` : '–',
+    value: m.code.denseReinf ? clamp(0.5 + hef / 200, 0, 1) : 1.0, unit: '–' });
+
+  const NRk = c.res({ sym: 'N_Rk,c,re',
+    formula: 'N⁰_Rk,c · (A_c,N / A⁰_c,N) · ψ_s,N · ψ_re,N',
+    subst: `${n(N0)} · (${n(Ac, 0)}/${n(A0, 0)}) · ${n(psi_s)} · ${n(psi_re)}`,
+    value: N0 * (Ac / A0) * psi_s * psi_re, unit: 'N', ref: '(7.1)' });
+  const NRd = NRk / gM;
+  c.step({ sym: 'N_Rd,c,re', desc: 'Dimensjonerende kapasitet',
+    formula: 'N_Rk,c,re / γ_Mc', subst: `${n(NRk)} / ${n(gM)}`, value: NRd, unit: 'N' });
+  c.util({ formula: 'N_Ed,g / N_Rd,c,re', subst: `${n(NEd)} / ${n(NRd)}`, value: NEd / NRd });
+
+  return { id: `N-sre-cone-${r.id}`,
+    mode: `Tilleggsarmering ${r.id} – kjeglebrudd fra armeringsenden`,
+    clause: '7.2.1.2', scope: 'gruppe', NRk, NRd, NEd, util: NEd / NRd, calc: c, group: r.id,
+    note: 'Kjegla fra endeplata er erstattet av armeringa, men lasta må fortsatt ' +
+          'ut i betongen der armeringa slutter – derfor denne kontrollen. ' +
+          (L.endBend
+            ? 'Bøyen i enden flytter punktene utover og gjør kjegla større.'
+            : 'En bøy ut i enden av beina ville flyttet punktene utover og gitt større kjegle.') +
+          ' Forenklet: ψ_ec,N = 1,0, siden bøylene ligger symmetrisk om boltraden.' };
 }
 
 // Strekket fordelt på bøyleradene: hver rad tas av sine egne bøyler, så det er
@@ -141,9 +221,19 @@ export function tensionSupplementary(m, res, r) {
     subst: `${n(nLegs, 0)} · π · ${n(r.ds, 0)} · ${n(G.insideLen, 0)} · ${n(f)} / ${n(alpha1)}`,
     value: nLegs * (G.insideLen * Math.PI * r.ds * f) / alpha1, unit: 'N' });
   cb.util({ formula: 'N_Ed,rad / N_Rd,a', subst: `${n(NEd)} / ${n(NRk_a)}`, value: NEd / NRk_a });
+  const anchorTxt = L && L.anchorageAvail + 1e-6 < L.lbd
+    ? `Utenfor kjegla er det bare ${n(L.anchorageAvail, 0)} mm forankring mot ` +
+      `l_bd = ${n(L.lbd, 0)} mm.` + (L.endBend ? '' : ' En bøy ut i enden av beina ' +
+      'gir bøyen pluss foten som forankring, og hjelper i en tynn plate.')
+    : L && L.endBend
+      ? `Forankring utenfor kjegla: ${n(L.outsideLen, 0)} mm rett bein + ` +
+        `${n(L.bendArc, 0)} mm bøy + ${n(L.footLen, 0)} mm fot = ` +
+        `${n(L.anchorageAvail, 0)} mm mot l_bd = ${n(L.lbd, 0)} mm.`
+      : undefined;
   const minLenTxt = G.insideLen < G.insideMin
     ? `l₁ = ${n(G.insideLen, 0)} mm < ${minAnchorageFactor(r.geometryType)}⌀ = ${n(G.insideMin, 0)} mm – ` +
-      'kravet til minste forankringslengde inne i bruddlegemet er ikke oppfylt.' : rowTxt;
+      'kravet til minste forankringslengde inne i bruddlegemet er ikke oppfylt.'
+    : [anchorTxt, rowTxt].filter(Boolean).join(' ') || undefined;
   checks.push({ id: `N-sre-anchorage-${r.id}`, mode: `Tilleggsarmering ${r.id} – forankring i bruddlegemet`,
     clause: '7.2.1.2', scope: 'gruppe', NRk: NRk_a, NRd: NRk_a, NEd, util: NEd / NRk_a, calc: cb,
     group: r.id, note: minLenTxt });
@@ -175,7 +265,10 @@ export function tensionSupplementary(m, res, r) {
       note: `${angleTxt} ${stm.note}` });
   }
 
-  // --- d) overlapp mot eksisterende konstruksjonsarmering, dersom oppgitt ---
+  // --- d) kjeglebrudd på nytt, fra enden av armeringa ---------------------
+  if (L && L.rows.length) checks.push(reinforcementCone(m, res, r, L));
+
+  // --- e) overlapp mot eksisterende konstruksjonsarmering, dersom oppgitt ---
   if (r.lapToExisting?.present) {
     const cl = new Calc('EN 1992-1-1 8.7');
     const al = anchorageLength(m.concrete.fck, r.ds, r.fyk / 1.15, true);

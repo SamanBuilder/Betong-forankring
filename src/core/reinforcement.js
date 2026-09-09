@@ -79,6 +79,8 @@ export function newReinforcement(id, purpose = 'tension', over = {}) {
     clearance: 10,                    // innvendig avstand til bolt, §4
     coverTop: 30,                     // overdekning fra overkant betong
     coverBottom: 30,                  // overdekning fra underkant betong
+    endBend: false,                   // 90° bøy ut i enden av beina (U-bøyle)
+    endBendLength: null,              // fotlengde; null = det forankringa krever
     height: null,                     // bein-lengde; null = autogenerert
     width: null,                      // avstand mellom beina; null = autogenerert
     lapToExisting: { present: false, lapLength: 0 },   // §2/§7

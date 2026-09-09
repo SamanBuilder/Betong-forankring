@@ -213,6 +213,66 @@ console.log('\nOverdekning: overkant og underkant er to forskjellige tall');
     mLegacy.reinforcements[0].cover === undefined);
 }
 
+console.log('\nEndebøy: bøy ut i enden av beina (tynn plate)');
+{
+  // Tynn plate: ikke dybde nok til h_ef + l_bd som rett bein.
+  const m = defaultModel();
+  m.concrete.h = 300; m.anchors.hef = 150;
+  syncLoad(m);
+  syncPlan(m);
+
+  const rett = newReinforcement('r1', 'tension', { count: 2, ds: 12 });
+  const bøyd = newReinforcement('r2', 'tension', { count: 2, ds: 12, endBend: true });
+  const A = tensionLayout(m, rett), B = tensionLayout(m, bøyd);
+
+  ok('uten endebøy: for kort forankring i den tynne plata', !A.fits,
+    `${A.anchorageAvail.toFixed(0)} mm mot l_bd = ${A.lbd.toFixed(0)} mm`);
+  ok('endebøyen gir bøy + fot som forankring i tillegg',
+    B.anchorageAvail > A.anchorageAvail,
+    `${B.anchorageAvail.toFixed(0)} mm mot ${A.anchorageAvail.toFixed(0)} mm`);
+  ok('foten legges så lang forankringa krever', B.footLen > 0,
+    `fot = ${B.footLen.toFixed(0)} mm`);
+  ok('bøylen holder seg innenfor underkant betong',
+    Math.min(...buildBars(m, bøyd)[0].paths[0].points.map(p => p.z)) >=
+      -(m.concrete.h - bøyd.coverBottom) - 1e-6);
+
+  // Punktet den nye kjegla regnes fra flyttes utover av bøyen.
+  const uOf = (L, i) => L.rows[0].bars[i].endPoints.map(p => p.x);
+  const spanA = Math.max(...uOf(A, 0)) - Math.min(...uOf(A, 0));
+  const spanB = Math.max(...uOf(B, 0)) - Math.min(...uOf(B, 0));
+  ok('endebøyen flytter kjeglepunktene utover', spanB > spanA,
+    `${spanB.toFixed(0)} mm mot ${spanA.toFixed(0)} mm`);
+
+  // ... og med betong å spre seg i skal det gi større kjegle fra armeringsenden.
+  // (I en trang plate ligger kjegla allerede an mot kantene; da flytter bøyen
+  // bare endene nærmere kanten, og ψ_s trekker ned i stedet. Derfor en romslig
+  // plate her - det er tilfellet bøyen er ment for: tynn, men ikke smal.)
+  const coneOf = r => {
+    const mm = defaultModel();
+    mm.concrete.h = 300; mm.anchors.hef = 150;
+    mm.concrete.Lx = 4000; mm.concrete.Ly = 4000;
+    syncLoad(mm); syncPlan(mm);
+    mm.reinforcements.push(r);
+    return verify(mm).checks.find(c => c.id === `N-sre-cone-${r.id}`);
+  };
+  const cA = coneOf(newReinforcement('r1', 'tension', { count: 2, ds: 12 }));
+  const cB = coneOf(newReinforcement('r2', 'tension', { count: 2, ds: 12, endBend: true }));
+  ok('kjeglekontroll fra armeringsenden finnes', !!cA && !!cB);
+  ok('endebøyen gir større kjegle fra armeringsenden', cB.NRd > cA.NRd,
+    `${(cB.NRd / 1000).toFixed(0)} kN mot ${(cA.NRd / 1000).toFixed(0)} kN`);
+
+  // Den nye kjegla skal være vesentlig større enn den fra endeplata - det er
+  // hele poenget med å føre lasta ned og ut med armeringa.
+  const mRef = defaultModel();
+  mRef.concrete.h = 300; mRef.anchors.hef = 150;
+  mRef.concrete.Lx = 4000; mRef.concrete.Ly = 4000;
+  syncLoad(mRef); syncPlan(mRef);
+  const fraEndeplata = verify(mRef).checks.find(c => c.id === 'N-cone');
+  ok('kjegla fra armeringsenden er større enn kjegla fra endeplata',
+    cB.NRd > fraEndeplata.NRd,
+    `${(cB.NRd / 1000).toFixed(0)} kN mot ${(fraEndeplata.NRd / 1000).toFixed(0)} kN`);
+}
+
 console.log('\nUtforming: U-bøyle, lukket bøyle og rett stang gir hver sin form');
 {
   const m = defaultModel();
