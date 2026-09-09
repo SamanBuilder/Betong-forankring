@@ -43,8 +43,9 @@ en melding om å bytte regelverk – standarden har ingen heftmodell.
 | Betongutstøting (pry-out) | 7.2.2.4 | gruppe |
 | Kantbrudd | 7.2.2.5 | gruppe |
 | Samvirkning strekk + skjær | 7.2.3 | kombinasjon |
-| Forankringsarmering – stål og heft | 7.2.1.8 | gruppe (valgfri) |
-| Kantarmering | 7.2.2.6 | gruppe (valgfri) |
+| Tilleggsarmering, strekk – stål og forankring | 7.2.1.2 / 7.2.2.6 | gruppe (valgfri) |
+| Tilleggsarmering, skjær – stål og forankring | 7.2.2.2 / 7.2.2.6 | gruppe (valgfri) |
+| Tilleggsarmering – stavmodell fot→armering | EN 1992-1-1 6.5 | gruppe (valgfri) |
 
 Kontrollene som forutsetter en fot (uttrekk, betongkjegle, utblåsing, spalting,
 pry-out) hoppes over når forankringen ikke har endemutter.
@@ -100,8 +101,9 @@ node build.mjs
 Testene:
 
 ```bash
-node test/b19-examples.mjs     # regner om bokas egne eksempler og tabeller
-node test/solid-shapes.mjs     # betongforma: volum, bruddareal, kantavstand
+node test/b19-examples.mjs             # regner om bokas egne eksempler og tabeller
+node test/solid-shapes.mjs             # betongforma: volum, bruddareal, kantavstand
+node test/reinforcement-examples.mjs   # tilleggsarmering: interne konsistenskontroller
 ```
 
 ## Filstruktur
@@ -113,10 +115,14 @@ src/engine/solid.js             plantegninga som legeme: masker, kanter, prismer
 src/engine/geometry.js          arealunion (A_c,N, A_c,V)
 src/engine/plate-solver.js      kraftfordeling i boltegruppa
 src/engine/en1992-4.js          NS-EN 1992-4 – alle konstanter samlet i K
-src/engine/anchor-reinforcement.js  forankringsarmering (7.2.1.8 / 7.2.2.6)
+src/core/reinforcement.js       tilleggsarmering – datastruktur, krav, katalog
+src/engine/reinforcement-geometry.js  tilleggsarmering – ren geometri (plassering, lengder)
+src/engine/stm.js               stavmodell (strut-and-tie), EN 1992-1-1 pkt. 6.5
+src/engine/supplementary-reinforcement.js  tilleggsarmering (7.2.1.2 / 7.2.2.2 / 7.2.2.6)
 src/engine/b19.js               Betongelementboka B19 – alle konstanter i KB
 test/b19-examples.mjs           regner om bokas egne eksempler
 test/solid-shapes.mjs           betongforma: volum, areal, kantavstand
+test/reinforcement-examples.mjs tilleggsarmering: interne konsistenskontroller
 src/engine/validate.js          inndatakontroll
 src/engine/verify.js            orkestrering
 src/viz/three-d-stage.js        <three-d-stage> web component
@@ -151,7 +157,7 @@ statuslinje nederst.
 
 | Rute | Innhold |
 |---|---|
-| Venstre | Gruppevelger (Regelverk, Betongdel, Forankringsplate, Bolter, Forankringsarmering) med sammendrag, og feltene for valgt gruppe |
+| Venstre | Gruppevelger (Regelverk, Betongdel, Forankringsplate, Bolter, Tilleggsarmering) med sammendrag, og feltene for valgt gruppe |
 | Midten | Fanene **3D**, **Plan** og **Utregning**, med dokket verktøylinje – ingenting flyter oppå visninga |
 | Høyre | Kontrollene, alltid synlige, gruppert etter bruddform med tykke utnyttelsesstolper |
 | Midten, nederst | Lastkombinasjonene, under visninga og avgrenset av venstre og høyre rute |
@@ -618,9 +624,25 @@ eksempelet B 19.4.2 med innstøpt plate og fire forankringer. 25 av 25 stemmer.
   kontroll – den er i praksis den samme modellen som EN 1992-4 pkt. 7.2.2.5,
   som allerede kjøres under det regelverket. B19-modulen bruker den forenklede
   metoden i 19.4.4, som er den bokas kapasitetstabeller bygger på.
-* Forankringsarmering er bare implementert etter EN 1992-4 tillegg C. B19
-  dimensjonerer tilsvarende armering med stavmodell (19.3.2.6 og 19.4.3.5) –
-  den er ikke lagt inn.
+* Tilleggsarmering (`src/core/reinforcement.js`, `src/engine/
+  reinforcement-geometry.js`, `src/engine/stm.js`, `src/engine/
+  supplementary-reinforcement.js`) er bare implementert etter NS-EN 1992-4
+  pkt. 7.2.1.2/7.2.2.2/7.2.2.6. B19 dimensjonerer tilsvarende armering med
+  stavmodell (19.3.2.6 og 19.4.3.5) – den er ikke lagt inn.
+* Effektivitetsfaktoren for en løkke/bøyle i skjær (at ikke hele A_s·f_yd kan
+  regnes mobilisert) er en dokumentert antakelse (`LOOP_SHEAR_EFFICIENCY` i
+  `supplementary-reinforcement.js`), ikke en verdi hentet fra trykt tillegg C.
+* Stavmodellen i `stm.js` bruker en antatt effektiv stavbredde (2 ×
+  overdekning) for trykkspenningen i staven fra fot til bøyle – dette er ikke
+  gitt av standarden eller spesifikasjonen, og bør kontrolleres mot faktisk
+  noderegion (EN 1992-1-1 6.5.4) før prosjektering.
+* Forankringslengden `l_bd` utenfor bruddlegemet (EN 1992-1-1 8.4.4) er
+  forenklet med α₂…α₅ = 1,0 – ingen kreditt for tverrtrykk eller vinkelrett
+  armering. Konservativt.
+* U-formet bøyle for tynne betongplater (der kreftene føres gjennom nye
+  trykkstaver fra bøyene) og forankring uten endeplate/endemutter via
+  overlapp/lapping er ikke implementert ennå – de forutsetter en mer generell
+  stavmodell enn første versjon over dekker.
 * Spenningsarealer og nøkkelvidder for gjengestang er tab. B 19.7.1 i boka,
   altså M10–M42.
 * `c_cr,sp` for spalting er satt til 2·h_ef som en typisk verdi. Reell verdi

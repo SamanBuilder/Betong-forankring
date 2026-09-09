@@ -5,6 +5,9 @@
 import { CONCRETE_GRADES, STUD_SIZES, REBAR_SIZES, ROD_SIZES,
          steelsFor, endsFor, soleBox } from '../core/model.js';
 import { planShapes, shapeZ, SHAPE_LABEL } from '../engine/solid.js';
+import { REINF_DIAMETERS, PURPOSE_LABEL, GEOMETRY_LABEL,
+         GEOMETRY_FOR } from '../core/reinforcement.js';
+import { groupGeometry } from '../engine/supplementary-reinforcement.js';
 
 // Diameterne som finnes for hver stangtype.
 export function barSizes(m) {
@@ -49,7 +52,6 @@ export const FIELDS = [
     { p: 'code.cracked', l: 'Opprisset betong', t: 'bool' },
     { p: 'code.gammaC', l: 'γ_c', t: 'num', step: 0.05 },
     { p: 'code.denseReinf', l: 'Tett armering (c/c < 150)', t: 'bool' },
-    { p: 'code.supplementaryReinf', l: 'Forankringsarmering', t: 'bool' },
     { p: 'code.edgeReinf', l: 'Kantarmering (ψ_re,V)', t: 'select', o: [
       ['none', 'Ingen'], ['bars', 'Kantjern ⌀ ≥ 12'], ['bars+stirrups', 'Kantjern + bøyler']] },
     { p: 'code.holeClearanceFilled', l: 'Alle bolter tar skjær', t: 'bool',
@@ -192,16 +194,10 @@ export const FIELDS = [
             'endrer antallet igjen.' },
   ] },
 
-  { group: 'Forankringsarmering', when: m => m.code.supplementaryReinf, items: [
-    { p: 'reinf.ds', l: 'Diameter ⌀', t: 'num', u: 'mm', step: 2 },
-    { p: 'reinf.n', l: 'Antall bein', t: 'num', step: 1 },
-    { p: 'reinf.l1', l: 'Forankringslengde l₁', t: 'num', u: 'mm', step: 10 },
-    { p: 'reinf.fyk', l: 'f_yk', t: 'num', u: 'MPa', step: 50 },
-    { p: 'reinf.hooked', l: 'Kroket / bøyd ende', t: 'bool' },
-    { p: 'reinf.goodBond', l: 'Gode heftforhold', t: 'bool' },
-    { p: 'reinf.nV', l: 'Kantarmering, antall', t: 'num', step: 1 },
-    { p: 'reinf.dsV', l: 'Kantarmering ⌀', t: 'num', u: 'mm', step: 2 },
-  ] },
+  // Innholdet er dynamisk (én gruppe pr. valgt tilleggsarmering) og bygges av
+  // reinforcementFields() nedenfor, rendret i ui/app.js - samme mønster som
+  // formene i plantegninga (shapeFields).
+  { group: 'Tilleggsarmering', items: [] },
 
 ];
 
@@ -249,6 +245,66 @@ export function shapeFields(m, i) {
 // Navnet på forma i lista.
 export const shapeName = (sh, i) =>
   `${i + 1} · ${SHAPE_LABEL[sh.kind] || sh.kind}`;
+
+// ---------------------------------------------------------------------------
+//  Feltene for én tilleggsarmeringsgruppe - "velg type, antall, diameter,
+//  plassering" i stedet for å tegne armeringa manuelt (spesifikasjonens pkt. 9).
+//  Samme per-indeks-mønster som shapeFields() over.
+// ---------------------------------------------------------------------------
+export function reinforcementFields(m, i) {
+  const P = k => `reinforcements.${i}.${k}`;
+  const r = m.reinforcements[i];
+  const tension = r.purpose === 'tension';
+  const out = [
+    { p: P('purpose'), l: 'Type', t: 'select',
+      o: Object.entries(PURPOSE_LABEL).map(([v, t]) => [v, t]) },
+    { p: P('geometryType'), l: 'Utforming', t: 'select',
+      o: (GEOMETRY_FOR[r.purpose] || Object.keys(GEOMETRY_LABEL))
+        .map(v => [v, GEOMETRY_LABEL[v]]) },
+    { p: P('count'), l: tension ? 'Bøyler pr. boltrad' : 'Antall bein',
+      t: 'num', step: 2, min: 2, live: true,
+      hint: tension
+        ? 'Fordeles symmetrisk om boltraden, minst én bøyle på hver side, alle ' +
+          'innenfor 0,75·h_ef fra bolten.' : undefined },
+    { p: P('ds'), l: 'Diameter ⌀', t: 'select', num: true,
+      o: REINF_DIAMETERS.map(d => [d, `⌀${d}`]) },
+    { p: P('fyk'), l: 'f_yk', t: 'num', u: 'MPa', step: 50, live: true,
+      hint: 'Ribbet armeringsstål, f_yk ≤ 600 N/mm² – pkt. 7.2.2.6.' },
+  ];
+  if (tension)
+    out.push({ p: P('direction'), l: 'Retning', t: 'num', u: '°', step: 15, live: true,
+      hint: 'Hvilken vei bøylene ligger, dreid om loddaksen. Boltene deles i ' +
+            'rader på tvers av denne retninga, og hver rad spennes av sine ' +
+            'egne bøyler.' });
+  else
+    out.push({ p: P('placement'), l: 'Plassering', t: 'select', o: [
+      ['auto', 'Automatisk'], ['manual', 'Manuell']] });
+  out.push(
+    { p: P('clearance'), l: 'Innvendig avstand til bolt', t: 'num', u: 'mm', step: 5, live: true },
+    { p: P('cover'), l: 'Overdekning', t: 'num', u: 'mm', step: 5, live: true,
+      hint: tension
+        ? 'Fra betongoverflata ned til den vannrette delen av bøylen. Styrer ' +
+          'hvor langt bøylen må stikke ut forbi bolten for å få trykkstaven i 45°.'
+        : 'Avstand fra betongoverflata og fra kanten til bøylen.' });
+  if (!tension && r.placement === 'manual') {
+    const G = groupGeometry(m, null, r);
+    out.push(
+      { p: P('height'), l: 'Bein-lengde', t: 'num', u: 'mm', step: 10, live: true,
+        val: r.height ?? Math.round(G.geo?.legLen ?? 0),
+        hint: r.purpose === 'shear'
+          ? 'Hvor langt beina går innover fra bøyen.'
+          : 'Hvor langt beina går nedover fra bøyen.' },
+      { p: P('width'), l: 'Avstand mellom beina', t: 'num', u: 'mm', step: 10, live: true,
+        val: r.width ?? Math.round(2 * (G.geo?.rOff ?? 0)) });
+  }
+  if (r.purpose === 'tension') {
+    out.push(
+      { p: P('lapToExisting.present'), l: 'Overlapp mot konstruksjonsarmering', t: 'bool' },
+      { p: P('lapToExisting.lapLength'), l: 'Overlappslengde', t: 'num', u: 'mm', step: 10,
+        live: true, when: () => r.lapToExisting?.present });
+  }
+  return out.filter(f => !f.when || f.when(m));
+}
 
 export const get = (o, p) => p.split('.').reduce((a, k) => a?.[k], o);
 export function set(o, p, v) {

@@ -391,7 +391,6 @@ export function defaultModel() {
       gammaC: 1.5,               // NA: Norge
       gammaInst: 1.0,            // støpt inn -> 1.0
       denseReinf: false,         // tett armering (senteravst. < 150 mm)
-      supplementaryReinf: false, // egen forankringsarmering (tillegg C)
       edgeReinf: 'none',         // 'none' | 'bars' | 'bars+stirrups'  (psi_re,V)
       holeClearanceFilled: true, // alle bolter tar skjærkraft
     },
@@ -452,6 +451,12 @@ export function defaultModel() {
       nx: 2, ny: 2,
       sx: 200, sy: 200,     // senteravstand
     },
+
+    // ---- Tilleggsarmering --------------------------------------------------
+    // Liste med Reinforcement-objekter, se core/reinforcement.js. Tom liste
+    // (standard) = ingen tilleggsarmering; betongkjegle-/kantbrudd kontrolleres
+    // da som vanlig.
+    reinforcements: [],
 
     // ---- Laster ----------------------------------------------------------
     // Lastkombinasjonene er selve lastobjektene. `load` peker på den aktive

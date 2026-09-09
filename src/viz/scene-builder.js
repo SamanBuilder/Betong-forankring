@@ -12,6 +12,7 @@ import { solidSlabs, solidOutline, surfaceZ, planMask, anchorDepth, baseBox,
          planShapes, shapeLoop, shapeZ, toPlate, spansFullDepth,
          SHAPE_LABEL } from '../engine/solid.js';
 import { edgeBreakout } from '../engine/geometry.js';
+import { buildBars } from '../engine/reinforcement-geometry.js';
 import { n } from '../engine/calc.js';
 
 // ---------------------------------------------------------------------------
@@ -93,6 +94,60 @@ function rebarHook(d, zBot, x, y, mat) {
 
   const g = new THREE.Group();
   g.add(arc, tailMesh);
+  return g;
+}
+
+// ---------------------------------------------------------------------------
+//  Tilleggsarmering.
+//
+//  Geometrien kommer ferdig som punktrekker fra
+//  engine/reinforcement-geometry.js (buildBars) - stående U-bøyle under plata
+//  for kjeglebrudd, liggende bøyle langs kanten for kantbrudd, ringer rundt
+//  bolten for pkt. 4. Her trekkes bare et rør langs punktene, så formen
+//  bestemmes ett sted: i motoren.
+//
+//  Kurva interpolerer rett linje mellom punktene (buene er allerede delt opp
+//  i motoren), så røret følger stanga nøyaktig uten å skyte over i knekkene.
+// ---------------------------------------------------------------------------
+function polyCurve(points, closed) {
+  const pts = closed ? [...points, points[0]] : points;
+  const cum = [0];
+  for (let i = 1; i < pts.length; i++)
+    cum.push(cum[i - 1] + pts[i].distanceTo(pts[i - 1]));
+  const len = cum[cum.length - 1] || 1;
+  const c = new THREE.Curve();
+  c.getPoint = (t, target = new THREE.Vector3()) => {
+    const d = Math.max(0, Math.min(1, t)) * len;
+    let i = 1;
+    while (i < cum.length - 1 && cum[i] < d) i++;
+    const seg = cum[i] - cum[i - 1] || 1;
+    return target.copy(pts[i - 1]).lerp(pts[i], (d - cum[i - 1]) / seg);
+  };
+  c.totalLength = len;
+  return c;
+}
+
+function barMesh(bar, mat) {
+  const g = new THREE.Group();
+  const r = bar.ds / 2;
+  for (const path of bar.paths) {
+    const pts = path.points.map(p => new THREE.Vector3(p.x, p.y, p.z));
+    if (pts.length < 2) continue;
+    const curve = polyCurve(pts, path.closed);
+    const seg = Math.max(24, Math.min(600, Math.round(curve.totalLength / 6)));
+    const tube = new THREE.Mesh(
+      new THREE.TubeGeometry(curve, seg, r, 8, path.closed), mat);
+    tube.name = 'tilleggsarmering';
+    g.add(tube);
+    // Rør er åpne i endene - en liten kule lukker stangenden.
+    if (!path.closed)
+      for (const end of [pts[0], pts[pts.length - 1]]) {
+        const cap = new THREE.Mesh(new THREE.SphereGeometry(r, 8, 6), mat);
+        cap.position.copy(end);
+        cap.name = 'tilleggsarmering_ende';
+        g.add(cap);
+      }
+  }
   return g;
 }
 
@@ -728,25 +783,15 @@ export function buildScene(v, opts = {}) {
     }
   }
 
-  // ---- forankringsarmering ---------------------------------------------
-  if (show.rebar && m.code.supplementaryReinf && m.reinf) {
-    const r = m.reinf, rm = MAT.rebar();
-    const pts = anchorPositions(m);
-    const per = Math.max(1, Math.round(r.n / pts.length));
-    for (const pt of pts) {
-      for (let i = 0; i < per; i++) {
-        const ang = (i / per) * Math.PI * 2;
-        const off = a.d / 2 + r.ds / 2 + 6;
-        const bar = new THREE.Mesh(
-          new THREE.CylinderGeometry(r.ds / 2, r.ds / 2, r.l1, 12), rm);
-        bar.rotation.x = Math.PI / 2;
-        bar.position.set(pt.x + Math.cos(ang) * off, pt.y + Math.sin(ang) * off,
-          -a.hef + r.l1 / 2);
-        bar.name = 'armering';
-        bar.renderOrder = ORDER.steel;
-        root.add(bar);
+  // ---- tilleggsarmering --------------------------------------------------
+  if (show.rebar && m.reinforcements?.length) {
+    const rm = MAT.rebar();
+    for (const r of m.reinforcements)
+      for (const bar of buildBars(m, r)) {
+        const bm = barMesh(bar, rm);
+        bm.renderOrder = ORDER.steel;
+        root.add(bm);
       }
-    }
   }
 
   // ---- laster -----------------------------------------------------------
@@ -809,8 +854,17 @@ function coneMesh(m, b, ccr, hef) {
       if (!keep[j * nx + i]) continue;
       const x0 = xs[i], x1 = xs[i + 1], y0 = ys[j], y1 = ys[j + 1];
       const L = (x, y) => [x, y, low(x, y)];
-      // underflata (den skraa kjegleflata) og overflata i betongoverflata
-      quad(L(x0, y0), L(x1, y0), L(x1, y1), L(x0, y1));
+      // underflata (den skraa kjegleflata). I ei hjoernecelle er low() = maks
+      // av to ramper (dx og dy), ikke ett plan - flata har en rygg langs
+      // diagonalen fra det dypeste hjoernet (ved boksen) til hjoernet rett
+      // imot. Trianguleringa MAA kutte langs akkurat den diagonalen, ellers
+      // kutter den tvers over ryggen og kjegla blir skeiv i to av fire
+      // hjoerner (den andre diagonalparet gir en flat/riktig celle uansett,
+      // saa testen koster ingenting der).
+      const c00 = low(x0, y0), c10 = low(x1, y0), c11 = low(x1, y1), c01 = low(x0, y1);
+      const ridgeOnOther = Math.min(c10, c01) < Math.min(c00, c11);
+      if (ridgeOnOther) quad(L(x1, y0), L(x1, y1), L(x0, y1), L(x0, y0));
+      else quad(L(x0, y0), L(x1, y0), L(x1, y1), L(x0, y1));
       quad([x0, y0, 0], [x0, y1, 0], [x1, y1, 0], [x1, y0, 0]);
       // loddrette flater der kjegla moeter en kant, et hull eller sin egen ytterkant
       if (!on(i - 1, j)) quad(L(x0, y0), L(x0, y1), [x0, y1, 0], [x0, y0, 0]);

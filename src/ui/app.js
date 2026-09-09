@@ -10,9 +10,11 @@ import { defaultModel, CONCRETE_GRADES, STUD_STEELS, studSize, rodSize,
          autoSpacing, boltsOutside, syncLoad, combo, nextComboId,
          LIMIT_STATES, anchorFoot, steelsFor, defaultSteel, endsFor,
          syncPlan, migratePlan } from '../core/model.js';
+import { newReinforcement, nextReinforcementId, requirementIssues,
+         PURPOSE_LABEL, migrateReinforcements } from '../core/reinforcement.js';
 import { verify } from '../engine/verify.js';
 import { buildScene } from '../viz/scene-builder.js';
-import { FIELDS, barSizes, get, set } from './fields.js';
+import { FIELDS, barSizes, get, set, reinforcementFields } from './fields.js';
 import { planShapes, shapeLoop, shapeZ, loopArea, isShaped,
          SHAPE_LABEL, OP_LABEL } from '../engine/solid.js';
 import { PlanEditor, TOOLS } from './plan-editor.js';
@@ -32,10 +34,7 @@ const BAR_TXT = { stud: 'Sveisebolt', rebar: 'Kamstål', rod: 'Gjengestang/bolt'
 const END_TXT = { nut: 'endemutter', plate: 'felles endeplate',
                   hook: 'endekrok', none: 'uten endemutter (heft)' };
 
-const REINF_DEFAULT = () =>
-  ({ ds: 12, n: 4, l1: 300, hooked: true, goodBond: true, fyk: 500, nV: 0, dsV: 12, fykV: 500 });
-
-let model = Object.assign(defaultModel(), { reinf: REINF_DEFAULT() });
+let model = defaultModel();
 let showOpts = { cone: true, wedge: true, loads: true, labels: false, concrete: true,
                  rebar: true, dims: true, colorMode: 'material', shape: null };
 let hudItems = [];        // {el, pos, quat, scale} – sendes til stage.setLabels
@@ -52,7 +51,9 @@ const SUMMARY = {
   'Bolter': m => `${m.anchors.nx * m.anchors.ny} × ` +
     `${m.anchors.barType === 'rod' ? 'M' : '⌀'}${m.anchors.d} · ` +
     `${END_TXT[m.anchors.endType]}`,
-  'Forankringsarmering': m => `${m.reinf.n} × ⌀${m.reinf.ds}`,
+  'Tilleggsarmering': m => m.reinforcements.length
+    ? m.reinforcements.map(r => `${r.count}×⌀${r.ds}`).join(' · ')
+    : 'ingen',
   'Laster': m => `N ${kN(m.load.N)} kN`,
 };
 
@@ -97,7 +98,6 @@ function sync(m) {
     a._dLast = a.d;
   }
 
-  m.reinf.fykV = m.reinf.fyk;
   syncLoad(m);                  // `load` peker på den aktive kombinasjonen
   // Sveiste bolter har ingen hullklaring, så alle tar skjær. Uten plate er det
   // ingen hull i det hele tatt.
@@ -108,7 +108,7 @@ function sync(m) {
 // Slår ei lagra prosjektfil sammen med standardmodellen, ett nivå djupt, så
 // felt som er lagt til etter fila blei lagra likevel får ein fornuftig verdi.
 function mergeModel(loaded) {
-  const base = Object.assign(defaultModel(), { reinf: REINF_DEFAULT() });
+  const base = defaultModel();
   for (const k of Object.keys(base)) {
     const v = loaded[k];
     if (v && typeof v === 'object' && !Array.isArray(v)) Object.assign(base[k], v);
@@ -120,6 +120,15 @@ function mergeModel(loaded) {
     base.concrete.plan = null;
     base.concrete.features = loaded.concrete.features || [];
     migratePlan(base);
+  }
+  // Ei fil lagra før tilleggsarmering var ei liste (flat m.reinf) - gjøres om
+  // til m.reinforcements. migrateReinforcements() er idempotent og gjør
+  // ingenting når reinforcements allerede er ei liste (default), så det
+  // gamle feltet må stå igjen først.
+  if (loaded.reinf && !loaded.reinforcements) {
+    base.reinf = loaded.reinf;
+    base.reinforcements = null;
+    migrateReinforcements(base);
   }
   return syncPlan(base);
 }
@@ -162,10 +171,12 @@ function renderForm() {
     host.appendChild(field(f));
   }
 
-  if (activeGroup === 'Bolter' && !model.code.supplementaryReinf)
+  if (activeGroup === 'Bolter' && !model.reinforcements.length)
     host.appendChild(el('p', 'hint',
-      'Forankringsarmering slås på under Regelverk. Da erstatter armerings­kontrollen ' +
-      'betongkjeglebruddet.'));
+      'Tilleggsarmering legges til i fanen «Tilleggsarmering». Der velger du type, ' +
+      'antall, diameter og plassering - armeringskontrollen kan da erstatte ' +
+      'kjegle- eller kantbruddet når kravene i pkt. 7.2.2.6 er oppfylt.'));
+  if (activeGroup === 'Tilleggsarmering') renderReinforcementGroups(host);
   if (activeGroup === 'Bolter' && model.anchors.endType === 'none')
     host.appendChild(el('p', 'hint',
       'Uten endemutter finnes ingen kjeglebruddmodell i NS-EN 1992-4. ' +
@@ -176,6 +187,76 @@ function renderForm() {
       'Uten plate regnes boltene som dybler: skjærkapasiteten i betongen ' +
       'faller til ⌀²·√(f_cd·f_yd), og stålets bøyning over utkraginga blir ' +
       'ofte begrensende (B19 pkt. 19.4.2).'));
+}
+
+// === tilleggsarmering ======================================================
+//  Velg type/antall/diameter/plassering i stedet for å tegne armeringa
+//  manuelt (spesifikasjonens pkt. 9). Ett kort pr. gruppe, samme felt-
+//  byggeklosser (field()) som resten av skjemaet.
+//
+//  Kravene som avgjør «nødvendig antall» er lineære i antall bein så lenge
+//  ingen bein faller utenfor 0,75·h_ef/0,75·c_1-sona (se
+//  supplementary-reinforcement.js) - da holder det å skalere det valgte
+//  antallet med styrende utnyttelse i stedet for å gjenta formlene her.
+function reinforcementSummary(v, r) {
+  const rc = (v.checks || []).filter(c => c.group === r.id);
+  // «Nødvendig antall» skaleres bare fra kontroller som faktisk er lineære i
+  // antall bein (stål, forankring). STM- og overlappskontrollen avhenger av
+  // geometrien, ikke av antallet, så flere bein løser ikke et STM-/
+  // overlappsproblem - de tas med i status (worstAny), men ikke i skaleringa.
+  const scalable = rc.filter(c => /-(steel|anchorage)-/.test(c.id));
+  const worstScalable = scalable.reduce(
+    (a, c) => Number.isFinite(c.util) ? Math.max(a, c.util) : a, 0);
+  const worstAny = rc.reduce((a, c) => Number.isFinite(c.util) ? Math.max(a, c.util) : a, 0);
+  const need = worstScalable > 0 ? Math.max(2, Math.ceil((r.count * worstScalable) / 2) * 2) : r.count;
+  const replaced = (v.replacedConcreteChecks || []).some(c => c.group === r.id);
+  return { need, worst: worstAny, ok: need <= r.count && worstAny <= 1, replaced };
+}
+
+function renderReinforcementGroups(host) {
+  const addRow = el('div', 'feat-add');
+  const add = el('button', 'btn', '+ Legg til tilleggsarmering');
+  add.onclick = () => {
+    model.reinforcements.push(newReinforcement(nextReinforcementId(model), 'tension'));
+    refresh(true);
+  };
+  addRow.appendChild(add);
+  host.appendChild(addRow);
+
+  const v = verify(model);   // fersk - skjemaet bygges før refresh() sitt eget kall
+  for (let i = 0; i < model.reinforcements.length; i++) {
+    const r = model.reinforcements[i];
+    const card = el('div', 'feat');
+    const hdr = el('div', 'feat-head');
+    hdr.appendChild(el('span', 'nm', `${esc(r.id)} · ${esc(PURPOSE_LABEL[r.purpose])}`));
+    const del = el('button', 'btn', 'Fjern');
+    del.title = 'Fjern gruppa';
+    del.onclick = () => { model.reinforcements.splice(i, 1); refresh(true); };
+    hdr.appendChild(del);
+    card.appendChild(hdr);
+
+    for (const f of reinforcementFields(model, i)) card.appendChild(field(f));
+
+    const issues = requirementIssues(r);
+    const s = reinforcementSummary(v, r);
+    const okAll = s.ok && !issues.length;
+    const sum = el('div', 'assump reinf-sum');
+    sum.innerHTML =
+      `<div class="row"><span class="k">Nødvendig</span><span class="v">${s.need}×⌀${r.ds}</span></div>` +
+      `<div class="row"><span class="k">Valgt</span><span class="v">${r.count}×⌀${r.ds}</span></div>` +
+      `<div class="row"><span class="k">Status</span><span class="v" style="color:${
+        okAll ? 'var(--ok)' : 'var(--bad)'}">${okAll ? 'OK' : 'IKKE OK'}</span></div>`;
+    card.appendChild(sum);
+    if (issues.length) card.appendChild(el('p', 'msg err', issues.join(' ')));
+    if (s.replaced)
+      card.appendChild(el('p', 'hint',
+        `Erstatter ${r.purpose === 'tension' ? 'betongkjeglebrudd' : 'kantbrudd'} som ` +
+        'dimensjonerende bruddform for boltene denne gruppa betjener.'));
+
+    host.appendChild(card);
+  }
+  if (!model.reinforcements.length)
+    host.appendChild(el('p', 'hint', 'Ingen tilleggsarmering lagt til.'));
 }
 
 // === betongform ===========================================================
@@ -246,7 +327,10 @@ function field(f) {
       if (!Number.isFinite(v)) return;
       set(model, f.p, f.t === 'kn' ? v * 1000 : f.t === 'knm' ? v * 1e6 : v);
       if (f.auto) applyAutoSpacing(f.auto);
-      refresh(!!f.auto);
+      // `live`: skjemaet må bygges om for hver endring (uten sideeffekten
+      // f.auto har) - brukt for tilleggsarmering, der et sammendrag i samme
+      // panel (nødvendig vs. valgt) skal følge tallet mens du skriver.
+      refresh(!!f.auto || !!f.live);
     };
     // Felt som bygger om skjemaet må vente til du er ferdig å skrive, ellers
     // rives feltet vekk under fingrene på deg midt i et tall.
@@ -386,6 +470,20 @@ function renderResults(v) {
     if (!list.length) continue;
     host.appendChild(el('h3', 'sect', fam));
     for (const c of list) host.appendChild(checkRow(c));
+  }
+
+  // Betongbrudd som tilleggsarmering har erstattet som dimensjonerende - vist
+  // for seg, så det er tydelig hva som er byttet ut og hva som fortsatt
+  // kontrolleres (spesifikasjonens pkt. 8/11). Kontrollen er fortsatt regnet
+  // fullt ut, bare ikke styrende lenger.
+  if (v.replacedConcreteChecks?.length) {
+    host.appendChild(el('h3', 'sect', 'Erstattet av tilleggsarmering'));
+    for (const c of v.replacedConcreteChecks) {
+      const row = checkRow(c);
+      row.classList.add('na');
+      row.title = c.replacedBy;
+      host.appendChild(row);
+    }
   }
 
   host.appendChild(el('h3', 'sect', 'Kraftfordeling i boltegruppa'));
@@ -536,7 +634,8 @@ function paintComboUtils(res) {
 // === utregningsark ========================================================
 function renderSheet(v) {
   const host = $('#sheet');
-  const c = v.checks.find(x => x.id === activeCheck);
+  const c = v.checks.find(x => x.id === activeCheck) ||
+    v.replacedConcreteChecks?.find(x => x.id === activeCheck);
   if (!c) {
     host.innerHTML = '<p class="empty">Velg en kontroll i resultatlista for å se hele utregninga.</p>';
     return;
@@ -550,6 +649,9 @@ function renderSheet(v) {
     H.push(`<div class="verdict"><span class="pc" style="color:${utilCss(c.util)}">` +
       `${pct(c.util)}</span>${bar(c.util)}</div>`);
   }
+  if (c.replacedBy)
+    H.push(`<p class="note">Erstattet av ${esc(c.replacedBy)} som dimensjonerende ` +
+      'bruddform, men fortsatt regnet ut i sin helhet under.</p>');
   if (cal?.skipped) {
     H.push(`<p class="note">${esc(cal.skipped)}</p>`);
     host.innerHTML = H.join('');
@@ -870,7 +972,7 @@ export function boot() {
   code.onchange = () => { model.code.standard = code.value; refresh(true); };
 
   $('#reset').onclick = () => {
-    model = Object.assign(defaultModel(), { reinf: REINF_DEFAULT() });
+    model = defaultModel();
     activeCheck = null; activeGroup = 'Betongdel';
     selectShape(null);
     if (planner) planner.touched = false;
@@ -961,6 +1063,21 @@ function buildReport(v) {
   L.push(`N = ${kN(l.N)} kN    V_x = ${kN(l.Vx)} kN    V_y = ${kN(l.Vy)} kN`);
   L.push(`M_x = ${n(l.Mx / 1e6, 2)} kNm    M_y = ${n(l.My / 1e6, 2)} kNm    ` +
     `M_z = ${n(l.Mz / 1e6, 2)} kNm`, '');
+  if (m.reinforcements.length) {
+    L.push('TILLEGGSARMERING', line('-'));
+    for (const r of m.reinforcements) {
+      const s = reinforcementSummary(v, r);
+      const issues = requirementIssues(r);
+      L.push(`${r.id}  ${PURPOSE_LABEL[r.purpose]}  ⌀${r.ds}, ${r.geometryType}`);
+      L.push(`  Nødvendig: ${s.need}×⌀${r.ds}    Valgt: ${r.count}×⌀${r.ds}    ` +
+        `Status: ${s.ok && !issues.length ? 'OK' : 'IKKE OK'}`);
+      if (issues.length) L.push(`  ${issues.join(' ')}`);
+      if (s.replaced)
+        L.push(`  Erstatter ${r.purpose === 'tension' ? 'betongkjeglebrudd' : 'kantbrudd'} ` +
+          'som dimensjonerende bruddform.');
+    }
+    L.push('');
+  }
   L.push('KRAFTFORDELING I BOLTEGRUPPA', line('-'));
   L.push('  # |      x |      y |     N [kN] |     V [kN]');
   for (const an of v.res.anchors)
@@ -968,8 +1085,9 @@ function buildReport(v) {
       `${String(an.y).padStart(6)} | ${kN(an.N).padStart(10)} | ${kN(an.V).padStart(10)}`);
   L.push('');
 
-  for (const c of v.checks) {
-    L.push(line('='), `${c.mode}   [${c.standard ?? v.standard} · pkt. ${c.clause}]`, line('='));
+  for (const c of [...v.checks, ...v.replacedConcreteChecks]) {
+    L.push(line('='), `${c.mode}   [${c.standard ?? v.standard} · pkt. ${c.clause}]` +
+      (c.replacedBy ? `   -- erstattet av ${c.replacedBy}` : ''), line('='));
     const cal = c.calc;
     if (cal?.skipped) { L.push(`  ${cal.skipped}`, ''); continue; }
     if (!cal) { L.push('  (ingen utregning registrert)', ''); continue; }

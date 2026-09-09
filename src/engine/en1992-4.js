@@ -19,6 +19,7 @@ import { anchorPositions, shaftProps, anchorFoot, edgeDistances,
          memberThickness } from '../core/model.js';
 import { clamp, coneProjection, edgeBreakout } from './geometry.js';
 import { Calc, skipped, n } from './calc.js';
+import { requirementIssues } from '../core/reinforcement.js';
 
 export const K = {
   // Betongkjegle, strekk - 7.2.1.4 (7.2)
@@ -317,7 +318,11 @@ export function tensionSplitting(m, res, g, cone) {
   const hef = m.anchors.hef;
   const ccr_sp = 2 * hef, hmin = 2 * hef;
   const cmin = minEdge(m, res.tension.anchors);
-  const dekket = m.code.supplementaryReinf;
+  // 7.2.1.7(1): spalting trenger ikke kontrolleres separat når det uansett
+  // ligger armering som tar opp spaltekreftene - her tolket som at det finnes
+  // en kvalifiserende tilleggsarmeringsgruppe i strekk (se core/reinforcement.js).
+  const dekket = (m.reinforcements || []).some(r =>
+    r.purpose === 'tension' && requirementIssues(r).length === 0);
   const geomOk = (Number.isFinite(cmin) ? cmin >= ccr_sp : true) && m.concrete.h >= hmin;
 
   if (dekket || geomOk) {
@@ -629,12 +634,18 @@ export function interaction(checks) {
 
   // Listene dekker også id-ene fra B19-motoren (N-conc/N-foot, V-conc), i
   // tilfelle strekk eller skjær mot betong er valgt fra den boka mens
-  // samvirkningen fortsatt regnes etter EN 1992-4.
+  // samvirkningen fortsatt regnes etter EN 1992-4. Tilleggsarmeringas
+  // stål-/forankringskontroller har ett sett id-er pr. gruppe
+  // (N-sre-steel-<id>, N-sre-anchorage-<id> osv., se
+  // supplementary-reinforcement.js) og fanges derfor med et mønster i stedet
+  // for en fast liste.
   const tension = ['N-cone', 'N-pullout', 'N-blowout', 'N-split', 'N-conc', 'N-foot'];
   const shear = ['V-pryout', 'V-edge', 'V-conc'];
-  const tw = tension.map(id => get(id)).filter(Boolean)
+  const isSreTension = id => /^N-sre-(steel|anchorage)-/.test(id);
+  const isSreShear = id => /^V-sre-(steel|anchorage)-/.test(id);
+  const tw = checks.filter(c => tension.includes(c.id) || isSreTension(c.id))
     .reduce((a, b) => ((b.util || 0) > (a?.util || 0) ? b : a), null);
-  const sw = shear.map(id => get(id)).filter(Boolean)
+  const sw = checks.filter(c => shear.includes(c.id) || isSreShear(c.id))
     .reduce((a, b) => ((b.util || 0) > (a?.util || 0) ? b : a), null);
   const bN = tw?.util || 0, bV = sw?.util || 0;
 

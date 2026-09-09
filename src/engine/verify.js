@@ -18,9 +18,10 @@ import {
   b19TensionSteel, b19TensionConcrete, b19FootPressure, b19ShearSteel,
   b19ShearBending, b19ShearConcrete, b19Concrete, b19Steel, b19Interaction,
 } from './b19.js';
-import { tensionReinforcement, shearReinforcement } from './anchor-reinforcement.js';
+import { tensionSupplementary, shearSupplementary } from './supplementary-reinforcement.js';
 import { validate, bearingCheck } from './validate.js';
 import { syncPlan } from '../core/model.js';
+import { migrateReinforcements, bruddformFor } from '../core/reinforcement.js';
 
 const STD_LABEL = {
   'EN1992-4': 'NS-EN 1992-4:2018',
@@ -31,6 +32,7 @@ const tag = (checks, s) => checks.map(c => ({ ...c, standardId: s, standard: STD
 
 export function verify(m) {
   syncPlan(m);                     // L_x/L_y mot tegninga, og gamle filer over
+  migrateReinforcements(m);        // gamle filer med flat m.reinf -> m.reinforcements
   const issues = validate(m);
   const res = solvePlate(m);
   const gEN = partialFactors(m);
@@ -58,25 +60,48 @@ export function verify(m) {
     ? tag([b19ShearConcrete(m, res)], 'B19')
     : tag([shearPryout(m, res, gEN), shearConcreteEdge(m, res, gEN)], 'EN1992-4');
 
-  const primary = [...steelChecks, ...tensionConcChecks, ...shearConcChecks];
+  let primary = [...steelChecks, ...tensionConcChecks, ...shearConcChecks];
+
+  // Tilleggsarmering er bare implementert etter NS-EN 1992-4 pkt. 7.2.1.2/
+  // 7.2.2.2/7.2.2.6. B19 dimensjonerer tilsvarende armering med stavmodell
+  // (19.3.2.6 / 19.4.3.5), som ikke er lagt inn.
+  //
+  // Kjegle-/kantbrudd erstattes (fjernes fra `primary`, og dermed fra
+  // styrende kontroll og samvirkning) bare for grupper som faktisk oppfyller
+  // kravene (`qualifies`) OG som er ment å erstatte akkurat den bruddformen
+  // (`bruddform`). Betongkontrollen forsvinner ikke - den flyttes til
+  // `replacedConcreteChecks`, så rapporten kan vise hva som er erstattet og
+  // hva som fortsatt kontrolleres (pry-out erstattes aldri, jf. spesifikasjonen).
+  const replacedConcreteChecks = [];
+  const reinforcements = m.reinforcements || [];
+  if (reinforcements.length) {
+    const supplementary = [];
+    for (const r of reinforcements) {
+      const isTension = r.purpose === 'tension';
+      const fn = isTension ? tensionSupplementary : shearSupplementary;
+      const stdOk = isTension ? tcStd === 'EN1992-4' : scStd === 'EN1992-4';
+      if (!stdOk) continue;
+      const { checks: rc, qualifies } = fn(m, res, r);
+      supplementary.push(...rc);
+      const bruddform = bruddformFor(r);
+      if (qualifies && bruddform) {
+        const targetId = bruddform === 'cone' ? 'N-cone' : 'V-edge';
+        const idx = primary.findIndex(c => c.id === targetId);
+        if (idx >= 0) {
+          replacedConcreteChecks.push({ ...primary[idx],
+            replacedBy: `Tilleggsarmering ${r.id}`, group: r.id });
+          primary = primary.filter(c => c.id !== targetId);
+        }
+      }
+    }
+    primary = [...primary, ...tag(supplementary, 'EN1992-4')];
+  }
 
   const interactionChecks = general === 'B19'
     ? tag(b19Interaction(m, res, primary), 'B19')
     : tag(interaction(primary), 'EN1992-4');
 
-  let checks = [...primary, ...interactionChecks];
-
-  // Forankringsarmering er bare implementert etter EN 1992-4 tillegg C. B19
-  // dimensjonerer tilsvarende armering med stavmodell (19.3.2.6 / 19.4.3.5),
-  // som ikke er lagt inn.
-  if (tcStd === 'EN1992-4' && m.code.supplementaryReinf && m.reinf) {
-    const extra = tag([
-      ...tensionReinforcement(m, res, m.reinf),
-      ...(m.reinf.nV > 0 ? shearReinforcement(m, res, m.reinf) : []),
-    ], 'EN1992-4');
-    // Med forankringsarmering erstattes betongkjegla av armeringskontrollen
-    checks = checks.filter(c => c.id !== 'N-cone').concat(extra);
-  }
+  const checks = [...primary, ...interactionChecks];
 
   const gamma = general === 'B19'
     ? (() => {
@@ -99,7 +124,7 @@ export function verify(m) {
     },
     gamma,
     issues, bearing: bearingCheck(m, res),
-    checks, governing,
+    checks, replacedConcreteChecks, governing,
     maxUtil: governing ? governing.util : NaN,
     ok: governing ? governing.util <= 1.0 : false,
   };

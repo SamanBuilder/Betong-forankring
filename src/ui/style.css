@@ -179,6 +179,8 @@ body { margin:0; height:100vh; overflow:hidden; background:var(--bg); color:var(
 .feat-head .btn { padding:3px 7px; font-size:10.5px; }
 /* Flatenavnet er langt - snittfeltene får en bredere kolonne enn de vanlige. */
 .feat .fld { grid-template-columns:1fr 122px; }
+.feat .reinf-sum { padding:8px 0 0; margin-top:6px; border-top:1px solid var(--line); }
+.feat .reinf-sum .row { padding:3px 0; }
 
 /* === 3D ================================================================= */
 .stage-wrap { flex:1 1 auto; position:relative; min-height:0; }

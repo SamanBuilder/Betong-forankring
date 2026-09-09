@@ -30,6 +30,7 @@
 import { GRID, planShapes, shapeLoop, shapeZ,
          outlineSegments } from '../engine/solid.js';
 import { newShape, nextShapeId, anchorPositions } from '../core/model.js';
+import { buildBars } from '../engine/reinforcement-geometry.js';
 
 export const TOOLS = [
   ['select', 'Velg',       'Klikk en form for å velge den. Dra for å flytte.'],
@@ -416,6 +417,33 @@ export class PlanEditor {
       g.beginPath();
       g.arc(this.sx(ex + q.x), this.sy(ey + q.y), r, 0, 2 * Math.PI);
       g.stroke();
+    }
+    g.restore();
+    this.reinforcementGhost(g, m, ex, ey);
+  }
+
+  // Automatisk generert tilleggsarmering (pkt. 4/9), sett ovenfra: samme
+  // punktrekker som 3D-visninga bruker, projisert i planet. Kantbruddbøylene
+  // ligger vannrett og viser da hele forma si; de stående U-bøylene til
+  // kjeglebrudd viser bare beina. Ikke redigerbar her - bare til orientering.
+  reinforcementGhost(g, m, ex, ey) {
+    if (!m.reinforcements?.length) return;
+    g.save();
+    g.strokeStyle = COL.ghost; g.globalAlpha = 0.8; g.lineWidth = 1.25;
+    g.setLineDash([2, 3]);
+    for (const r of m.reinforcements) {
+      for (const bar of buildBars(m, r)) {
+        for (const path of bar.paths) {
+          if (path.points.length < 2) continue;
+          g.beginPath();
+          path.points.forEach((p, i) => {
+            const x = this.sx(ex + p.x), y = this.sy(ey + p.y);
+            if (i === 0) g.moveTo(x, y); else g.lineTo(x, y);
+          });
+          if (path.closed) g.closePath();
+          g.stroke();
+        }
+      }
     }
     g.restore();
   }

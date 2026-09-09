@@ -9,6 +9,8 @@ import { anchorPositions, edgeDistances, mounting, boltsOutside, EDGE_MIN,
          memberThickness } from '../core/model.js';
 import { planShapes, shapeZ, shapeLoop, loopArea, surfaceZ,
          SHAPE_LABEL, OP_LABEL } from './solid.js';
+import { requirementIssues } from '../core/reinforcement.js';
+import { groupGeometry } from './supplementary-reinforcement.js';
 
 export function validate(m) {
   const out = [];
@@ -138,10 +140,17 @@ export function validate(m) {
       warn(`B19 gir formler og tabeller for B25–B55. ${g.id} ligger utenfor; ` +
            `f_ck,cube = ${g.fckCube} N/mm² er ekstrapolert.`);
   }
-  if (m.code.tensionConcreteStandard === 'B19' && m.code.supplementaryReinf)
-    warn('Forankringsarmering regnes etter NS-EN 1992-4 tillegg C. B19 ' +
+  const reinforcements = m.reinforcements || [];
+  if (m.code.tensionConcreteStandard === 'B19' &&
+      reinforcements.some(r => r.purpose === 'tension'))
+    warn('Tilleggsarmering regnes etter NS-EN 1992-4 pkt. 7.2.1.2. B19 ' +
          'dimensjonerer tilsvarende armering med stavmodell (pkt. 19.3.2.6 ' +
          'og 19.4.3.5) – den er ikke lagt inn, så armeringa teller ikke med her.');
+  if (m.code.shearConcreteStandard === 'B19' &&
+      reinforcements.some(r => r.purpose === 'shear' || r.purpose === 'generic'))
+    warn('Tilleggsarmering regnes etter NS-EN 1992-4 pkt. 7.2.2.2. B19 ' +
+         'dimensjonerer tilsvarende armering med stavmodell (pkt. 19.4.3.5) ' +
+         '– den er ikke lagt inn, så armeringa teller ikke med her.');
 
   // --- minstekrav (veiledende, skal hentes fra ETA/produktdata) ----------
   const sMin = 5 * a.d, cMin = 5 * a.d;
@@ -175,11 +184,26 @@ export function validate(m) {
          `30 N/mm². Undergytingen regnes da ikke som fast anlegg, og skjæret ` +
          `får momentarm gjennom gytesjiktet.`);
 
-  // --- forankringsarmering ----------------------------------------------
-  if (m.code.supplementaryReinf && m.reinf) {
-    if (!(m.reinf.n > 0)) err('Forankringsarmering er valgt, men antall bein er 0.');
-    if (m.reinf.l1 > a.hef)
-      warn(`l₁ = ${m.reinf.l1} mm er lengre enn h_ef = ${a.hef} mm.`);
+  // --- tilleggsarmering ---------------------------------------------------
+  for (const r of reinforcements) {
+    const tag = `Tilleggsarmering ${r.id}`;
+    for (const issue of requirementIssues(r)) warn(`${tag}: ${issue}`);
+    const G = groupGeometry(m, null, r);
+    if (G.geo && G.geo.kind === 'shear-u' && !G.geo.edgeDir)
+      warn(`${tag}: ingen fri kant å legge kantbruddarmeringa langs.`);
+    else if (G.geo && !G.geo.fits)
+      warn(`${tag}: trenger ${Math.round(G.geo.wanted)} mm ` +
+           (G.geo.kind === 'shear-u'
+             ? `innover fra kanten, men det er bare ${Math.round(G.geo.available)} mm ` +
+               'til motsatt kant (minus overdekning).'
+             : `dybde (h_ef + l_bd), men det er bare ${Math.round(G.geo.available)} mm ` +
+               '(betongtykkelse − overdekning).'));
+    if (G.geo && G.insideLen < G.insideMin)
+      warn(`${tag}: lengde inne i bruddlegemet ${Math.round(G.insideLen)} mm er kortere enn ` +
+           `kravet ${Math.round(G.insideMin)} mm.`);
+    if (G.effCount < r.count)
+      warn(`${tag}: bare ${G.effCount} av ${r.count} bein ligger innenfor ` +
+           `0,75·${r.purpose === 'tension' ? 'h_ef' : 'c_1'} og telles med.`);
   }
   return out;
 }
