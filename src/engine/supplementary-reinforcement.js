@@ -151,19 +151,25 @@ export function tensionSupplementary(m, res, r) {
   // --- c) STM: endeplate -> trykkstav -> bøylehjørne -> strekk i bøylen ---
   if (L && nLegs > 0) {
     const fcd = m.concrete.fck / 1.5;
-    const bar = L.rows[0].bars[0];                 // alle bøylene i en rad er like
+    const bar = L.govBar;                          // flatest stav styrer
     const NCorner = NEd / nLegs;                   // ett hjørne pr. bein
     const stm = endplateToLoopSTM(m, {
       NEd: NCorner, hStrut: bar.diag, wTie: bar.L,
       bStrut: 2 * (r.cover ?? DEFAULT_COVER), dBolt: m.anchors.d,
       fck: m.concrete.fck, fcd, cracked: m.code.cracked,
     });
+    const spanTxt = `Alle bøylene er like: ${n(L.barLength, 0)} mm vannrett, ` +
+      `med ${n(L.overhang, 0)} mm utstikk i hver ende.`;
     const angleTxt = L.angleOk
-      ? `Utstikket forbi ytterste bolt er regnet slik at staven står i ` +
-        `${n(L.alphaMin, 0)}–${n(L.alphaMax, 0)}° mot den vannrette delen av bøylen.`
-      : `Trykkstaven står i ${n(L.alphaMin, 0)}–${n(L.alphaMax, 0)}°, utenfor ` +
-        `${STRUT_ANGLE.min}–${STRUT_ANGLE.max}°: betongen gir ikke plass til det ` +
-        'utstikket bøylen trenger. Reduser overdekninga, flytt boltene inn, eller øk delen.';
+      ? `${spanTxt} Én felles lengde gir staver i ${n(L.alphaMin, 0)}–${n(L.alphaMax, 0)}° ` +
+        `mot den vannrette delen, innenfor ${STRUT_ANGLE.min}–${STRUT_ANGLE.max}°.`
+      : !L.windowOk
+        ? `${spanTxt} Bøylene ligger så spredt at ingen felles lengde gir alle ` +
+          `staver innenfor ${STRUT_ANGLE.min}–${STRUT_ANGLE.max}° (${n(L.alphaMin, 0)}–` +
+          `${n(L.alphaMax, 0)}°). Reduser antallet bøyler pr. rad, eller øk h_ef.`
+        : `${spanTxt} Staven står i ${n(L.alphaMin, 0)}–${n(L.alphaMax, 0)}°, utenfor ` +
+          `${STRUT_ANGLE.min}–${STRUT_ANGLE.max}°: betongen gir ikke plass til utstikket ` +
+          'bøylene trenger. Reduser overdekninga, flytt boltene inn, eller øk delen.';
     checks.push({ ...stm, id: `N-sre-stm-${r.id}`, group: r.id,
       mode: `Tilleggsarmering ${r.id} – stavmodell endeplate→bøyle`,
       note: `${angleTxt} ${stm.note}` });

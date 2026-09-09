@@ -242,33 +242,65 @@ export function tensionLayout(m, r) {
     row.uMax = Math.max(row.uMax, s);
   }
 
+  // ALLE bøylene skal være like - én lengde, ett bøyeskjema. Bøylene ligger i
+  // ulik avstand fra bolten, så staven kan ikke stå i 45° for alle samtidig.
+  // Det er nettopp derfor vinkelen har et vindu: lengden velges så staven
+  // treffer 45° for gjennomsnittsbøylen, og klemmes inn i det området der
+  // ALLE bøylene havner mellom 35° og 55°.
+  const offsets = [];
+  for (let k = 0; k < nSide; k++)
+    offsets.push(nSide === 1 ? dMin : dMin + (dMax - dMin) * (k / (nSide - 1)));
+  const diags = offsets.map(d => Math.hypot(rise, d));
+  const dgMin = Math.min(...diags), dgMax = Math.max(...diags);
+  const loL = dgMax / Math.tan(STRUT_ANGLE.max / DEG);   // korteste som holder ≤ 55°
+  const hiL = dgMin / Math.tan(STRUT_ANGLE.min / DEG);   // lengste som holder ≥ 35°
+  const aimL = diags.reduce((s, d) => s + d, 0) / diags.length / Math.tan(STRUT_ANGLE.target / DEG);
+  const windowOk = loL <= hiL;
+  const targetL = windowOk ? Math.min(Math.max(aimL, loL), hiL) : loL;
+
+  // Bøylene spenner hele gruppa, ikke bare sin egen rad, så de blir like også
+  // når radene er ulikt lange. Utstikket kortes bare hvis betongen tvinger det.
+  const uMinAll = Math.min(...rows.map(q => q.uMin));
+  const uMaxAll = Math.max(...rows.map(q => q.uMax));
+  const at = (s, v) => ({ x: u.x * s + n.x * v, y: u.y * s + n.y * v });
+  let L = targetL;
+  for (const row of rows)
+    for (const d of offsets)
+      for (const sgn of [1, -1]) {
+        const v = row.v + sgn * d;
+        L = Math.min(L, fitInside(m, s => at(uMaxAll + s, v), L, cover),
+                        fitInside(m, s => at(uMinAll - s, v), L, cover));
+      }
+
   let alphaMin = Infinity, alphaMax = -Infinity;
   for (const row of rows) {
     row.bars = [];
-    for (let k = 0; k < nSide; k++) {
-      const d = nSide === 1 ? dMin : dMin + (dMax - dMin) * (k / (nSide - 1));
-      for (const sgn of [1, -1]) {
-        const v = row.v + sgn * d;
-        const at = s => ({ x: u.x * s + n.x * v, y: u.y * s + n.y * v });
-        // Utstikket som gir 45°: like langt ut som staven stiger, medregnet at
-        // bøylen står d til side for bolten.
-        const diag = Math.hypot(rise, d);
-        const target = diag / Math.tan(STRUT_ANGLE.target / DEG);
-        const L = Math.min(fitInside(m, s => at(row.uMax + s), target, cover),
-                           fitInside(m, s => at(row.uMin - s), target, cover));
-        const alpha = Math.atan2(diag, Math.max(L, 1e-6)) * DEG;
-        alphaMin = Math.min(alphaMin, alpha);
-        alphaMax = Math.max(alphaMax, alpha);
-        row.bars.push({ d, v, sgn, L, alpha, diag,
-                        uStart: row.uMin - L, uEnd: row.uMax + L,
+    // Staven går fra ytterste bolt i RADEN ut til bøylehjørnet, så en kort rad
+    // i en bred gruppe gir et lengre sprang - og dermed flatere stav.
+    const overStart = L + (row.uMin - uMinAll);
+    const overEnd = L + (uMaxAll - row.uMax);
+    for (const d of offsets) {
+      const diag = Math.hypot(rise, d);
+      const alpha = Math.min(Math.atan2(diag, Math.max(overStart, 1e-6)),
+                             Math.atan2(diag, Math.max(overEnd, 1e-6))) * DEG;
+      const alphaHigh = Math.max(Math.atan2(diag, Math.max(overStart, 1e-6)),
+                                 Math.atan2(diag, Math.max(overEnd, 1e-6))) * DEG;
+      alphaMin = Math.min(alphaMin, alpha);
+      alphaMax = Math.max(alphaMax, alphaHigh);
+      for (const sgn of [1, -1])
+        row.bars.push({ d, v: row.v + sgn * d, sgn, L, alpha, diag,
+                        uStart: uMinAll - L, uEnd: uMaxAll + L,
                         effective: d <= dMax + 1e-6 });
-      }
     }
   }
 
   const angleOk = Number.isFinite(alphaMin) &&
     alphaMin >= STRUT_ANGLE.min - 1e-6 && alphaMax <= STRUT_ANGLE.max + 1e-6;
   const effPerRow = rows.length ? rows[0].bars.filter(b => b.effective).length : 0;
+  // Flatest stav styrer stavmodellen: F_c = N/sin α og F_t = N/tan α vokser
+  // begge når α blir mindre.
+  const govBar = rows.flatMap(q => q.bars)
+    .reduce((a, b) => (!a || b.alpha < a.alpha ? b : a), null);
 
   return {
     kind: 'tension-u', u, n, rows, rm, cover, ds, bent: true,
@@ -279,7 +311,8 @@ export function tensionLayout(m, r) {
     outsideLen: Math.max(0, dBot - Math.max(hef, dLegTop)),
     wanted: dWanted, available: dAvail, fits: dWanted <= dAvail + 1e-6,
     dMin, dMax, zoneOk, nSide, barsPerRow: 2 * nSide, effPerRow,
-    effLegsPerRow: 2 * effPerRow, alphaMin, alphaMax, angleOk,
+    effLegsPerRow: 2 * effPerRow, alphaMin, alphaMax, angleOk, windowOk,
+    barLength: (uMaxAll - uMinAll) + 2 * L, overhang: L, govBar,
     rOff: dMin, stmH: rise,
   };
 }

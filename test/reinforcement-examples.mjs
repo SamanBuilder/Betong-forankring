@@ -96,6 +96,15 @@ console.log('\nKjeglebruddbøyler: plassering ved siden av boltraden (pkt. 2)');
     row.bars.every(b => b.d <= 0.75 * m.anchors.hef + 1e-6)),
     `0,75·h_ef = ${(0.75 * m.anchors.hef).toFixed(0)} mm`);
   near('trykkstaven treffer måltvinkelen når det er plass', L.alphaMax, 45, 0.5);
+  {
+    const all = L.rows.flatMap(row => row.bars);
+    const len = all.map(b => b.uEnd - b.uStart);
+    ok('alle bøylene er like lange', Math.max(...len) - Math.min(...len) < 1e-6,
+      `${len[0].toFixed(0)} mm`);
+    ok('alle bøylene starter og slutter i samme snitt',
+      all.every(b => Math.abs(b.uStart - all[0].uStart) < 1e-6 &&
+                     Math.abs(b.uEnd - all[0].uEnd) < 1e-6));
+  }
   ok('den vannrette delen stikker ut forbi ytterste bolt', L.rows[0].bars.every(b =>
     b.uEnd > Math.max(...L.rows[0].pts.map(p => p.x)) + 1),
     `utstikk = ${L.rows[0].bars[0].L.toFixed(0)} mm`);
@@ -107,6 +116,15 @@ console.log('\nKjeglebruddbøyler: plassering ved siden av boltraden (pkt. 2)');
     L4.rows[0].bars.filter(b => b.sgn > 0).length === 2);
   ok('den ytterste ligger i ytterkant av sona',
     Math.abs(Math.max(...L4.rows[0].bars.map(b => b.d)) - 0.75 * m.anchors.hef) < 1e-6);
+  {
+    // Bøyler i ulik avstand fra bolten deler én lengde: staven kan ikke stå i
+    // 45° for alle, men alle skal ligge i 35-55°-vinduet.
+    const len4 = L4.rows.flatMap(row => row.bars).map(b => b.uEnd - b.uStart);
+    ok('ulik avstand fra bolten gir fortsatt én felles lengde',
+      Math.max(...len4) - Math.min(...len4) < 1e-6, `${len4[0].toFixed(0)} mm`);
+    ok('alle stavene ligger i 35-55°', L4.angleOk,
+      `${L4.alphaMin.toFixed(1)}-${L4.alphaMax.toFixed(1)}°`);
+  }
   ok('antall bøyler = pr. rad × antall rader',
     buildBars(m, r4).length === 4 * L4.rows.length,
     `${buildBars(m, r4).length} bøyler`);
