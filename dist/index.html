@@ -234,36 +234,21 @@ three-d-stage { position:absolute; inset:0; }
 .assump .k { color:var(--tx2); font-size:11.5px; }
 .assump .v { color:var(--tx); font:11px var(--mono); text-align:right; }
 
-/* Utnyttelsessammendrag: alle kontrollene samtidig, som loddrette stolper i
-   ett felles diagram med en 100 %-strek på tvers. Navnet står loddrett
-   (bunn-til-topp) til VENSTRE for stolpen; prosenten står vannrett rett
-   under. Alt bunnankres (align-items:flex-end), så 0 %-grunnlinja - og
-   dermed 100 %-streken - ligger fast uansett hvor lange navnene er. */
-.usum { border-bottom:1px solid var(--line); }
-.usum-track { overflow-x:auto; padding:24px 14px 20px; }
-.usum-plot { position:relative; display:inline-flex; align-items:flex-end; gap:16px; }
-/* 102px = stolpehøyden (84px) + rommet prosenten + luft under tar (18px). */
-.usum-100 { position:absolute; left:0; right:0; bottom:102px; height:0;
-  border-top:1px dashed var(--line2); }
-.usum-100 b { position:absolute; left:2px; bottom:4px; font:10px var(--mono);
-  color:var(--tx3); white-space:nowrap; }
-.usum-item { flex:0 0 auto; display:flex; align-items:flex-end; gap:5px;
-  border:0; background:none; cursor:pointer; padding:0; }
-/* Loddrett tekst, bunn-til-topp - se samme teknikk brukt i .hud for målsatte tall. */
-.usum-item .nm { writing-mode:vertical-rl; transform:rotate(180deg);
-  font-size:10px; line-height:1.2; color:var(--tx2); white-space:nowrap;
-  transition:color .12s; }
-.usum-item .stack { display:flex; flex-direction:column; align-items:center; gap:4px; }
-.usum-item .col { width:14px; height:84px; display:flex; align-items:flex-end; }
-.usum-item .col i { display:block; width:100%; border-radius:2px 2px 0 0; }
-.usum-item .pc { font:600 10px var(--mono); color:var(--tx2); white-space:nowrap; }
-.usum-item.over .pc { color:var(--bad); }
-.usum-item:hover .nm, .usum-item:hover .pc { color:var(--tx); }
-.usum-item[aria-current="true"] .nm { color:var(--acc); font-weight:500; }
-
 .sect { margin:20px 14px 0; font-size:10px; font-weight:600; letter-spacing:.11em;
   text-transform:uppercase; color:var(--tx3); padding-bottom:6px;
   border-bottom:1px solid var(--line); }
+
+/* Strekk / skjær / samvirkning skal skille seg klart fra hverandre og fra de
+   øvrige overskriftene - tyngre skrift, litt større, og en fargeprikk som
+   går igjen på stolpene i utnyttelsessammendraget. */
+.sect.fam-tension, .sect.fam-shear, .sect.fam-combo { margin-top:24px; font-size:12px;
+  font-weight:700; letter-spacing:.04em; color:var(--tx); padding:0 0 8px 12px;
+  position:relative; border-bottom:1px solid var(--line2); }
+.sect.fam-tension::before, .sect.fam-shear::before, .sect.fam-combo::before {
+  content:''; position:absolute; left:0; top:1px; bottom:9px; width:3px; border-radius:2px; }
+.sect.fam-tension::before { background:#5b8def; }
+.sect.fam-shear::before { background:#e0a72f; }
+.sect.fam-combo::before { background:#8f6ae0; }
 
 /* Utnyttelsen skal kunne leses på avstand: tykk stolpe, tydelig prosent. */
 .chk { display:block; width:100%; text-align:left; border:0; background:none;
@@ -351,6 +336,62 @@ table.io td.src { color:var(--tx2); font-size:11.5px; }
 .sheet .empty { color:var(--tx2); font-size:13px; padding:40px 0; text-align:center; }
 .sheet .note { margin:10px 0 0; padding:9px 11px; border-radius:6px; font-size:11.5px;
   background:#fbf3e0; border:1px solid #ecdcb4; color:#8a6516; }
+
+/* === figur i utregningsarket ============================================
+   Prinsippsnitt tegnet av modellen (src/ui/figures.js). Betongen er den
+   samme sanden som i 3D, stålet mørkt, og bruddkjegla en dus tone av
+   aksentfargen slik at målene blir det tydeligste i figuren. */
+.fig { margin:0; padding:14px 8px 10px; background:var(--panel2);
+  border:1px solid var(--line); border-radius:8px; }
+.fig svg { display:block; overflow:visible; }
+.fig figcaption { margin:12px 6px 2px; font-size:11.5px; color:var(--tx2);
+  max-width:64ch; }
+.fig figcaption sub { font-size:.8em; }
+
+.fig-tabs { margin:0 0 12px 2px; }
+.fig-panel { margin:0; }
+
+.fig .conc  { fill:#e3ddcd; stroke:var(--line2); stroke-width:1; }
+.fig .plate { fill:none; stroke:#5d5a52; stroke-width:1.1; stroke-dasharray:1.5 2.5; }
+.fig .foot  { fill:#5d5a52; fill-opacity:.35; stroke:#3d3b35; stroke-width:.9; }
+.fig .ref   { fill:none; stroke:var(--tx2); stroke-width:1; stroke-dasharray:4 4; }
+.fig .area  { font:12px var(--mono); fill:#6b5a2e; }
+.fig .cut line { stroke:var(--tx3); stroke-width:.9; stroke-dasharray:12 3 2 3; }
+.fig .cut text { font:10px var(--sans); fill:var(--tx3); }
+.fig .cone  { fill:#c9b98e; fill-opacity:.5; stroke:var(--acc); stroke-width:1.4; }
+.fig .steel { fill:#5d5a52; stroke:#3d3b35; stroke-width:.8; }
+.fig .surf  { stroke:var(--tx); stroke-width:1.6; }
+/* Tilleggsarmering: egen, tydelig strek - den skal leses som armering og ikke
+   forveksles med hverken betong, bolt eller malelinjer. */
+.fig .reinf { fill:none; stroke:#0f7b6c; stroke-width:2; stroke-linejoin:round;
+              stroke-linecap:round; }
+.fig .leg   { fill:#0f7b6c; stroke:#0a5a4f; stroke-width:.8; }
+/* Den delen av armeringa som ligger inne i kjeglebruddsona - l_1. Tegnes
+   oppa den vanlige streken, klippet mot sona, sa lengden leses direkte. */
+.fig .reinf-in { fill:none; stroke:#e0559b; stroke-width:2.6; stroke-linejoin:round;
+                 stroke-linecap:round; }
+.fig .mesh  { fill:#0f7b6c; fill-opacity:.45; stroke:#0a5a4f; stroke-width:.9; }
+/* Stanga som ligger i boyen, sett ovenfra - tynnere enn boylene, sa den leses
+   som noe som ligger under dem. */
+.fig .mesh-line { fill:none; stroke:#6f7d86; stroke-width:1.4; stroke-linecap:round; }
+/* Ring om den bolten kontrollen er regnet for. */
+.fig .gov { fill:none; stroke:var(--bad); stroke-width:1.6; }
+.fig .zone  { fill:var(--acc); fill-opacity:.08; stroke:var(--acc);
+              stroke-width:1.2; stroke-dasharray:5 4; }
+.fig .brk   { stroke:var(--line2); stroke-width:1.2; stroke-dasharray:7 5; }
+.fig .brk.thin { stroke:var(--acc); stroke-width:.9; stroke-dasharray:4 4; }
+
+.fig .dim line { stroke:var(--tx2); stroke-width:.9; }
+.fig .dim .ext { stroke:var(--line2); }
+.fig .dim path { fill:var(--tx2); }
+.fig .dim text { font:11px var(--mono); fill:var(--tx); }
+.fig .dim text.sm { font-size:9.5px; }
+
+.fig .load line { stroke:var(--bad); stroke-width:1.8; }
+.fig .load path { fill:var(--bad); }
+.fig .load text { font:11px var(--mono); fill:var(--bad); }
+.fig .ann { font:10.5px var(--sans); fill:var(--tx3); text-anchor:middle; }
+.fig .arc { fill:none; stroke:var(--tx3); stroke-width:.9; }
 
 /* === smale skjermer ===================================================== */
 /* --- draghåndtak ---------------------------------------------------------
@@ -542,6 +583,7 @@ table.combos input[type=number] { -moz-appearance:textfield; appearance:textfiel
         <label class="tog"><input type="checkbox" data-show="cone"> Bruddkjegle</label>
         <label class="tog"><input type="checkbox" data-show="wedge"> Kantbrudd</label>
         <label class="tog"><input type="checkbox" data-show="rebar"> Armering</label>
+        <label class="tog"><input type="checkbox" data-show="surfaceMesh"> Overflatearmering</label>
         <label class="tog"><input type="checkbox" data-show="loads"> Laster</label>
         <label class="tog"><input type="checkbox" data-show="labels"> Boltkrefter</label>
         <label class="tog"><input type="checkbox" data-show="dims"> Mål</label>
@@ -585,6 +627,12 @@ table.combos input[type=number] { -moz-appearance:textfield; appearance:textfiel
       <div class="pane-head">
         <h2>Kontroll</h2><span class="grow"></span>
         <span class="stat" id="verdict"></span>
+      </div>
+      <div class="pane-sub" id="resultsub">
+        <div class="btn-row">
+          <button class="btn" id="tab-summary" aria-pressed="true">Oppsummering</button>
+          <button class="btn" id="tab-util" aria-pressed="false">Utnyttelser</button>
+        </div>
       </div>
       <div class="pane-body" id="results"></div>
       <div class="split col r" data-split="right" role="separator"
@@ -1741,6 +1789,40 @@ function wedgeBody([tl, th], { S, c1, al, ah, height, ax, sgn, axisX }) {
 
 const clamp = (v, lo, hi) => Math.min(hi, Math.max(lo, v));
 
+// ---------------------------------------------------------------------------
+//  Bruddkjegleflata som en DYBDE-funksjon i planet.
+//
+//  Kjegla starter i trykkflata - overkant fot/endeplate, dybde z_top - og
+//  sprer seg opp og ut til betongoverflata c_cr,N = 1,5*h_ef utenfor. Alt som
+//  ligger GRUNNERE enn flata er inne i bruddlegemet; alt under er utenfor.
+//
+//  Spredninga regnes med Chebyshev-avstand (den største av |dx| og |dy|), ikke
+//  radiell - da faller flata sammen med A_c,N, som legges opp av KVADRATER med
+//  halvbredde c_cr,N (clippedSquares/coneProjection). Med felles endeplate
+//  sprer kjegla seg fra platekanten, ellers fra hver bolt.
+//
+//  Returnerer dybden (positiv nedover) der flata krysser den loddrette linja
+//  gjennom (x, y), eller null når det ikke er noen kjegle å krysse.
+// ---------------------------------------------------------------------------
+function coneSurfaceDepth(m, foot, pts, hef, x, y) {
+  if (!foot?.hasFoot) return null;
+  const zTop = Math.max(0, hef - (foot.t || 0));   // trykkflate = overkant fot
+  const ccr = 1.5 * hef;
+  if (!(ccr > 0)) return null;
+
+  // Avstanden ut fra kilden, i Chebyshev-metrikk. 0 inne i kilden.
+  let s = Infinity;
+  if (foot.common && foot.plate) {
+    const pl = foot.plate;
+    s = Math.max(0, pl.x0 - x, x - pl.x1, pl.y0 - y, y - pl.y1);
+  } else {
+    for (const p of pts)
+      s = Math.min(s, Math.max(Math.abs(x - p.x), Math.abs(y - p.y)));
+  }
+  if (!Number.isFinite(s)) return null;
+  return clamp(zTop * (1 - s / ccr), 0, zTop);
+}
+
 // ===== src/core/model.js ===========================================
 // ---------------------------------------------------------------------------
 //  Datamodell for forbindelsen.
@@ -2141,6 +2223,9 @@ function defaultModel() {
       grade: 'B35',
       fck: 35,
       h: 300,     // tykkelse
+      // Største tilslagskorn. Brukes bare til minste senteravstand mellom
+      // parallelle armeringsstenger, NS-EN 1992-1-1 pkt. 8.2(2).
+      dg: 16,
       // Plassering av platas senter i betongdelens lokale system.
       // Formene tegnes i delas system; plata ligger i (e_x, e_y) der.
       ex: 0,
@@ -2378,18 +2463,85 @@ const GEOMETRY_LABEL = {
   ubar: 'U-bøyle', closed: 'Lukket bøyle', straight: 'Rett stang',
 };
 
-// Kjeglebruddarmering MÅ ha bøyen i toppen: det er den som tar imot trykket
-// fra trykkstaven mellom endeplata og bøylehjørnet. Rett stang finnes derfor
-// ikke for strekk.
+// Hvordan kjeglebruddbøylene fordeles på boltene:
+//
+//   anchor  Én bøyle (pr. side) om HVER bolt, så trangt om boltaksen som
+//           bøyeradien tillater. Hvert bein ligger da like ved sin egen bolt,
+//           og avstandskravet 0,75*h_ef er oppfylt for alle boltene.
+//   row     Én bøyle spenner hele boltraden, med beina rett utenfor de
+//           ytterste boltene i raden. Færre stenger og enklere bøyeskjema,
+//           men bare hjørneboltene får et bein nær seg - bolter midt i raden
+//           kan havne utenfor 0,75*h_ef, og det flagges av plasserings-
+//           kontrollen.
+const TENSION_LAYOUTS = ['anchor', 'row'];
+const TENSION_LAYOUT_LABEL = {
+  anchor: 'Bøyle om hver bolt',
+  row: 'Bøyle over hele boltraden',
+};
+
+// ---------------------------------------------------------------------------
+//  Stanga i bøyen på bøylen.
+//
+//  Bøyen på en U-bøyle krøller seg RUNDT en stang på tvers: stanga ligger inne
+//  i bøyen, og bøylen ligger altså OVER den. Stanga tar radialtrykket fra
+//  bøyen og fører strekkraften videre ut i konstruksjonen.
+//
+//   surface  Overflatearmeringa brukes som stang i bøyen. Da er det nettet som
+//            bestemmer hvor bøylen ligger: bøylen legges rett over det laget i
+//            nettet som går på TVERS av bøyleretninga, så bøyen omslutter det.
+//   own      Egen stang legges i bøyen. Da er bøylen uavhengig av nettet, og
+//            overflatearmeringa tegnes ikke. Stanga skal være minst like tjukk
+//            som bøylen, og forankres etter NS-EN 1992-1-1 pkt. 8.4.
+// ---------------------------------------------------------------------------
+const BEND_BARS = ['surface', 'own'];
+const BEND_BAR_LABEL = {
+  surface: 'Overflatearmeringa i bøyen',
+  own: 'Egen stang i bøyen',
+};
+
+// Egen stang i bøyen kan ikke være tynnere enn bøylen den skal bære.
+const bendBarDiameter = r => Math.max(r.ds, r.bendBarDs || 0);
+
+// Alle tre utformingene er tillatt for kjeglebrudd, men de forankres på hver
+// sin måte (NS-EN 1992-4 pkt. 7.2.1.2, jf. B19.3.2.6):
+//
+//   U-bøyle/løkke  bøyen i toppen skal fortrinnsvis omslutte overflate-
+//                  armeringa, slik at strekkraften føres videre inn i
+//                  konstruksjonens eget armeringsnett. l_1 >= 4*⌀.
+//   Lukket bøyle   som U-bøyla, men lukket i begge ender.
+//   Rett stang     skal IKKE omslutte overflatearmeringa. Den må i stedet ha
+//                  nødvendig forankring inne i kjeglebruddsona (l_1 >= 10*⌀)
+//                  og kobles til konstruksjonens armering med overlapp eller
+//                  annen dokumentert lastoverføring.
 const GEOMETRY_FOR = {
-  tension: ['ubar', 'closed'],
+  tension: ['ubar', 'closed', 'straight'],
   shear: ['ubar', 'closed', 'straight'],
   generic: ['ubar', 'closed', 'straight'],
 };
 
-// Bøylene ligger symmetrisk om bolten - minst én på hver side.
-const MIN_BARS_PER_ROW = 2;
-const barsPerRow = r => Math.max(MIN_BARS_PER_ROW, 2 * Math.round(r.count / 2));
+// Bøylene ligger symmetrisk om bolten - minst én på hver side, og alltid et
+// like antall, så halvparten havner på hver side.
+const MIN_BARS_PER_ANCHOR = 2;
+const barsPerAnchor = r =>
+  Math.max(MIN_BARS_PER_ANCHOR, 2 * Math.round(r.count / 2));
+
+// ---------------------------------------------------------------------------
+//  Minste avstand mellom parallelle stenger, NS-EN 1992-1-1 pkt. 8.2(2):
+//  fri avstand >= max(k_1*⌀, d_g + k_2, 20 mm), med de anbefalte k_1 = 1 og
+//  k_2 = 5 mm. Dette er nedre grense når tilleggsarmeringa legges «så nær
+//  bolten som praktisk mulig»: bøylene pakkes fra bolten og utover med denne
+//  senteravstanden, ikke spres ut til 0,75*h_ef.
+// ---------------------------------------------------------------------------
+const SPACING_K1 = 1, SPACING_K2 = 5, SPACING_ABS = 20;
+const DEFAULT_DG = 16;
+
+function minClearSpacing(ds, dg = DEFAULT_DG) {
+  return Math.max(SPACING_K1 * ds, (dg || DEFAULT_DG) + SPACING_K2, SPACING_ABS);
+}
+// Senter-senter = fri avstand + én diameter.
+function minBarSpacing(ds, dg = DEFAULT_DG) {
+  return minClearSpacing(ds, dg) + ds;
+}
 
 // Hvilket betongbrudd gruppa er ment å erstatte, jf. spesifikasjonens pkt. 8:
 // bare kjegle- og kantbrudd kan erstattes - pry-out og øvrige kontrolleres
@@ -2419,7 +2571,7 @@ function newReinforcement(id, purpose = 'tension', over = {}) {
     purpose,                          // 'tension' | 'shear' | 'generic'
     geometryType: 'ubar',             // 'ubar' | 'closed' | 'straight'
     ds: 12,
-    count: 2,                         // bøyler pr. boltrad, symmetrisk om raden
+    count: 2,                         // bøyler pr. bolt, symmetrisk om boltaksen
     direction: 0,                     // bøylenes retning i planet, grader om z
     fyk: 500,
     anchorIds: 'all',                 // 'all' eller liste med bolt-id-er
@@ -2431,6 +2583,21 @@ function newReinforcement(id, purpose = 'tension', over = {}) {
     endBendLength: null,              // fotlengde; null = det forankringa krever
     height: null,                     // bein-lengde; null = autogenerert
     width: null,                      // avstand mellom beina; null = autogenerert
+    // Kjeglebruddbøyle: avstanden mellom de to beina, målt langs bøyle-
+    // retninga. null = så trang bøyen tillater (2 * mandrelradius), altså
+    // beina så nær bolten som praktisk mulig.
+    span: null,
+    // Bøyle pr. bolt, eller én bøyle som spenner hele boltraden. Se
+    // TENSION_LAYOUT_LABEL og tensionLayout() i reinforcement-geometry.js.
+    barLayout: 'anchor',              // 'anchor' | 'row'
+    // Hva som ligger i bøyen på bøylen - se BEND_BAR_LABEL.
+    bendBar: 'surface',               // 'surface' | 'own'
+    bendBarDs: null,                  // egen stang: ⌀; null = samme som bøylen
+    // Overflatearmeringa U-bøyla/løkka skal omslutte, jf. pkt. 7.2.1.2 /
+    // B19.3.2.6. Brukes bare når bendBar = 'surface'. Nettet tegnes i 3D med
+    // denne diameteren og senteravstanden, og bøylen legges så bøyen omslutter
+    // det innerste laget.
+    surfaceReinf: { present: true, ds: 12, cover: 30, spacing: 150 },
     lapToExisting: { present: false, lapLength: 0 },   // §2/§7
     ...over,
   };
@@ -2453,6 +2620,13 @@ function requirementIssues(r) {
     issues.push(`f_yk ${r.fyk} N/mm² > ${MAX_FYK} N/mm² (maks. tillatt for tilleggsarmering, pkt. 7.2.2.6).`);
   if (!(r.count > 0))
     issues.push('Antall er 0.');
+  // Rett tilleggsarmering omslutter ingenting og har ingen bøy å forankre seg
+  // med utenfor kjegla - lastoverføringa til konstruksjonens armering må
+  // dokumenteres særskilt (overlapp eller annen løsning).
+  if (r.purpose === 'tension' && r.geometryType === 'straight' && !r.lapToExisting?.present)
+    issues.push('Rett tilleggsarmering må kobles til konstruksjonens armering med ' +
+      'overlapp eller annen dokumentert lastoverføring - kryss av for overlapp ' +
+      'og oppgi lengden.');
   return issues;
 }
 
@@ -2497,6 +2671,13 @@ function migrateReinforcements(m) {
       r.coverTop ??= r.cover; r.coverBottom ??= r.cover;
       delete r.cover;
     }
+    // Felt som kom til etter at fila kunne vaere lagra.
+    r.span ??= null;
+    r.barLayout ??= 'anchor';
+    r.bendBar ??= 'surface';
+    r.bendBarDs ??= null;
+    r.surfaceReinf ??= { present: true, ds: 12, cover: 30, spacing: 150 };
+    r.surfaceReinf.spacing ??= 150;
   }
   return m;
 }
@@ -2616,11 +2797,13 @@ function endplateToLoopSTM(m, opts) {
 //
 //  Forma følger hva armeringa skal ta opp - den er ikke den samme for alle:
 //
-//   STREKK / kjeglebrudd (pkt. 2)
-//     U-bøyle i et LODDRETT plan gjennom bolten. Den vannrette delen - bøyen -
-//     ligger like under stålplata, og de to beina peker NEDOVER, ett på hver
-//     side av bolten, ned gjennom bruddkjegla og videre ned til forankring
-//     under den.
+//   STREKK / kjeglebrudd (pkt. 7.2.1.2)
+//     U-bøyle i et LODDRETT plan like ved bolten. Den vannrette delen - bøyen -
+//     ligger rett under overflatearmeringa, som den omslutter, og de to beina
+//     peker NEDOVER, ett på hver side av bolten, ned gjennom bruddkjegla og
+//     videre ned til forankring under den. Rett stang er det samme uten bøy:
+//     en loddrett stang like ved bolten. Avstanden fra boltaksen til beinet
+//     styrer plasseringa - se tensionLayout().
 //
 //   SKJÆR / kantbrudd (pkt. 3)
 //     Samme bøyle, men LIGGENDE. Bøyen ligger langs den frie kanten som får
@@ -2788,18 +2971,37 @@ function barGeometry(m, r, anchor) {
 }
 
 // ---------------------------------------------------------------------------
-//  Kjeglebruddarmering (pkt. 2).
+//  Kjeglebruddarmering - NS-EN 1992-4 pkt. 7.2.1.2, jf. B19.3.2.6.
 //
-//  Bøylene kan ikke stå i samme snitt som boltene - de ville kollidert. De
-//  legges derfor ved siden av boltraden, symmetrisk, med minst én bøyle på
-//  hver side, og alle innenfor 0,75·h_ef fra bolten (NS-EN 1992-4 / B19).
+//  PLASSERING (dette er kravet som styrer geometrien):
 //
-//  Retninga velges av brukeren (r.direction, grader om z-aksen). Bøylene
-//  ligger langs den retninga; boltene deles i RADER på tvers av den, og hver
-//  rad spennes av sine egne bøyler. Den vannrette delen går over hele raden
-//  og stikker ut forbi den ytterste bolten i hver ende - så langt at
-//  trykkstaven fra endeplata opp til bøylehjørnet står i 45° mot den
-//  vannrette delen (STRUT_ANGLE.target), eller så langt betongen tillater.
+//    Avstanden fra BOLTAKSEN til det LODDRETTE BEINET på tilleggsarmeringa
+//    skal være <= 0,75*h_ef. Det er den FAKTISKE avstanden i planet -
+//    sqrt(dx^2 + dy^2) fra bolten til beinet - ikke avstanden langs x eller y
+//    hver for seg. Beinet ligger både forskjøvet på TVERS av bøyleretninga
+//    (d, for å gå klar av bolten) og et stykke LANGS den (halve bøylebredda,
+//    a), så den virkelige avstanden er hypot(a, d).
+//
+//    0,75*h_ef er en ØVRE grense for hvor langt unna et bein fortsatt regnes
+//    som effektivt - ikke en anbefalt plassering. Armeringa legges derfor
+//    symmetrisk om bolten og så nær den som praktisk mulig: første bøyle
+//    akkurat klar av bolten, resten pakket utover med minste tillatte
+//    senteravstand etter NS-EN 1992-1-1 pkt. 8.2 (minBarSpacing).
+//
+//  Dette erstatter den tidligere plasseringa, der den vannrette delen ble
+//  strukket ut forbi ytterste bolt for å få en trykkstav i 45°. Stavvinkelen
+//  er ikke et plasseringskrav i 1992-4, og ga bein som lå langt utenfor
+//  0,75*h_ef.
+//
+//  UTFORMING:
+//    U-bøyle / lukket bøyle  Bøyen ligger vannrett rett under overflate-
+//      armeringa, så den omslutter overflatenettet og fører strekkraften
+//      videre inn i det. Beina går ned gjennom kjegla og videre til
+//      forankring under den. l_1 >= 4*⌀ inne i kjegla.
+//    Rett stang  Ingen bøy, ingen omslutting av overflatearmeringa. Stanga
+//      står loddrett like ved bolten, forankres inne i kjegla (l_1 >= 10*⌀)
+//      og kobles til konstruksjonens armering med overlapp (kontrolleres for
+//      seg i supplementary-reinforcement.js).
 // ---------------------------------------------------------------------------
 const DEG = 180 / Math.PI;
 
@@ -2820,149 +3022,442 @@ function fitInside(m, pointAt, target, cover) {
   return lo;
 }
 
+// Dybden ned til den vannrette delen av bøylen. Skal bøyen omslutte
+// overflatearmeringa, legges den rett under nettet - ellers bare med sin egen
+// overdekning. Rett stang har ingen bøy å legge noe sted.
+// ---------------------------------------------------------------------------
+//  Hvor den vannrette delen av bøylen ligger.
+//
+//  Bøyen krøller seg RUNDT stanga som ligger i den, så bøylen ligger OVER
+//  stanga - ikke under. Stanga nøster seg inn i bøyen: overkant stang tangerer
+//  innsida av bøyen i toppen. Med bøylens senterlinje i dybde d_crown ligger
+//  innsida av bøyen i d_crown + ⌀_s/2, og stanga får senter i
+//  d_crown + ⌀_s/2 + ⌀_b/2.
+//
+//  To måter å skaffe den stanga på (r.bendBar):
+//
+//   'surface'  Overflatearmeringa brukes. Nettet ligger der det ligger, og
+//              BØYLEN følger etter: den legges rett over det laget som går på
+//              tvers av bøyleretninga (lag 2, det innerste - se
+//              buildSurfaceMesh, som legger nettet nettopp slik). Da blir
+//              d_crown = nivået til lag 2 − ⌀_nett/2 − ⌀_s/2, altså akkurat
+//              høyt nok til at bøyen omslutter stanga.
+//   'own'      Egen stang i bøyen. Bøylen står fritt og får sin egen
+//              overdekning; stanga legges inne i bøyen etter formelen over.
+// ---------------------------------------------------------------------------
+function crownDepth(r) {
+  const ds = r.ds, coverTop = r.coverTop ?? DEFAULT_COVER;
+  const bent = r.geometryType !== 'straight';
+  if (!bent) return { wrap: false, mode: 'none', dBend: 0, dCrown: coverTop + ds / 2 };
+
+  const sr = r.surfaceReinf || {};
+  const useMesh = r.bendBar !== 'own' && !!sr.present;
+  if (useMesh) {
+    const dt = sr.ds ?? 0;
+    const dBend = surfaceMeshLevels(r)[1];              // laget på tvers
+    return { wrap: true, mode: 'surface', dBend, dt,
+             dCrown: dBend - dt / 2 - ds / 2 };
+  }
+  const dt = bendBarDiameter(r);
+  const dCrown = coverTop + ds / 2;
+  return { wrap: false, mode: 'own', dt, dCrown, dBend: dCrown + ds / 2 + dt / 2 };
+}
+
+// Nivåa til de to lagene i overflatenettet, målt til senter av stanga.
+// Lag 1 ligger ytterst (i overdekninga) og går LANGS bøyleretninga; lag 2
+// ligger rett innenfor og går på TVERS - det er lag 2 bøyen omslutter, og
+// derfor det som må ligge innerst.
+function surfaceMeshLevels(r) {
+  const sr = r.surfaceReinf || {};
+  const c = sr.cover ?? (r.coverTop ?? DEFAULT_COVER), d = sr.ds ?? 0;
+  return [c + d / 2, c + d + d / 2];
+}
+
 function tensionLayout(m, r) {
   const a = m.anchors, ds = r.ds, hef = a.hef;
-  // Overkant styrer hvor den vannrette delen ligger (og dermed trykkstavens
-  // sprang), underkant hvor langt ned beina får lov å gå.
+  // Overkant styrer hvor den vannrette delen ligger (og dermed hvor beina
+  // starter), underkant hvor langt ned beina får lov å gå.
   const coverTop = r.coverTop ?? DEFAULT_COVER, coverBottom = r.coverBottom ?? DEFAULT_COVER;
+  const bent = r.geometryType !== 'straight';
   const rm = mandrelDiameter(ds) / 2;
   const th = (r.direction || 0) / DEG;
   const u = { x: Math.cos(th), y: Math.sin(th) };
-  const n = { x: -Math.sin(th), y: Math.cos(th) };
+  const nv = { x: -Math.sin(th), y: Math.cos(th) };
   const pts = anchorsServed(m, r);
 
-  const dCrown = coverTop + ds / 2;                // vannrett del, under plata
-  const dLegTop = dCrown + rm;                     // der de rette beina starter
+  const cd = crownDepth(r);
+  const { wrap: wrapSurface, dCrown } = cd;
+  const dBend = cd.dBend;                          // stanga inne i bøyen
+  const dtBend = cd.dt ?? 0;                       // ...og diameteren dens
+  const dLegTop = bent ? dCrown + rm : coverTop;   // der det rette beinet starter
   const dAvail = Math.max(0, memberThickness(m, pts) - coverBottom);
-  const { lbd } = anchorageLength(m.concrete.fck, ds, r.fyk / 1.15, true);
-  const dWanted = hef + lbd;                      // forbi kjegla, pluss l_bd
+  const { lbd, lbRqd, lbmin } = anchorageLength(m.concrete.fck, ds, r.fyk / 1.15, bent);
+  const dWanted = hef + lbd;                       // forbi kjegla, pluss l_bd
   const dBot = Math.min(dWanted, dAvail);
-  const rise = Math.max(1, hef - dCrown);         // fra endeplate opp til bøylen
 
-  // Sona bøylene kan ligge i: fra der de går klar av bolten, ut til 0,75·h_ef.
-  const dMin = r.clearance + a.d / 2 + ds / 2;
+  // --- sona og pakkinga -----------------------------------------------------
+  // dMax  maksimal FAKTISK avstand bolt -> bein (0,75*h_ef)
+  // a     halve bøylebredda: hvor langt beina står fra boltsnittet LANGS
+  //       bøyleretninga. Så trangt bøyen tillater (2*rm mellom beina), med
+  //       mindre brukeren har oppgitt en bredde.
+  // dMin  første bøyle: akkurat klar av bolten på TVERS av retninga
+  // dLim  den største tverravstanden som fortsatt gir hypot(a, d) <= dMax
   const dMax = 0.75 * hef;
-  const nSide = Math.max(1, barsPerRow(r) / 2);
-  const zoneOk = dMin <= dMax + 1e-6;
-
-  // Boltene delt i rader på tvers av bøyleretninga.
-  const rows = [];
-  for (const p of pts) {
-    const v = p.x * n.x + p.y * n.y, s = p.x * u.x + p.y * u.y;
-    let row = rows.find(q => Math.abs(q.v - v) < 1);
-    if (!row) { row = { v, pts: [], uMin: Infinity, uMax: -Infinity }; rows.push(row); }
-    row.pts.push(p);
-    row.uMin = Math.min(row.uMin, s);
-    row.uMax = Math.max(row.uMax, s);
-  }
-
-  // ALLE bøylene skal være like - én lengde, ett bøyeskjema. Bøylene ligger i
-  // ulik avstand fra bolten, så staven kan ikke stå i 45° for alle samtidig.
-  // Det er nettopp derfor vinkelen har et vindu: lengden velges så staven
-  // treffer 45° for gjennomsnittsbøylen, og klemmes inn i det området der
-  // ALLE bøylene havner mellom 35° og 55°.
+  const halfSpan = bent ? Math.max(rm, (r.span > 0 ? r.span / 2 : rm)) : 0;
+  // Rett stang har ingen spennvidde å strekke over en rad - den står alltid
+  // ved sin egen bolt.
+  const barLayout = bent ? (r.barLayout === 'row' ? 'row' : 'anchor') : 'anchor';
+  const dMin = r.clearance + a.d / 2 + ds / 2;
+  const dLim = halfSpan < dMax ? Math.sqrt(dMax * dMax - halfSpan * halfSpan) : 0;
+  const zoneOk = dMin <= dLim + 1e-6;
+  const sMin = minBarSpacing(ds, m.concrete?.dg);
+  const nSide = Math.max(1, Math.round(barsPerAnchor(r) / 2));
   const offsets = [];
-  for (let k = 0; k < nSide; k++)
-    offsets.push(nSide === 1 ? dMin : dMin + (dMax - dMin) * (k / (nSide - 1)));
-  const diags = offsets.map(d => Math.hypot(rise, d));
-  const dgMin = Math.min(...diags), dgMax = Math.max(...diags);
-  const loL = dgMax / Math.tan(STRUT_ANGLE.max / DEG);   // korteste som holder ≤ 55°
-  const hiL = dgMin / Math.tan(STRUT_ANGLE.min / DEG);   // lengste som holder ≥ 35°
-  const aimL = diags.reduce((s, d) => s + d, 0) / diags.length / Math.tan(STRUT_ANGLE.target / DEG);
-  const windowOk = loL <= hiL;
-  const targetL = windowOk ? Math.min(Math.max(aimL, loL), hiL) : loL;
+  for (let k = 0; k < nSide; k++) offsets.push(dMin + k * sMin);
 
-  // Bøylene spenner hele gruppa, ikke bare sin egen rad, så de blir like også
-  // når radene er ulikt lange. Utstikket kortes bare hvis betongen tvinger det.
-  const uMinAll = Math.min(...rows.map(q => q.uMin));
-  const uMaxAll = Math.max(...rows.map(q => q.uMax));
-  const at = (s, v) => ({ x: u.x * s + n.x * v, y: u.y * s + n.y * v });
-  let L = targetL;
-  for (const row of rows)
-    for (const d of offsets)
-      for (const sgn of [1, -1]) {
-        const v = row.v + sgn * d;
-        L = Math.min(L, fitInside(m, s => at(uMaxAll + s, v), L, coverTop),
-                        fitInside(m, s => at(uMinAll - s, v), L, coverTop));
-      }
-
-  // Bøy i enden av beina, ut fra gruppa (bare på åpen U-bøyle - den lukka har
-  // ingen frie ender). Bøyen med foten teller som forankring, og flytter
-  // samtidig punktet den nye kjegla regnes fra utover. Det er dette som
-  // redder en tynn plate: uten den må hele l_bd tas som rett bein nedover.
+  // --- endebøy --------------------------------------------------------------
+  // Bøy i enden av beina, ut fra bolten (bare på åpen U-bøyle - den lukka har
+  // ingen frie ender, og rett stang har ingen bøy). Bøyen med foten teller som
+  // forankring, og flytter samtidig punktet den nye kjegla regnes fra utover.
   const endBend = !!r.endBend && r.geometryType === 'ubar';
-  const bendArc = Math.PI * rm / 2;                // kvartbøy
+  const bendArc = bent ? Math.PI * rm / 2 : 0;     // kvartbøy i hjørnet
   const legBottom = endBend ? Math.max(dLegTop, dBot - rm) : dBot;
   const straightOutside = Math.max(0, legBottom - Math.max(hef, dLegTop));
+  const at = (s, v) => ({ x: u.x * s + nv.x * v, y: u.y * s + nv.y * v });
+
   let footLen = 0;
   if (endBend) {
     const need = r.endBendLength > 0
       ? r.endBendLength
       : Math.max(0, lbd - straightOutside - bendArc);
     footLen = need;
-    for (const row of rows)
+    for (const p of pts) {
+      const sp = p.x * u.x + p.y * u.y, v0 = p.x * nv.x + p.y * nv.y;
       for (const d of offsets)
         for (const sgn of [1, -1]) {
-          const v = row.v + sgn * d;
+          const v = v0 + sgn * d;
           footLen = Math.min(footLen,
-            fitInside(m, s => at(uMaxAll + L + rm + s, v), need, coverTop),
-            fitInside(m, s => at(uMinAll - L - rm - s, v), need, coverTop));
+            fitInside(m, t => at(sp + halfSpan + rm + t, v), need, coverTop),
+            fitInside(m, t => at(sp - halfSpan - rm - t, v), need, coverTop));
         }
+    }
   }
   const anchorageAvail = straightOutside + (endBend ? bendArc + footLen : 0);
 
-  let alphaMin = Infinity, alphaMax = -Infinity;
-  for (const row of rows) {
-    row.bars = [];
-    // Staven går fra ytterste bolt i RADEN ut til bøylehjørnet, så en kort rad
-    // i en bred gruppe gir et lengre sprang - og dermed flatere stav.
-    const overStart = L + (row.uMin - uMinAll);
-    const overEnd = L + (uMaxAll - row.uMax);
-    for (const d of offsets) {
-      const diag = Math.hypot(rise, d);
-      const alpha = Math.min(Math.atan2(diag, Math.max(overStart, 1e-6)),
-                             Math.atan2(diag, Math.max(overEnd, 1e-6))) * DEG;
-      const alphaHigh = Math.max(Math.atan2(diag, Math.max(overStart, 1e-6)),
-                                 Math.atan2(diag, Math.max(overEnd, 1e-6))) * DEG;
-      alphaMin = Math.min(alphaMin, alpha);
-      alphaMax = Math.max(alphaMax, alphaHigh);
-      const uStart = uMinAll - L, uEnd = uMaxAll + L;
-      // Punktene den nye kjegla regnes fra: enden av foten, ellers bunnen av
-      // beinet.
-      const reach = endBend ? rm + footLen : 0;
-      for (const sgn of [1, -1]) {
-        const v = row.v + sgn * d;
-        row.bars.push({ d, v, sgn, L, alpha, diag, uStart, uEnd,
-                        endBend, footLen, legBottom,
-                        endPoints: [at(uStart - reach, v), at(uEnd + reach, v)],
-                        effective: d <= dMax + 1e-6 });
-      }
+  // --- bøylene --------------------------------------------------------------
+  // Én bøyle pr. offset pr. side pr. bolt, symmetrisk om bolten. To bolter som
+  // ligger tett kan gi bøyler i samme snitt - de slås sammen til én, ellers
+  // ville den samme stanga blitt talt to ganger.
+  const bars = [];
+  const seen = new Map();
+  const reach = endBend ? rm + footLen : 0;
+  // «Bøyle om hver bolt» gir én spennvidde pr. bolt; «bøyle over hele
+  // boltraden» slår boltene som ligger på linje langs bøyleretninga sammen,
+  // så bøylen spenner fra ytterste til ytterste med beina rett utenfor
+  // hjørneboltene.
+  const spans = [];
+  if (barLayout === 'row') {
+    for (const p of pts) {
+      const sp = p.x * u.x + p.y * u.y, vp = p.x * nv.x + p.y * nv.y;
+      let row = spans.find(q => Math.abs(q.v0 - vp) < 1);
+      if (!row) { row = { v0: vp, sLo: sp, sHi: sp, pts: [] }; spans.push(row); }
+      row.sLo = Math.min(row.sLo, sp); row.sHi = Math.max(row.sHi, sp);
+      row.pts.push(p);
+    }
+    for (const q of spans) q.s0 = (q.sLo + q.sHi) / 2;
+  } else {
+    for (const p of pts) {
+      const sp = p.x * u.x + p.y * u.y;
+      spans.push({ v0: p.x * nv.x + p.y * nv.y, sLo: sp, sHi: sp, s0: sp, pts: [p] });
     }
   }
 
-  const angleOk = Number.isFinite(alphaMin) &&
-    alphaMin >= STRUT_ANGLE.min - 1e-6 && alphaMax <= STRUT_ANGLE.max + 1e-6;
-  const effPerRow = rows.length ? rows[0].bars.filter(b => b.effective).length : 0;
-  // Flatest stav styrer stavmodellen: F_c = N/sin α og F_t = N/tan α vokser
-  // begge når α blir mindre.
-  const govBar = rows.flatMap(q => q.bars)
-    .reduce((a, b) => (!a || b.alpha < a.alpha ? b : a), null);
+  for (const row of spans) {
+    const { s0, v0 } = row;
+    for (const d of offsets)
+      for (const sgn of [1, -1]) {
+        const v = v0 + sgn * d;
+        const uStart = row.sLo - halfSpan, uEnd = row.sHi + halfSpan;
+        const key = `${Math.round(v)}|${Math.round(uStart)}|${Math.round(uEnd)}`;
+        const hit = seen.get(key);
+        if (hit) { for (const q of row.pts) if (!hit.anchors.includes(q)) hit.anchors.push(q); continue; }
+        const bar = {
+          d, v, sgn, s0, uStart, uEnd, halfSpan, endBend, footLen, legBottom,
+          anchors: [...row.pts],
+          // Loddrette bein i planet. Rett stang har bare ett.
+          legs: bent ? [at(uStart, v), at(uEnd, v)] : [at(s0, v)],
+          // Punktene den nye kjegla regnes fra: enden av foten, ellers bunnen
+          // av beinet.
+          endPoints: bent
+            ? [at(uStart - reach, v), at(uEnd + reach, v)]
+            : [at(s0, v)],
+        };
+        seen.set(key, bar);
+        bars.push(bar);
+      }
+  }
+
+  // --- hvilke bein hver bolt kan regne med ----------------------------------
+  // Et bein teller for en bolt bare når den faktiske avstanden i planet er
+  // <= 0,75*h_ef. Ligger beinet innenfor sona til flere bolter, deles det
+  // mellom dem - ellers ville den samme stanga blitt regnet med to ganger.
+  //
+  //  Samtidig regnes det ut hvor BRUDDKJEGLA krysser hvert bein. Kjegla er en
+  //  kjegle: den starter ved foten i dybde z_top og sprer seg opp og ut. Et
+  //  bein som står et stykke fra bolten treffer derfor kjegleflata GRUNNERE
+  //  enn h_ef, og bare biten over krysningspunktet ligger inne i bruddlegemet.
+  //  Det er den biten som er l_1 - ikke hele beinet ned til h_ef.
+  const foot = anchorFoot(m);
+  const legs = [];
+  for (const b of bars)
+    for (const q of b.legs) {
+      const serves = pts.filter(p => Math.hypot(q.x - p.x, q.y - p.y) <= dMax + 1e-6);
+      const zCone = coneSurfaceDepth(m, foot, pts, hef, q.x, q.y);
+      // Uten fot er det ingen kjegle - da er hele beinet ned til h_ef
+      // «innenfor», som resten av verktøyet regner heftforankring.
+      const zx = zCone == null ? hef : zCone;
+      const l1 = Math.max(0, Math.min(legBottom, zx) - dLegTop) + bendArc;
+      legs.push({ x: q.x, y: q.y, bar: b, serves, zCone: zx, l1 });
+      b.effective = (b.effective ?? false) || serves.length > 0;
+    }
+
+  let dNearest = Infinity, dFarthest = 0;
+  const perAnchor = pts.map(p => {
+    let nEff = 0, dNear = Infinity, dFar = 0;
+    for (const g of legs) {
+      const dist = Math.hypot(g.x - p.x, g.y - p.y);
+      dNear = Math.min(dNear, dist);
+      if (dist <= dMax + 1e-6) { nEff += 1 / g.serves.length; dFar = Math.max(dFar, dist); }
+    }
+    dNearest = Math.min(dNearest, dNear);
+    dFarthest = Math.max(dFarthest, dFar);
+    return { id: p.id, x: p.x, y: p.y, nEff, dNear, dFar };
+  });
+  const allServed = perAnchor.every(q => q.nEff > 0);
+
+  // Ligger beina så tett at NS-EN 1992-1-1 pkt. 8.2 brytes? Med automatisk
+  // pakking skjer det bare når to bolter står så nær hverandre at bøylene
+  // deres møtes; da er det en reell detaljeringskonflikt og ikke noe motoren
+  // skal flytte på av seg selv.
+  let gapMin = Infinity;
+  for (let i = 0; i < legs.length; i++)
+    for (let j = i + 1; j < legs.length; j++) {
+      const dist = Math.hypot(legs[i].x - legs[j].x, legs[i].y - legs[j].y);
+      if (dist > 1e-6) gapMin = Math.min(gapMin, dist);
+    }
+  const spacingOk = !Number.isFinite(gapMin) || gapMin >= sMin - 1e-6;
+
+  // dOwn er selve plasseringa, målt mot 0,75*h_ef: for hver bolt tas det
+  // nærmeste beinet i HVER av bøylene som er lagt for den bolten, og den
+  // verste av dem styrer. Da fanges begge feilmåtene:
+  //   - bøyle om hver bolt   den ytterste bøylen i pakken ligger for langt ute
+  //   - bøyle over hele raden en bolt midt i raden har ikke noe bein nær seg
+  // dFarthest er noe annet: der teller også bein som hører til en nabobolt,
+  // men som tilfeldigvis ligger innenfor sona.
+  // Forankringa inne i bruddlegemet: det korteste blant beina som teller med.
+  const useLegs = legs.filter(g => g.serves.length > 0);
+  const pool = useLegs.length ? useLegs : legs;
+  const l1Min = pool.length ? Math.min(...pool.map(g => g.l1)) : 0;
+  const l1Max = pool.length ? Math.max(...pool.map(g => g.l1)) : 0;
+  const zConeMin = pool.length ? Math.min(...pool.map(g => g.zCone)) : 0;
+  const zConeMax = pool.length ? Math.max(...pool.map(g => g.zCone)) : 0;
+
+  let dOwn = 0;
+  for (const p of pts)
+    for (const b of bars) {
+      if (!b.anchors.includes(p)) continue;
+      let near = Infinity;
+      for (const q of b.legs) near = Math.min(near, Math.hypot(q.x - p.x, q.y - p.y));
+      if (Number.isFinite(near)) dOwn = Math.max(dOwn, near);
+    }
 
   return {
-    kind: 'tension-u', u, n, rows, rm, coverTop, coverBottom, ds, bent: true,
-    dCrown, dLegTop, dBot, rise, lbd, endBend, footLen, legBottom, bendArc,
+    kind: 'tension-u', u, n: nv, rm, coverTop, coverBottom, ds, bent,
+    dCrown, dLegTop, dBot, lbd, lbRqd, lbmin, endBend, footLen, legBottom, bendArc,
+    wrapSurface, bendBarMode: cd.mode, dBend, dtBend,
+    bendBarLbd: bent
+      ? anchorageLength(m.concrete.fck, dtBend || ds, r.fyk / 1.15, false).lbd : 0,
     legLen: Math.max(0, legBottom - dLegTop),
-    // Bein inne i kjegla + kvartbøyen i hjørnet, pr. bein.
-    insideLen: Math.max(0, Math.min(legBottom, hef) - dLegTop) + bendArc,
+    // Bein inne i kjegla + kvartbøyen i hjørnet, pr. bein. Målt fra der
+    // kjegleflata faktisk krysser beinet, ikke fra h_ef - se over. Det
+    // korteste beinet blant dem som teller med styrer.
+    insideLen: l1Min, insideMax: l1Max, zConeMin, zConeMax,
     outsideLen: straightOutside, anchorageAvail,
     // Forankringa er nok når den rette biten under kjegla, pluss bøyen og
     // foten, til sammen når l_bd.
     wanted: dWanted, available: dAvail, fits: anchorageAvail + 1e-6 >= lbd,
-    dMin, dMax, zoneOk, nSide, barsPerRow: 2 * nSide, effPerRow,
-    effLegsPerRow: 2 * effPerRow, alphaMin, alphaMax, angleOk, windowOk,
-    barLength: (uMaxAll - uMinAll) + 2 * L, overhang: L, govBar,
-    rOff: dMin, stmH: rise,
+    // Plasseringa
+    dMin, dMax, dLim, halfSpan, sMin, offsets, zoneOk, spacingOk, gapMin,
+    nSide, barsPerAnchor: 2 * nSide, legsPerBar: bent ? 2 : 1,
+    dNearest, dFarthest, dOwn, allServed, barLayout,
+    bars, legs, perAnchor,
+    rOff: dMin, stmH: Math.max(1, hef - dCrown),
   };
+}
+
+// ---------------------------------------------------------------------------
+//  Del en armeringsbane i de bitene som ligger INNE i bruddlegemet og de som
+//  ligger utenfor. Brukes både av figurene (rosa strek) og av 3D-visninga
+//  (rosa rør), så de to viser nøyaktig det samme.
+//
+//  Grensa er kjegleflata: et punkt er inne når det ligger grunnere enn
+//  coneSurfaceDepth() i sitt eget punkt i planet. Der banen krysser flata,
+//  settes det inn et punkt akkurat på krysningen, så skjøten blir nøyaktig.
+// ---------------------------------------------------------------------------
+function splitPathAtCone(m, r, path) {
+  const pts = path.points;
+  if (pts.length < 2) return [{ points: pts, inside: false, closed: path.closed }];
+  const foot = anchorFoot(m);
+  const hef = m.anchors.hef;
+  const served = anchorsServed(m, r);
+  if (!foot.hasFoot) return [{ points: pts, inside: false, closed: path.closed }];
+
+  // f(p) > 0 inne i bruddlegemet. z er negativ nedover, dybde = -z.
+  const f = p => {
+    const zc = coneSurfaceDepth(m, foot, served, hef, p.x, p.y);
+    return zc == null ? -1 : zc - (-p.z);
+  };
+  const lerp = (a, b, t) => ({ x: a.x + (b.x - a.x) * t, y: a.y + (b.y - a.y) * t,
+                               z: a.z + (b.z - a.z) * t });
+
+  const seq = path.closed ? [...pts, pts[0]] : pts;
+  const out = [];
+  let run = [seq[0]], inside = f(seq[0]) > 0;
+  for (let i = 1; i < seq.length; i++) {
+    const fa = f(seq[i - 1]), fb = f(seq[i]);
+    if ((fa > 0) !== (fb > 0)) {
+      const t = fa / (fa - fb);
+      const cut = lerp(seq[i - 1], seq[i], Math.max(0, Math.min(1, t)));
+      run.push(cut);
+      out.push({ points: run, inside, closed: false });
+      run = [cut];
+      inside = fb > 0;
+    }
+    run.push(seq[i]);
+  }
+  if (run.length > 1) out.push({ points: run, inside, closed: false });
+  return out;
+}
+
+// ---------------------------------------------------------------------------
+//  Overflatearmeringa - nettet U-bøyla omslutter.
+//
+//  To ortogonale lag: det ytterste ligger i overdekninga, det innerste rett
+//  innenfor. Bøylens vannrette del ligger under begge (se crownDepth), så den
+//  låser seg om nettet og fører strekkraften videre inn i det.
+//
+//  Nettet tegnes bare der det har noe med kontrollen å gjøre: over
+//  utstrekninga til tilleggsarmeringa, utvidet med c_cr,N = 1,5*h_ef til hver
+//  side, og klippet mot betongdelen. Et helt nett over hele dekket ville
+//  skjult resten av modellen uten å si mer.
+// ---------------------------------------------------------------------------
+function buildSurfaceMesh(m, r) {
+  const sr = r.surfaceReinf;
+  if (r.bendBar === 'own') return [];              // egen stang i bøyen i stedet
+  if (!sr?.present || r.purpose !== 'tension' || r.geometryType === 'straight') return [];
+  const ds = sr.ds > 0 ? sr.ds : 0;
+  const spacing = sr.spacing > 0 ? sr.spacing : 150;
+  if (!(ds > 0)) return [];
+
+  const L = tensionLayout(m, r);
+  if (!(L.legLen > 0) || !L.bars.length) return [];
+  const levels = surfaceMeshLevels(r);
+  return meshGrid(m, L, spacing, [
+    // Lag 1, ytterst: LANGS bøyleretninga. Ligger i samme høgd som den
+    // vannrette delen av bøylen og flettes inn ved siden av den.
+    { layer: 1, ds, level: levels[0], dir: L.u, across: L.n },
+    // Lag 2, innerst: på TVERS. Det er dette laget bøyen omslutter, og
+    // derfor må det ligge innenfor lag 1 - se crownDepth().
+    { layer: 2, ds, level: levels[1], dir: L.n, across: L.u },
+  ]);
+}
+
+// Et rutenett av stenger i bøylens eget system: `dir` er retninga stanga går
+// i, `across` retninga de fordeles i. Hver stang trimmes mot betongdelen, så
+// nettet følger en vilkårlig tegnet plan.
+function meshGrid(m, L, spacing, layers) {
+  const margin = 1.5 * m.anchors.hef;
+  // Utstrekninga i bøylens system: alt armeringa dekker, pluss kjeglas
+  // utbredelse til hver side.
+  let uMin = Infinity, uMax = -Infinity, vMin = Infinity, vMax = -Infinity;
+  for (const b of L.bars)
+    for (const q of [...b.legs, ...b.endPoints]) {
+      const uu = q.x * L.u.x + q.y * L.u.y, vv = q.x * L.n.x + q.y * L.n.y;
+      uMin = Math.min(uMin, uu); uMax = Math.max(uMax, uu);
+      vMin = Math.min(vMin, vv); vMax = Math.max(vMax, vv);
+    }
+  if (!Number.isFinite(uMin)) return [];
+  uMin -= margin; uMax += margin; vMin -= margin; vMax += margin;
+
+  const out = [];
+  for (const lay of layers) {
+    // Fordelingsretninga: `across`. Langs den legges stengene symmetrisk om
+    // midten av feltet, så nettet ser likt ut uansett hvor boltegruppa står.
+    const alongU = Math.abs(lay.dir.x * L.u.x + lay.dir.y * L.u.y) > 0.5;
+    const [a0, a1] = alongU ? [vMin, vMax] : [uMin, uMax];   // fordeling
+    const [b0, b1] = alongU ? [uMin, uMax] : [vMin, vMax];   // lengde
+    const mid = (a0 + a1) / 2, nHalf = Math.floor(((a1 - a0) / 2) / spacing);
+    for (let k = -nHalf; k <= nHalf; k++) {
+      const a = mid + k * spacing;
+      const at = t => alongU
+        ? { x: L.u.x * t + L.n.x * a, y: L.u.y * t + L.n.y * a }
+        : { x: L.u.x * a + L.n.x * t, y: L.u.y * a + L.n.y * t };
+      const c = (a0 + a1) / 2 * 0 + (b0 + b1) / 2;   // midtpunkt i lengderetninga
+      // Trim hver ende mot betongen, så stanga ikke stikker ut av delen.
+      const half = (b1 - b0) / 2;
+      const e0 = fitInside(m, t => at(c - t), half, lay.ds);
+      const e1 = fitInside(m, t => at(c + t), half, lay.ds);
+      if (!(e0 + e1 > 4 * lay.ds)) continue;
+      const p0 = at(c - e0), p1 = at(c + e1);
+      out.push({ ds: lay.ds, layer: lay.layer,
+        paths: [{ points: [{ ...p0, z: -lay.level }, { ...p1, z: -lay.level }],
+                  closed: false }] });
+    }
+  }
+  return out;
+}
+
+// ---------------------------------------------------------------------------
+//  Egen stang i bøyen (r.bendBar = 'own').
+//
+//  Én stang pr. bøy, lagt PÅ TVERS av bøyleretninga inne i bøyen, gjennom alle
+//  bøylene som har bøyen sin i det samme snittet. Stanga skal være minst like
+//  tjukk som bøylen, og forankres i hver ende etter NS-EN 1992-1-1 pkt. 8.4 -
+//  det er den som fører kraften fra bøyene videre ut i konstruksjonen.
+// ---------------------------------------------------------------------------
+function buildBendBars(m, r) {
+  if (r.bendBar !== 'own' || r.purpose !== 'tension') return [];
+  if (r.geometryType === 'straight') return [];
+  const L = tensionLayout(m, r);
+  if (!(L.legLen > 0) || !L.bars.length) return [];
+  const ds = L.dtBend;
+  const { lbd } = anchorageLength(m.concrete.fck, ds, r.fyk / 1.15, false);
+
+  // Bøyene ligger i toppen av hvert hjørne: for en trang U (hårnål) faller de
+  // to hjørnene sammen i ett, ellers er det ett i hver ende.
+  const stations = new Map();
+  for (const b of L.bars)
+    for (const uu of [b.uStart + L.rm, b.uEnd - L.rm]) {
+      const key = Math.round(uu);
+      const st = stations.get(key) || { u: uu, vMin: Infinity, vMax: -Infinity };
+      st.vMin = Math.min(st.vMin, b.v); st.vMax = Math.max(st.vMax, b.v);
+      stations.set(key, st);
+    }
+
+  const out = [];
+  for (const st of stations.values()) {
+    const at = v => ({ x: L.u.x * st.u + L.n.x * v, y: L.u.y * st.u + L.n.y * v });
+    // Forankringa legges utenfor den ytterste bøylen stanga betjener, så langt
+    // betongen tillater.
+    const e0 = fitInside(m, t => at(st.vMin - t), lbd, ds);
+    const e1 = fitInside(m, t => at(st.vMax + t), lbd, ds);
+    out.push({ ds, bendBar: true, u: st.u, lbd,
+      anchorage: Math.min(e0, e1), anchorEnds: [e0, e1],
+      span: (st.vMax - st.vMin) + e0 + e1,
+      paths: [{ points: [{ ...at(st.vMin - e0), z: -L.dBend },
+                         { ...at(st.vMax + e1), z: -L.dBend }], closed: false }] });
+  }
+  return out;
 }
 
 // ---------------------------------------------------------------------------
@@ -3006,12 +3501,17 @@ function arcTo(pts, P, cu, cz, rad, a0, a1, seg) {
   }
 }
 
-// Én kjeglebruddbøyle: vannrett del under plata, bøyd 90° i hvert hjørne og
-// ned i to bein. «Lukket bøyle» får i tillegg bunn med to bøyer til.
+// Én kjeglebruddbøyle: vannrett del rett under overflatearmeringa, bøyd 90° i
+// hvert hjørne og ned i to bein. «Lukket bøyle» får i tillegg bunn med to bøyer
+// til. Rett stang er bare det loddrette beinet - ingen bøy, ingen omslutting.
 function tensionBarPath(layout, bar, geometryType) {
   const { u, n, rm } = layout;
   const P = (s, z) => V(u.x * s + n.x * bar.v, u.y * s + n.y * bar.v, z);
   const zTop = -layout.dCrown, zBot = -layout.dBot;
+
+  if (geometryType === 'straight')
+    return [{ points: [P(bar.s0, -layout.dLegTop), P(bar.s0, zBot)], closed: false }];
+
   const zTan = zTop - rm;                    // der beinet møter hjørnebøyen
   const seg = Math.max(4, Math.round(ARC_SEG / 2));
   const uA = bar.uStart + rm, uB = bar.uEnd - rm;
@@ -3026,7 +3526,7 @@ function tensionBarPath(layout, bar, geometryType) {
     return [{ points: pts, closed: true }];
   }
 
-  // Med bøy i enden svinger beinet 90° UT fra gruppa nederst, og fortsetter i
+  // Med bøy i enden svinger beinet 90° UT fra bolten nederst, og fortsetter i
   // en vannrett fot. Bøyens senter ligger en mandrelradius inn og opp fra
   // bunnpunktet, så foten havner i kote -dBot.
   if (bar.endBend) {
@@ -3073,16 +3573,14 @@ function buildBars(m, r) {
   let pts = anchorsServed(m, r);
   if (!pts.length) return [];
 
-  // Kjeglebrudd: bøylene følger radene, ikke boltene enkeltvis.
+  // Kjeglebrudd: bøylene ligger symmetrisk om HVER bolt, så nær den som
+  // praktisk mulig - se tensionLayout().
   if (r.purpose === 'tension') {
     const layout = tensionLayout(m, r);
     if (!(layout.legLen > 0)) return [];
-    const out = [];
-    for (const row of layout.rows)
-      for (const bar of row.bars)
-        out.push({ anchor: row.pts[0], row, bar, geo: layout, ds: r.ds,
-                   paths: tensionBarPath(layout, bar, r.geometryType) });
-    return out;
+    return layout.bars.map(bar => ({
+      anchor: bar.anchors[0], bar, geo: layout, ds: r.ds,
+      paths: tensionBarPath(layout, bar, r.geometryType) }));
   }
 
   if (r.purpose === 'shear') {
@@ -4029,10 +4527,15 @@ function runEN1992_4(m, res) {
 //
 //  Erstatter den tidligere src/engine/anchor-reinforcement.js, som brukte
 //  andre punkthenvisninger (7.2.1.8/7.2.2.6) og manglet: krav til diameter/
-//  stålkvalitet, 0,75·h_ef/0,75·c_1-sona, riktig 4⌀/10⌀-grense etter
-//  geometritype, og en STM-kontroll for kraftoverføringa fra fot til
-//  armering. Se src/engine/reinforcement-geometry.js for geometrien og
-//  src/engine/stm.js for stavmodellen.
+//  stålkvalitet, 0,75·h_ef/0,75·c_1-sona og riktig 4⌀/10⌀-grense etter
+//  geometritype. Se src/engine/reinforcement-geometry.js for geometrien.
+//
+//  MERK om stavmodell: plasseringa av kjeglebruddarmeringa ble tidligere
+//  bestemt av en 45° trykkstav fra endeplata ut til bøylehjørnet. Det er ikke
+//  et plasseringskrav i NS-EN 1992-4, og ga bein langt utenfor 0,75·h_ef.
+//  Plasseringa styres nå av selve avstandskravet (pkt. 7.2.1.2 / B19.3.2.6);
+//  src/engine/stm.js står igjen som en generell byggekloss, men brukes ikke
+//  til å plassere armeringa.
 //
 //  VIKTIG - flagget forenkling: effektiviteten til en løkke/bøyle i skjær er
 //  ikke satt likt A_s·f_yd i denne modellen (se pkt. 3 i spesifikasjonen),
@@ -4056,14 +4559,17 @@ function groupGeometry(m, res, r) {
   const insideMin = minInsideLength(r.ds, r.geometryType);
   const reqIssues = requirementIssues(r);
 
-  // Kjeglebrudd: bøylene ligger radvis ved siden av boltene, så både antallet
-  // som teller og kravene kommer fra oppsettet (se tensionLayout).
+  // Kjeglebrudd: bøylene ligger symmetrisk om hver bolt, så nær den som
+  // praktisk mulig, og bare bein med FAKTISK avstand <= 0,75*h_ef teller med
+  // (se tensionLayout).
   if (r.purpose === 'tension') {
     const geo = pts.length ? tensionLayout(m, r) : null;
-    const effCount = geo ? geo.effLegsPerRow : 0;
+    // Bein pr. bolt for den bolten som har færrest - det er den som styrer.
+    const effCount = geo && geo.perAnchor.length
+      ? Math.min(...geo.perAnchor.map(q => q.nEff)) : 0;
     const insideLen = geo ? geo.insideLen : 0;
     const qualifies = reqIssues.length === 0 && !!geo && geo.fits && geo.zoneOk
-      && geo.angleOk && insideLen >= insideMin && effCount > 0;
+      && geo.allServed && geo.spacingOk && insideLen >= insideMin && effCount > 0;
     return { pts, hef, c1, zoneRef: hef, geo, effCount, insideLen, insideMin,
              reqIssues, qualifies };
   }
@@ -4099,7 +4605,7 @@ function reinforcementCone(m, res, r, L) {
   const cracked = m.code.cracked;
   const hef = L.dBot;                          // dybden armeringa leverer i
   const ccr = 1.5 * hef, scr = 3 * hef;
-  const pts = L.rows.flatMap(row => row.bars.flatMap(b => b.endPoints));
+  const pts = L.bars.flatMap(b => b.endPoints);
   const NEd = res.tension.Ntot;                // hele gruppa henger i denne kjegla
 
   const c = new Calc('7.2.1.2');
@@ -4159,134 +4665,280 @@ function reinforcementCone(m, res, r, L) {
           ' Forenklet: ψ_ec,N = 1,0, siden bøylene ligger symmetrisk om boltraden.' };
 }
 
-// Strekket fordelt på bøyleradene: hver rad tas av sine egne bøyler, så det er
-// den mest belastede raden som styrer - ikke summen for hele gruppa.
-function tensionRows(layout, anchors) {
-  const rows = layout.rows.map(row => ({ row, N: 0 }));
-  if (!rows.length) return rows;
-  for (const p of anchors) {
-    const v = p.x * layout.n.x + p.y * layout.n.y;
-    const hit = rows.reduce((a, b) =>
-      Math.abs(b.row.v - v) < Math.abs(a.row.v - v) ? b : a);
-    hit.N += p.N;
-  }
-  return rows;
-}
-
 // ===========================================================================
-//  STREKK - erstatter betongkjeglebrudd, pkt. 7.2.1.2
+//  STREKK - erstatter betongkjeglebrudd, pkt. 7.2.1.2 (jf. B19.3.2.6)
+//
+//  Kontrollrekka:
+//    a) stålbrudd i beina som ligger innenfor 0,75*h_ef fra bolten
+//    b) plassering: faktisk avstand bolt -> loddrett bein, symmetri, avstand
+//       mellom bøylene etter NS-EN 1992-1-1 pkt. 8.2
+//    c) forankring INNE i kjegla: l_1 >= 4*⌀ (bøyd) / 10*⌀ (rett), og heft
+//    d) forankring UTENFOR kjegla: l_bd etter NS-EN 1992-1-1 pkt. 8.4
+//    e) kjeglebrudd regnet på nytt fra enden av armeringa
+//    f) overlapp mot konstruksjonens armering (påkrevd for rett stang)
 // ===========================================================================
 function tensionSupplementary(m, res, r) {
   const G = groupGeometry(m, res, r);
   const L = G.geo;
   const checks = [];
+  const bent = r.geometryType !== 'straight';
+  const typeTxt = bent ? 'U-bøyle/løkke' : 'rett stang';
 
-  // Hver boltrad tas av sine egne bøyler, så det er den mest belastede raden
-  // som styrer - ikke summen for hele gruppa.
-  const rows = L ? tensionRows(L, res.tension.anchors) : [];
-  const gov = rows.length ? rows.reduce((a, b) => (b.N > a.N ? b : a)) : null;
-  const NEd = gov ? gov.N : res.tension.Ntot;
-  const nLegs = G.effCount;                       // bein pr. rad som teller med
-  const rowTxt = rows.length > 1
-    ? `Styrende av ${rows.length} boltrader på tvers av bøyleretninga (${n(r.direction || 0, 0)}°).`
-    : undefined;
+  // Hver bolt henger i sine egne bein, så det er den bolten som har mest kraft
+  // pr. effektivt bein som styrer - ikke summen for hele gruppa.
+  const byId = new Map((L?.perAnchor || []).map(q => [q.id, q]));
+  let gov = null;
+  for (const p of res.tension.anchors) {
+    const q = byId.get(p.id);
+    const nEff = q ? q.nEff : 0;
+    const dem = nEff > 0 ? p.N / nEff : Infinity;
+    if (!gov || dem > gov.dem) gov = { p, q, nEff, dem };
+  }
+  const NEd = gov ? gov.p.N : res.tension.Ntot;
+  const nLegs = gov ? gov.nEff : 0;
+  const boltTxt = gov && res.tension.anchors.length > 1
+    ? `Styrende bolt ${gov.p.id} av ${res.tension.anchors.length} i strekk.` : undefined;
 
   // --- a) stålbrudd i armeringa ------------------------------------------
   const ca = new Calc('7.2.1.2');
-  ca.in('n_bøyler', L ? L.barsPerRow : 0, 'stk', 'Tilleggsarmering · bøyler pr. boltrad');
+  ca.in('n_bøyler', L ? L.barsPerAnchor : 0, 'stk',
+    `Tilleggsarmering · ${bent ? 'bøyler' : 'stenger'} pr. bolt, symmetrisk fordelt`);
   ca.in('⌀_s', r.ds, 'mm', 'Tilleggsarmering');
   ca.in('f_yk', r.fyk, 'N/mm²', 'Tilleggsarmering (kamstål, ⌀ ≤ 16 mm, f_yk ≤ 600 – 7.2.2.6)');
   ca.in('γ_Ms,re', GAMMA_S, '–', 'Armeringsstål – NS-EN 1992-1-1');
-  ca.in('N_Ed,rad', NEd, 'N', 'Strekk i den mest belastede boltraden');
-  const nEff = ca.step({ sym: 'n_eff', desc: 'Bein som teller med – to pr. bøyle',
-    formula: '2 · (bøyler med avstand ≤ 0,75·h_ef fra bolten)',
-    subst: L ? `2 · ${L.effPerRow} av ${L.barsPerRow / 2} pr. side · ` +
-      `0,75·h_ef = ${n(0.75 * G.hef, 0)} mm` : '–',
+  ca.in('N_Ed,bolt', NEd, 'N', 'Strekk i den styrende bolten');
+  const nEff = ca.step({ sym: 'n_eff', desc:
+      'Loddrette bein med faktisk avstand ≤ 0,75·h_ef fra boltaksen',
+    formula: bent
+      ? '2 · (bøyler med √(a² + d²) ≤ 0,75·h_ef), delt med antall bolter beinet dekker'
+      : '(stenger med √(a² + d²) ≤ 0,75·h_ef), delt med antall bolter stanga dekker',
+    subst: L ? `0,75·h_ef = ${n(L.dMax, 0)} mm, nærmeste bein ${n(L.dNearest, 0)} mm, ` +
+      `fjerneste bein som teller med ${n(L.dFarthest, 0)} mm` : '–',
     value: nLegs, unit: 'stk' });
-  const As = ca.step({ sym: 'A_s,re', desc: 'Effektivt armeringsareal pr. rad',
-    formula: 'n_eff · π · ⌀_s² / 4', subst: `${n(nEff, 0)} · π · ${n(r.ds, 0)}² / 4`,
+  const As = ca.step({ sym: 'A_s,re', desc: 'Effektivt armeringsareal pr. bolt',
+    formula: 'n_eff · π · ⌀_s² / 4', subst: `${n(nEff)} · π · ${n(r.ds, 0)}² / 4`,
     value: nEff * Math.PI * r.ds * r.ds / 4, unit: 'mm²' });
   const NRk_s = ca.res({ sym: 'N_Rk,re', formula: 'A_s,re · f_yk',
     subst: `${n(As)} · ${n(r.fyk, 0)}`, value: As * r.fyk, unit: 'N' });
   const NRd_s = NRk_s / GAMMA_S;
   ca.step({ sym: 'N_Rd,re', desc: 'Dimensjonerende kapasitet',
     formula: 'N_Rk,re / γ_Ms,re', subst: `${n(NRk_s)} / ${n(GAMMA_S)}`, value: NRd_s, unit: 'N' });
-  ca.util({ formula: 'N_Ed,rad / N_Rd,re', subst: `${n(NEd)} / ${n(NRd_s)}`, value: NEd / NRd_s });
+  ca.util({ formula: 'N_Ed,bolt / N_Rd,re', subst: `${n(NEd)} / ${n(NRd_s)}`, value: NEd / NRd_s });
   checks.push({ id: `N-sre-steel-${r.id}`, mode: `Tilleggsarmering ${r.id} – stålbrudd`,
     clause: '7.2.1.2', scope: 'gruppe', NRk: NRk_s, NRd: NRd_s, NEd, util: NEd / NRd_s, calc: ca,
-    group: r.id, note: !L || L.zoneOk ? rowTxt
-      : `Bøylene får ikke plass innenfor 0,75·h_ef = ${n(0.75 * G.hef, 0)} mm når de ` +
-        `samtidig skal gå klar av bolten (${n(L.dMin, 0)} mm). Øk h_ef, eller reduser ⌀/avstand.` });
+    group: r.id, note: boltTxt });
 
-  // --- b) forankring/heft over lengden inne i bruddlegemet ---------------
+  // --- b) plassering: faktisk avstand, symmetri og senteravstand ----------
+  if (L) {
+    const cp = new Calc('7.2.1.2');
+    cp.in('h_ef', G.hef, 'mm', 'Bolter · effektiv forankringsdybde');
+    const dMax = cp.step({ sym: '0,75·h_ef', desc:
+        'Største avstand fra boltaksen til det loddrette beinet som fortsatt regnes som effektiv',
+      formula: '0,75 · h_ef', subst: `0,75 · ${n(G.hef, 0)}`, value: L.dMax, unit: 'mm',
+      note: 'Øvre grense, ikke en anbefalt plassering: armeringa legges så nær ' +
+            'bolten som praktisk mulig.' });
+    const aa = cp.in('a', L.halfSpan, 'mm', bent
+      ? 'Halve bøylebredda – beinets avstand fra ytterste bolt LANGS bøyleretninga'
+      : 'Rett stang står i boltsnittet – ingen forskyvning langs retninga');
+    cp.in('fordeling', L.bars.length, 'stk', L.barLayout === 'row'
+      ? 'Bøyler i alt – én bøyle spenner hele boltraden'
+      : 'Bøyler i alt – én bøyle om hver bolt');
+    const dd = cp.in('d', L.dMin, 'mm',
+      'Nærmeste bøyle på TVERS av retninga – akkurat klar av bolten ' +
+      `(${n(r.clearance, 0)} + ⌀_bolt/2 + ⌀_s/2)`);
+    cp.step({ sym: 'd_1', desc:
+        'Faktisk avstand fra boltaksen til nærmeste loddrette bein, uavhengig av x/y-retning',
+      formula: '√(a² + d²)', subst: `√(${n(aa, 0)}² + ${n(dd, 0)}²)`,
+      value: L.dNearest, unit: 'mm' });
+    const sMin = cp.in('s_min', L.sMin, 'mm',
+      `Minste senteravstand – NS-EN 1992-1-1 8.2, d_g = ${n(m.concrete?.dg ?? 16, 0)} mm`);
+    const rowMode = L.barLayout === 'row';
+    cp.step({ sym: 'd_n', desc: rowMode
+        ? 'Største avstand fra en bolt til nærmeste bein i bøylen som betjener den'
+        : `Faktisk avstand ut til den ytterste bøylen gruppa legger om bolten ` +
+          `(${L.nSide} pr. side, pakket med s_min)`,
+      formula: rowMode
+        ? 'maks over boltene av √(Δu² + d²) til nærmeste bein'
+        : '√(a² + (d + (n−1)·s_min)²)',
+      subst: rowMode
+        ? 'bøylen spenner hele boltraden – beina står bare i endene'
+        : L.nSide > 1
+          ? `√(${n(aa, 0)}² + (${n(dd, 0)} + ${L.nSide - 1}·${n(sMin, 0)})²)`
+          : 'bare én bøyle pr. side',
+      value: L.dOwn, unit: 'mm' });
+    cp.util({ formula: 'd_n / (0,75·h_ef)', subst: `${n(L.dOwn, 0)} / ${n(dMax, 0)}`,
+      value: L.dOwn / Math.max(dMax, 1e-6) });
+    const placeNotes = [];
+    if (!L.zoneOk)
+      placeNotes.push(`Bøylene får ikke plass innenfor 0,75·h_ef = ${n(L.dMax, 0)} mm når de ` +
+        `samtidig skal gå klar av bolten (√(a² + d²) = ${n(L.dNearest, 0)} mm). ` +
+        'Øk h_ef, reduser bøylebredda, eller reduser ⌀/klaringa.');
+    if (!L.allServed)
+      placeNotes.push(L.barLayout === 'row'
+        ? 'Ikke alle boltene har et bein innenfor 0,75·h_ef: bøylen spenner hele ' +
+          'boltraden, så bare boltene i endene får et bein nær seg. Velg «bøyle om ' +
+          'hver bolt», eller del raden i flere grupper.'
+        : 'Ikke alle boltene gruppa betjener har et bein innenfor 0,75·h_ef.');
+    if (!L.spacingOk)
+      placeNotes.push(`Minste avstand mellom to bein er ${n(L.gapMin, 0)} mm < s_min = ` +
+        `${n(L.sMin, 0)} mm – bøyler fra nabobolter kolliderer. Reduser antallet ` +
+        'pr. bolt, eller la færre bolter dele gruppa.');
+    checks.push({ id: `N-sre-placement-${r.id}`,
+      mode: `Tilleggsarmering ${r.id} – plassering innenfor 0,75·h_ef`,
+      clause: '7.2.1.2', scope: 'gruppe', NRk: NaN, NRd: NaN, NEd: NaN,
+      util: L.dOwn / Math.max(L.dMax, 1e-6), calc: cp, group: r.id,
+      expr: 'd_n / (0,75·h_ef) ≤ 1,0',
+      note: placeNotes.length ? placeNotes.join(' ')
+        : (L.barLayout === 'row'
+            ? `Én bøyle spenner hele boltraden, med beina rett utenfor de ytterste ` +
+              `boltene. ${L.nSide} bøyle${L.nSide > 1 ? 'r' : ''} på hver side av raden, ` +
+              `pakket med minste tillatte senteravstand.`
+            : `Armeringa ligger symmetrisk om bolten, ${L.nSide} ${bent ? 'bøyle' : 'stang'}` +
+              `${L.nSide > 1 ? 'r' : ''} på hver side, pakket fra bolten og utover med ` +
+              `minste tillatte senteravstand – ikke spredt ut til 0,75·h_ef.`) });
+  }
+
+  // --- c) forankring/heft over lengden inne i bruddlegemet ---------------
   const cb = new Calc('7.2.1.2');
   const f = fbd(m.concrete.fck, r.ds, true);
-  const alpha1 = 0.7;                              // bøyd stangende
-  cb.in('n_eff', nLegs, 'stk', 'Bein pr. rad, se stålkontrollen');
+  const alpha1 = bent ? 0.7 : 1.0;                 // bøyd stangende
+  cb.in('n_eff', nLegs, 'stk', 'Bein pr. bolt, se stålkontrollen');
   cb.in('⌀_s', r.ds, 'mm', 'Tilleggsarmering');
-  cb.in('l_1', G.insideLen, 'mm',
-    'Bein inne i bruddkjegla (ned til h_ef) + kvartbøyen i hjørnet, pr. bein');
+  // Kjegla er en kjegle: den er dypest ved bolten og grunnere lenger ut, så
+  // et bein som står lenger fra bolten krysser kjegleflata høyere og har
+  // kortere l_1. Det korteste beinet blant dem som teller med styrer.
+  cb.in('l_1', G.insideLen, 'mm', bent
+    ? 'Bein inne i bruddlegemet + kvartbøyen i hjørnet, pr. bein – målt ned til ' +
+      'der kjegleflata krysser beinet'
+    : 'Rett stang inne i bruddlegemet, ned til der kjegleflata krysser stanga');
+  if (L) {
+    cb.in('z_kjegle', L.zConeMin, 'mm',
+      'Dybden der kjegleflata krysser det styrende beinet' +
+      (L.zConeMax - L.zConeMin > 1
+        ? ` (${n(L.zConeMin, 0)}–${n(L.zConeMax, 0)} mm over beina)` : ''));
+  }
+  cb.in('l_1,min', G.insideMin, 'mm',
+    `${minAnchorageFactor(r.geometryType)}·⌀_s – minste forankring i bruddlegemet (${typeTxt})`);
   cb.in('f_ck', m.concrete.fck, 'N/mm²', `Betongdel · ${m.concrete.grade}`);
-  cb.in('α_1', alpha1, '–', 'Bøyd stangende');
-  cb.in('N_Ed,rad', NEd, 'N', 'Strekk i den mest belastede boltraden');
+  cb.in('α_1', alpha1, '–', bent ? 'Bøyd stangende' : 'Rett stangende');
+  cb.in('N_Ed,bolt', NEd, 'N', 'Strekk i den styrende bolten');
   cb.step({ sym: 'f_bd', desc: 'Dimensjonerende heftfasthet',
     formula: '2,25 · η_1 · η_2 · f_ctk;0,05 / γ_c', subst: '–', value: f, unit: 'N/mm²',
     ref: 'EN 1992-1-1 8.4.2' });
   const NRk_a = cb.res({ sym: 'N_Rk,a', formula: 'n_eff · π · ⌀_s · l_1 · f_bd / α_1',
-    subst: `${n(nLegs, 0)} · π · ${n(r.ds, 0)} · ${n(G.insideLen, 0)} · ${n(f)} / ${n(alpha1)}`,
+    subst: `${n(nLegs)} · π · ${n(r.ds, 0)} · ${n(G.insideLen, 0)} · ${n(f)} / ${n(alpha1)}`,
     value: nLegs * (G.insideLen * Math.PI * r.ds * f) / alpha1, unit: 'N' });
-  cb.util({ formula: 'N_Ed,rad / N_Rd,a', subst: `${n(NEd)} / ${n(NRk_a)}`, value: NEd / NRk_a });
-  const anchorTxt = L && L.anchorageAvail + 1e-6 < L.lbd
-    ? `Utenfor kjegla er det bare ${n(L.anchorageAvail, 0)} mm forankring mot ` +
-      `l_bd = ${n(L.lbd, 0)} mm.` + (L.endBend ? '' : ' En bøy ut i enden av beina ' +
-      'gir bøyen pluss foten som forankring, og hjelper i en tynn plate.')
-    : L && L.endBend
-      ? `Forankring utenfor kjegla: ${n(L.outsideLen, 0)} mm rett bein + ` +
-        `${n(L.bendArc, 0)} mm bøy + ${n(L.footLen, 0)} mm fot = ` +
-        `${n(L.anchorageAvail, 0)} mm mot l_bd = ${n(L.lbd, 0)} mm.`
-      : undefined;
+  cb.util({ formula: 'N_Ed,bolt / N_Rd,a', subst: `${n(NEd)} / ${n(NRk_a)}`, value: NEd / NRk_a });
   const minLenTxt = G.insideLen < G.insideMin
     ? `l₁ = ${n(G.insideLen, 0)} mm < ${minAnchorageFactor(r.geometryType)}⌀ = ${n(G.insideMin, 0)} mm – ` +
-      'kravet til minste forankringslengde inne i bruddlegemet er ikke oppfylt.'
-    : [anchorTxt, rowTxt].filter(Boolean).join(' ') || undefined;
+      `kravet til minste forankringslengde inne i bruddlegemet (${typeTxt}) er ikke oppfylt.`
+    : `l₁ = ${n(G.insideLen, 0)} mm ≥ ${minAnchorageFactor(r.geometryType)}⌀ = ` +
+      `${n(G.insideMin, 0)} mm (${typeTxt}).` +
+      (L ? ` Målt ned til ${n(L.zConeMin, 0)} mm, der kjegleflata krysser beinet – ` +
+        `ikke til h_ef = ${n(G.hef, 0)} mm.` : '') +
+      (boltTxt ? ' ' + boltTxt : '');
+  const noReach = L && L.zConeMin <= L.dLegTop + 1e-6;
   checks.push({ id: `N-sre-anchorage-${r.id}`, mode: `Tilleggsarmering ${r.id} – forankring i bruddlegemet`,
     clause: '7.2.1.2', scope: 'gruppe', NRk: NRk_a, NRd: NRk_a, NEd, util: NEd / NRk_a, calc: cb,
-    group: r.id, note: minLenTxt });
+    group: r.id, note: noReach
+      ? `Kjegleflata krysser beinet ${n(L.zConeMin, 0)} mm nede, over der beinet ` +
+        `begynner (${n(L.dLegTop, 0)} mm): det rette beinet ligger helt utenfor ` +
+        `bruddlegemet, og bare bøyen bidrar. Legg armeringa nærmere bolten, ` +
+        `eller øk h_ef.` + ' ' + minLenTxt
+      : minLenTxt });
 
-  // --- c) STM: endeplate -> trykkstav -> bøylehjørne -> strekk i bøylen ---
-  if (L && nLegs > 0) {
-    const fcd = m.concrete.fck / 1.5;
-    const bar = L.govBar;                          // flatest stav styrer
-    const NCorner = NEd / nLegs;                   // ett hjørne pr. bein
-    const stm = endplateToLoopSTM(m, {
-      NEd: NCorner, hStrut: bar.diag, wTie: bar.L,
-      bStrut: 2 * (r.coverTop ?? DEFAULT_COVER), dBolt: m.anchors.d,
-      fck: m.concrete.fck, fcd, cracked: m.code.cracked,
-    });
-    const spanTxt = `Alle bøylene er like: ${n(L.barLength, 0)} mm vannrett, ` +
-      `med ${n(L.overhang, 0)} mm utstikk i hver ende.`;
-    const angleTxt = L.angleOk
-      ? `${spanTxt} Én felles lengde gir staver i ${n(L.alphaMin, 0)}–${n(L.alphaMax, 0)}° ` +
-        `mot den vannrette delen, innenfor ${STRUT_ANGLE.min}–${STRUT_ANGLE.max}°.`
-      : !L.windowOk
-        ? `${spanTxt} Bøylene ligger så spredt at ingen felles lengde gir alle ` +
-          `staver innenfor ${STRUT_ANGLE.min}–${STRUT_ANGLE.max}° (${n(L.alphaMin, 0)}–` +
-          `${n(L.alphaMax, 0)}°). Reduser antallet bøyler pr. rad, eller øk h_ef.`
-        : `${spanTxt} Staven står i ${n(L.alphaMin, 0)}–${n(L.alphaMax, 0)}°, utenfor ` +
-          `${STRUT_ANGLE.min}–${STRUT_ANGLE.max}°: betongen gir ikke plass til utstikket ` +
-          'bøylene trenger. Reduser overdekninga, flytt boltene inn, eller øk delen.';
-    checks.push({ ...stm, id: `N-sre-stm-${r.id}`, group: r.id,
-      mode: `Tilleggsarmering ${r.id} – stavmodell endeplate→bøyle`,
-      note: `${angleTxt} ${stm.note}` });
+  // --- d) forankringslengde UTENFOR kjegla, EN 1992-1-1 8.4 ---------------
+  if (L) {
+    const cl = new Calc('EN 1992-1-1 8.4');
+    cl.in('⌀_s', r.ds, 'mm', 'Tilleggsarmering');
+    cl.in('f_yd', r.fyk / GAMMA_S, 'N/mm²', 'f_yk / γ_Ms,re – full utnyttelse forutsatt');
+    cl.in('f_bd', f, 'N/mm²', 'Heftfasthet, se forankringskontrollen');
+    const lbr = cl.step({ sym: 'l_b,rqd', desc: 'Grunnleggende forankringslengde',
+      formula: '(⌀_s / 4) · (f_yd / f_bd)',
+      subst: `(${n(r.ds, 0)} / 4) · (${n(r.fyk / GAMMA_S)} / ${n(f)})`,
+      value: L.lbRqd, unit: 'mm', ref: '(8.3)' });
+    const a1 = cl.in('α_1', alpha1, '–', bent ? 'Krok/bøy i enden – tab. 8.2' : 'Rett stang');
+    cl.step({ sym: 'l_b,min', desc: 'Nedre grense for strekkforankring',
+      formula: 'maks(0,3·l_b,rqd; 10·⌀_s; 100 mm)',
+      subst: `maks(${n(0.3 * L.lbRqd, 0)}; ${n(10 * r.ds, 0)}; 100)`,
+      value: L.lbmin, unit: 'mm', ref: '(8.6)' });
+    const lbd = cl.res({ sym: 'l_bd', formula: 'maks(α_1 · l_b,rqd; l_b,min)',
+      subst: `maks(${n(a1)} · ${n(lbr, 0)}; ${n(L.lbmin, 0)})`, value: L.lbd, unit: 'mm',
+      ref: '(8.4)' });
+    const avail = cl.step({ sym: 'l_bd,tilgj.', desc:
+        'Forankring tilgjengelig UTENFOR bruddkjegla, langs stanga fra h_ef og nedover',
+      formula: L.endBend ? 'rett bein + endebøy + fot' : 'rett bein under kjegla',
+      subst: L.endBend
+        ? `${n(L.outsideLen, 0)} + ${n(L.bendArc, 0)} + ${n(L.footLen, 0)}`
+        : `${n(L.outsideLen, 0)}`,
+      value: L.anchorageAvail, unit: 'mm' });
+    cl.util({ formula: 'l_bd / l_bd,tilgj.', subst: `${n(lbd, 0)} / ${n(avail, 0)}`,
+      value: L.lbd / Math.max(avail, 1e-6) });
+    checks.push({ id: `N-sre-lbd-${r.id}`,
+      mode: `Tilleggsarmering ${r.id} – forankringslengde utenfor kjegla`,
+      clause: 'EN 1992-1-1 8.4', scope: 'gruppe', NRk: NaN, NRd: NaN, NEd: NaN,
+      util: L.lbd / Math.max(avail, 1e-6), calc: cl, group: r.id,
+      expr: 'l_bd / l_bd,tilgj. ≤ 1,0',
+      note: L.fits
+        ? undefined
+        : `Bare ${n(L.anchorageAvail, 0)} mm forankring utenfor kjegla mot l_bd = ` +
+          `${n(L.lbd, 0)} mm.` + (bent && !L.endBend
+            ? ' En bøy ut i enden av beina gir bøyen pluss foten som forankring, ' +
+              'og hjelper i en tynn plate.'
+            : ' Øk tykkelsen, reduser ⌀, eller legg inn endebøy.') });
   }
 
-  // --- d) kjeglebrudd på nytt, fra enden av armeringa ---------------------
-  if (L && L.rows.length) checks.push(reinforcementCone(m, res, r, L));
+  // --- d2) egen stang i bøyen: forankring, EN 1992-1-1 8.4 ----------------
+  //  Bøyen på bøylen krøller seg rundt en stang på tvers. Er den stanga egen
+  //  (ikke overflatearmeringa), er det den som fører kraften fra bøyene ut i
+  //  konstruksjonen, og da må den forankres for seg.
+  if (L && bent && L.bendBarMode === 'own') {
+    const bars = buildBendBars(m, r);
+    const worst = bars.length
+      ? bars.reduce((a, b) => (b.anchorage < a.anchorage ? b : a)) : null;
+    const cbb = new Calc('EN 1992-1-1 8.4');
+    cbb.in('⌀_b', L.dtBend, 'mm',
+      `Stang i bøyen – minst like tjukk som bøylen (⌀_s = ${n(r.ds, 0)} mm)`);
+    cbb.in('n_stenger', bars.length, 'stk', 'Én stang pr. bøy, lagt på tvers av bøyleretninga');
+    cbb.in('d_b', L.dBend, 'mm',
+      'Dybde til senter av stanga – den ligger INNE i bøyen, under den ' +
+      'vannrette delen av bøylen');
+    const fb = fbd(m.concrete.fck, L.dtBend, true);
+    cbb.step({ sym: 'f_bd', desc: 'Dimensjonerende heftfasthet',
+      formula: '2,25 · η_1 · η_2 · f_ctk;0,05 / γ_c', subst: '–', value: fb,
+      unit: 'N/mm²', ref: 'EN 1992-1-1 8.4.2' });
+    const lreq = cbb.res({ sym: 'l_bd', desc: 'Nødvendig forankring utenfor ytterste bøyle',
+      formula: 'maks(α_1 · l_b,rqd; l_b,min)', subst: '–', value: L.bendBarLbd,
+      unit: 'mm', ref: '(8.4)' });
+    const lprov = cbb.in('l_bd,tilgj.', worst ? worst.anchorage : 0, 'mm',
+      'Oppnådd forankring – begrenset av betongdelen');
+    cbb.util({ formula: 'l_bd / l_bd,tilgj.', subst: `${n(lreq, 0)} / ${n(lprov, 0)}`,
+      value: lreq / Math.max(lprov, 1e-6) });
+    checks.push({ id: `N-sre-bendbar-${r.id}`,
+      mode: `Tilleggsarmering ${r.id} – stang i bøyen`,
+      clause: 'EN 1992-1-1 8.4', scope: 'gruppe', NRk: NaN, NRd: NaN, NEd: NaN,
+      util: lreq / Math.max(lprov, 1e-6), calc: cbb, group: r.id,
+      expr: 'l_bd / l_bd,tilgj. ≤ 1,0',
+      note: 'Bøyen krøller seg rundt denne stanga, så bøylen ligger over den. ' +
+        (worst && worst.anchorage + 1e-6 < L.bendBarLbd
+          ? `Betongdelen gir bare ${n(worst.anchorage, 0)} mm forankring utenfor ` +
+            `ytterste bøyle mot l_bd = ${n(L.bendBarLbd, 0)} mm – forleng stanga, ` +
+            'reduser ⌀_b, eller bruk overflatearmeringa i bøyen i stedet.'
+          : `Stanga er ${n(worst ? worst.span : 0, 0)} mm lang, med ` +
+            `${n(worst ? worst.anchorage : 0, 0)} mm forankring utenfor ytterste bøyle ` +
+            'i hver ende.') });
+  }
 
-  // --- e) overlapp mot eksisterende konstruksjonsarmering, dersom oppgitt ---
+  // --- e) kjeglebrudd på nytt, fra enden av armeringa ---------------------
+  if (L && L.bars.length) checks.push(reinforcementCone(m, res, r, L));
+
+  // --- f) videre kraftoverføring til konstruksjonens armering -------------
+  //  U-bøyle/løkke: bøyen skal fortrinnsvis omslutte overflatearmeringa, så
+  //  kraften føres videre gjennom nettet. Rett stang omslutter ingenting og
+  //  MÅ i stedet skjøtes mot konstruksjonens armering.
   if (r.lapToExisting?.present) {
     const cl = new Calc('EN 1992-1-1 8.7');
-    const al = anchorageLength(m.concrete.fck, r.ds, r.fyk / 1.15, true);
+    const al = anchorageLength(m.concrete.fck, r.ds, r.fyk / 1.15, bent);
     // Forenklet: α6 = 1,5 antatt (mer enn 50 % skjøtet i samme snitt, 8.7.3).
     // Kontroller den faktiske skjøteprosenten mot tab. 8.3 i printet standard.
     const lap0 = cl.in('l_bd', al.lbd, 'mm', 'Forankringslengde, se forankringskontrollen');
@@ -4299,8 +4951,12 @@ function tensionSupplementary(m, res, r) {
     checks.push({ id: `N-sre-lap-${r.id}`, mode: `Tilleggsarmering ${r.id} – overlapp mot konstruksjonsarmering`,
       clause: 'EN 1992-1-1 8.7', scope: 'gruppe', NRk: NaN, NRd: NaN, NEd: NaN,
       util: lapReq / Math.max(lapProv, 1e-6), calc: cl, group: r.id, expr: 'l_0 / l_0,valgt ≤ 1,0',
-      note: 'Overlappet er ikke kontrollert mot den faktiske armeringen i konstruksjonen for øvrig, ' +
-            'bare mot den oppgitte lengden.' });
+      note: (bent
+        ? 'U-bøyla omslutter overflatearmeringa; overlappet er en tilleggsdokumentasjon. '
+        : 'Rett tilleggsarmering omslutter ikke overflatearmeringa – dette overlappet ' +
+          'er kraftveien videre inn i konstruksjonen. ') +
+        'Overlappet er ikke kontrollert mot den faktiske armeringen i konstruksjonen ' +
+        'for øvrig, bare mot den oppgitte lengden.' });
   }
 
   return { checks, qualifies: G.qualifies, geometry: G };
@@ -6174,22 +6830,28 @@ function polyCurve(points, closed) {
   return c;
 }
 
-function barMesh(bar, mat) {
+// `split` deler hver bane i bitene som ligger inne i bruddlegemet og de som
+// ligger utenfor, og `matIn` farger de første. Uten split tegnes hele stanga i
+// én farge - det er slik overflatenettet og kantbruddbøylene tegnes.
+function barMesh(bar, mat, split = null, matIn = null) {
   const g = new THREE.Group();
   const r = bar.ds / 2;
-  for (const path of bar.paths) {
+  const paths = split ? bar.paths.flatMap(split) : bar.paths;
+  for (const path of paths) {
+    const m2 = path.inside && matIn ? matIn : mat;
     const pts = path.points.map(p => new THREE.Vector3(p.x, p.y, p.z));
     if (pts.length < 2) continue;
     const curve = polyCurve(pts, path.closed);
     const seg = Math.max(24, Math.min(600, Math.round(curve.totalLength / 6)));
     const tube = new THREE.Mesh(
-      new THREE.TubeGeometry(curve, seg, r, 8, path.closed), mat);
-    tube.name = 'tilleggsarmering';
+      new THREE.TubeGeometry(curve, seg, r, 8, path.closed), m2);
+    tube.name = path.inside ? 'tilleggsarmering_i_kjegle' : 'tilleggsarmering';
     g.add(tube);
-    // Rør er åpne i endene - en liten kule lukker stangenden.
+    // Rør er åpne i endene - en liten kule lukker stangenden. Skjøtene mellom
+    // de to fargene lukkes på samme måte, så streken blir sammenhengende.
     if (!path.closed)
       for (const end of [pts[0], pts[pts.length - 1]]) {
-        const cap = new THREE.Mesh(new THREE.SphereGeometry(r, 8, 6), mat);
+        const cap = new THREE.Mesh(new THREE.SphereGeometry(r, 8, 6), m2);
         cap.position.copy(end);
         cap.name = 'tilleggsarmering_ende';
         g.add(cap);
@@ -6278,6 +6940,18 @@ const MAT = {
   // forankringsarmeringa (reinf) så de to kamstål-elementene ikke blandes.
   rebarAnchor: () => new THREE.MeshStandardMaterial({
     name: 'kamstaal', color: 0xc19a6b, roughness: 0.85, metalness: 0.1,
+    ...OVER_CONCRETE,
+  }),
+  // Den delen av tilleggsarmeringa som ligger INNE i bruddkjegla - l_1, den
+  // forankringa som holder kjegla. Samme rosa som i figurene i utregninga.
+  rebarInCone: () => new THREE.MeshStandardMaterial({
+    name: 'armering_i_kjegle', color: 0xe0559b, roughness: 0.7, metalness: 0.15,
+    ...OVER_CONCRETE,
+  }),
+  // Overflatearmeringa U-bøyla omslutter. Kjøligere og lysere enn
+  // tilleggsarmeringa, så de to nettene skiller seg fra hverandre.
+  surfaceMesh: () => new THREE.MeshStandardMaterial({
+    name: 'overflatearmering', color: 0x6f7d86, roughness: 0.85, metalness: 0.15,
     ...OVER_CONCRETE,
   }),
 };
@@ -6801,18 +7475,26 @@ function buildScene(v, opts = {}) {
   // ---- bruddkjegle i strekk --------------------------------------------
   // Bruddkjegla vises for det regelverket som faktisk regner kjeglebrudd:
   // EN 1992-4 alltid, B19 bare når kjeglemodellen er den styrende.
-  const cone = v.checks.find(k => k.id === 'N-cone' || (k.id === 'N-conc' && k.showCone));
+  // Erstatter tilleggsarmeringa kjeglebruddet, flyttes N-cone ut av
+  // v.checks og over i v.replacedConcreteChecks - men kjegla er fortsatt
+  // geometrien armeringa skal krysse, så den skal bli stående i 3D.
+  const cone = [...v.checks, ...(v.replacedConcreteChecks || [])]
+    .find(k => k.id === 'N-cone' || (k.id === 'N-conc' && k.showCone));
   if (show.cone && res.tension.anchors.length && cone && Number.isFinite(cone.NRd)) {
     const ccr = 1.5 * a.hef;
     // Med felles endeplate river hele plata ut ett legeme, så kjegla starter
     // ved platekanten - det samme arealet som A_c,N regnes av.
-    const xs = res.tension.anchors.map(t => t.x), ys = res.tension.anchors.map(t => t.y);
-    const b = foot.common
-      ? { x0: foot.plate.x0, x1: foot.plate.x1,
-          y0: foot.plate.y0, y1: foot.plate.y1 }
-      : { x0: Math.min(...xs), x1: Math.max(...xs),
-          y0: Math.min(...ys), y1: Math.max(...ys) };
-    const cm = coneMesh(m, b, ccr, a.hef);
+    // Med felles endeplate river hele plata ut ett legeme - da er kilden
+    // platerektangelet. Ellers sprer kjegla seg fra hver bolt for seg, og
+    // nabokjeglene moetes i en rygg mellom boltene.
+    const srcs = foot.common
+      ? [{ x0: foot.plate.x0, x1: foot.plate.x1,
+           y0: foot.plate.y0, y1: foot.plate.y1 }]
+      // Spredninga regnes fra boltaksen, ikke fra fotkanten - det er slik
+      // A_c,N er lagt opp (clippedSquares om boltpunktene), og bildet skal
+      // vise akkurat den kjegla tallene er regnet av.
+      : res.tension.anchors.map(t => ({ x0: t.x, x1: t.x, y0: t.y, y1: t.y }));
+    const cm = coneMesh(m, srcs, ccr, a.hef);
     if (cm) {
       cm.renderOrder = 3;
       root.add(cm, outline(cm, 0xffa53d));
@@ -6832,13 +7514,39 @@ function buildScene(v, opts = {}) {
 
   // ---- tilleggsarmering --------------------------------------------------
   if (show.rebar && m.reinforcements?.length) {
-    const rm = MAT.rebar();
-    for (const r of m.reinforcements)
+    const rm = MAT.rebar(), rin = MAT.rebarInCone();
+    for (const r of m.reinforcements) {
+      // Kjeglebruddarmeringa deles i to farger: rosa der den ligger inne i
+      // bruddlegemet (l_1), vanlig farge der den er forankring utenfor.
+      const split = r.purpose === 'tension'
+        ? path => splitPathAtCone(m, r, path) : null;
       for (const bar of buildBars(m, r)) {
-        const bm = barMesh(bar, rm);
+        const bm = barMesh(bar, rm, split, rin);
         bm.renderOrder = ORDER.steel;
         root.add(bm);
       }
+    }
+    // Stanga i bøyen på bøylene - enten overflatearmeringa (to lag rett under
+    // overflata, det innerste på tvers så bøyen kan omslutte det), eller en
+    // egen stang lagt inne i hver bøy. Nettet tegnes bare én gang selv om
+    // flere grupper viser til det samme.
+    if (show.surfaceMesh !== false) {
+      const sm = MAT.surfaceMesh();
+      const drawn = new Set();
+      for (const r of m.reinforcements) {
+        const key = JSON.stringify([r.bendBar, r.surfaceReinf ?? null, r.direction]);
+        if (drawn.has(key)) continue;
+        const bars = [...buildSurfaceMesh(m, r), ...buildBendBars(m, r)];
+        if (!bars.length) continue;
+        drawn.add(key);
+        for (const bar of bars) {
+          const bm = barMesh(bar, sm);
+          bm.name = bar.bendBar ? 'stang_i_boyen' : 'overflatearmering';
+          bm.renderOrder = ORDER.steel;
+          root.add(bm);
+        }
+      }
+    }
   }
 
   // ---- laster -----------------------------------------------------------
@@ -6868,21 +7576,48 @@ function buildScene(v, opts = {}) {
 //  Underflata i et punkt ligger like hoeyt som avstanden ut fra b tilsier:
 //  rett over b er den i -h_ef, og 1,5*h_ef lengre ut har den naadd overflata.
 // ---------------------------------------------------------------------------
-function coneMesh(m, b, ccr, hef) {
+//  `srcs` er kildene kjegla sprer seg fra, som rektangler: én pr. bolt naar
+//  boltene har hver sin fot, eller ett for hele endeplata naar de henger i en
+//  felles plate. Med en kilde pr. bolt moetes nabokjeglene i en RYGG mellom
+//  boltene - taket er ikke flatt der inne, det stiger opp fra hver fot og
+//  treffer nabokjegla paa midten. Det er den ryggen som avgjoer hvor djupt
+//  tilleggsarmeringa staar inne i bruddlegemet (se engine/geometry.js
+//  coneSurfaceDepth, som regner det samme for kontrollene).
+function coneMesh(m, srcs, ccr, hef) {
   const [z0, z1] = anchorDepth(m);
   const mask = planMask(m, z0, z1);
+  const b = {
+    x0: Math.min(...srcs.map(q => q.x0)), x1: Math.max(...srcs.map(q => q.x1)),
+    y0: Math.min(...srcs.map(q => q.y0)), y1: Math.max(...srcs.map(q => q.y1)),
+  };
   const t = { x0: b.x0 - ccr, x1: b.x1 + ccr, y0: b.y0 - ccr, y1: b.y1 + ccr };
   const cuts = (base, extra, lo, hi) =>
-    [...new Set([...base, ...extra, lo, hi])]
+    [...new Set([...base, ...extra, lo, hi].map(v => Math.round(v * 1e3) / 1e3))]
       .filter(v => v > lo - 1e-9 && v < hi + 1e-9).sort((u, w) => u - w);
-  const xs = cuts(mask.xs, [b.x0, b.x1], t.x0, t.x1);
-  const ys = cuts(mask.ys, [b.y0, b.y1], t.y0, t.y1);
+  // Snittlinjer ved hver kildekant OG midt mellom naboene: ryggen ligger der,
+  // og uten en linje akkurat der ville trianguleringa skaaret tvers over den.
+  const mids = (vals) => {
+    const v = [...new Set(vals)].sort((a, c) => a - c);
+    const out = [];
+    for (let i = 1; i < v.length; i++) out.push((v[i - 1] + v[i]) / 2);
+    return out;
+  };
+  const sx = srcs.flatMap(q => [q.x0, q.x1]), sy = srcs.flatMap(q => [q.y0, q.y1]);
+  const xs = cuts(mask.xs, [...sx, ...mids(sx)], t.x0, t.x1);
+  const ys = cuts(mask.ys, [...sy, ...mids(sy)], t.y0, t.y1);
   if (xs.length < 2 || ys.length < 2) return null;
 
+  // Kjegleflata er unionen av kjeglene: i et punkt ligger taket saa djupt som
+  // den naermeste kilden tilsier.
   const low = (x, y) => {
-    const dx = Math.max(b.x0 - x, x - b.x1, 0);
-    const dy = Math.max(b.y0 - y, y - b.y1, 0);
-    return -hef * (1 - Math.min(Math.max(dx, dy), ccr) / ccr);
+    let z = 0;
+    for (const q of srcs) {
+      const dx = Math.max(q.x0 - x, x - q.x1, 0);
+      const dy = Math.max(q.y0 - y, y - q.y1, 0);
+      const s = Math.max(dx, dy);
+      if (s < ccr) z = Math.max(z, hef * (1 - s / ccr));
+    }
+    return -z;
   };
   const nx = xs.length - 1, ny = ys.length - 1;
   const keep = new Uint8Array(nx * ny);
@@ -7181,6 +7916,10 @@ const FIELDS = [
     { p: 'concrete.h', l: 'Tykkelse h', t: 'num', u: 'mm', step: 10,
       hint: 'Tykkelsen former som følger tykkelsen får. Former med egen ' +
             'over- og underkant står i ro når h endres.' },
+    { p: 'concrete.dg', l: 'Største tilslag d_g', t: 'num', u: 'mm', step: 2, min: 0,
+      hint: 'Brukes bare til minste senteravstand mellom parallelle ' +
+            'armeringsstenger, NS-EN 1992-1-1 8.2 – den avstanden ' +
+            'tilleggsarmeringa pakkes med rundt bolten.' },
     { p: 'concrete.ex', l: 'Plate offset e_x', t: 'num', u: 'mm', step: 10,
       hint: 'Hvor plata står i betongdelens eget system. Formene du har ' +
             'tegnet står stille når plata flyttes.' },
@@ -7365,21 +8104,34 @@ function reinforcementFields(m, i) {
     { p: P('geometryType'), l: 'Utforming', t: 'select',
       o: (GEOMETRY_FOR[r.purpose] || Object.keys(GEOMETRY_LABEL))
         .map(v => [v, GEOMETRY_LABEL[v]]) },
-    { p: P('count'), l: tension ? 'Bøyler pr. boltrad' : 'Antall bein',
+    { p: P('count'), l: tension
+        ? (r.geometryType === 'straight' ? 'Stenger pr. bolt' : 'Bøyler pr. bolt')
+        : 'Antall bein',
       t: 'num', step: 2, min: 2,
       hint: tension
-        ? 'Fordeles symmetrisk om boltraden, minst én bøyle på hver side, alle ' +
-          'innenfor 0,75·h_ef fra bolten.' : undefined },
+        ? 'Fordeles symmetrisk om bolten, minst én på hver side. De legges så ' +
+          'nær bolten som praktisk mulig og pakkes utover med minste tillatte ' +
+          'senteravstand (NS-EN 1992-1-1 8.2). 0,75·h_ef er den ytre grensa ' +
+          'for hva som teller med, ikke der de skal ligge.' : undefined },
     { p: P('ds'), l: 'Diameter ⌀', t: 'select', num: true,
       o: REINF_DIAMETERS.map(d => [d, `⌀${d}`]) },
     { p: P('fyk'), l: 'f_yk', t: 'num', u: 'MPa', step: 50,
       hint: 'Ribbet armeringsstål, f_yk ≤ 600 N/mm² – pkt. 7.2.2.6.' },
   ];
+  if (tension && r.geometryType !== 'straight')
+    out.push({ p: P('barLayout'), l: 'Bøylefordeling', t: 'select',
+      o: TENSION_LAYOUTS.map(v => [v, TENSION_LAYOUT_LABEL[v]]),
+      hint: 'Én bøyle om hver bolt gir et bein like ved hver bolt. Én bøyle ' +
+            'over hele boltraden gir færre stenger og ett bøyeskjema, men bare ' +
+            'boltene i endene av raden får et bein nær seg – ligger noen bolt ' +
+            'midt i raden lenger enn 0,75·h_ef fra nærmeste bein, flagges det ' +
+            'av plasseringskontrollen.' });
   if (tension)
     out.push({ p: P('direction'), l: 'Retning', t: 'num', u: '°', step: 15,
-      hint: 'Hvilken vei bøylene ligger, dreid om loddaksen. Boltene deles i ' +
-            'rader på tvers av denne retninga, og hver rad spennes av sine ' +
-            'egne bøyler.' });
+      hint: r.geometryType === 'straight'
+        ? 'Hvilken vei stengene fordeles om bolten, dreid om loddaksen.'
+        : 'Hvilken vei bøylene ligger, dreid om loddaksen. Bøylene straddler ' +
+          'bolten i denne retninga, og forskyves på tvers av den for å gå klar.' });
   else
     out.push({ p: P('placement'), l: 'Plassering', t: 'select', o: [
       ['auto', 'Automatisk'], ['manual', 'Manuell']] });
@@ -7388,12 +8140,67 @@ function reinforcementFields(m, i) {
   // ned mot den); kantbruddbøylen ligger i ett vannrett nivå og har bare en
   // overkant å forholde seg til.
   const hasDepth = tension || r.purpose === 'generic';
+  // Bøylebredda og overflatearmeringa gjelder bare de bøyde utformingene:
+  // rett stang har verken bøy å omslutte med eller to bein å spenne mellom.
+  if (tension && r.geometryType !== 'straight') {
+    const G = groupGeometry(m, null, r);
+    out.push({ p: P('span'), l: 'Bøylebredde (mellom beina)', t: 'num', u: 'mm', step: 10,
+      val: r.span ?? Math.round(2 * (G.geo?.halfSpan ?? 0)),
+      hint: 'Avstanden mellom de to loddrette beina, målt langs bøyleretninga. ' +
+            'Tomt = så trangt bøyeradien tillater, altså beina så nær bolten ' +
+            'som praktisk mulig. Bredda går inn i den faktiske avstanden ' +
+            'bolt → bein: √((bredde/2)² + tverravstand²) ≤ 0,75·h_ef.' });
+    out.push({ p: P('bendBar'), l: 'Stang i bøyen', t: 'select',
+      o: BEND_BARS.map(v => [v, BEND_BAR_LABEL[v]]),
+      hint: 'Bøyen krøller seg rundt en stang på tvers, så bøylen ligger OVER ' +
+            'den. Stanga tar radialtrykket fra bøyen og fører strekkraften ' +
+            'videre. Enten brukes overflatearmeringa til dette – da følger ' +
+            'bøylen nettet – eller det legges en egen stang, og da står bøylen ' +
+            'fritt og nettet tegnes ikke.' });
+    if (r.bendBar === 'own')
+      out.push({ p: P('bendBarDs'), l: 'Stang i bøyen ⌀', t: 'select', num: true,
+        val: bendBarDiameter(r),
+        o: REBAR_SIZES.filter(d => d >= r.ds).map(d => [d, `⌀${d}`]),
+        hint: `Minst like tjukk som bøylen (⌀${r.ds}). Forankres etter ` +
+              'NS-EN 1992-1-1 8.4 – se kontrollen «stang i bøyen».' });
+    else
+      out.push(
+        { p: P('surfaceReinf.present'), l: 'Overflatearmering lagt inn', t: 'bool',
+          hint: 'Uten nett er det ingenting i bøyen – da bør du velge egen ' +
+                'stang i bøyen i stedet.' },
+        ...(r.surfaceReinf?.present ? [
+          { p: P('surfaceReinf.ds'), l: 'Overflatearmering ⌀', t: 'select', num: true,
+            o: REBAR_SIZES.map(d => [d, `⌀${d}`]) },
+          { p: P('surfaceReinf.spacing'), l: 'Overflatearmering c/c', t: 'num',
+            u: 'mm', step: 25, min: 25,
+            hint: 'Senteravstand i nettet. Brukes til å tegne nettet i 3D – ' +
+                  'kapasiteten til overflatearmeringa er ikke kontrollert her.' },
+          { p: P('surfaceReinf.cover'), l: 'Overflatearmering, overdekning',
+            t: 'num', u: 'mm', step: 5, min: 0,
+            hint: 'Til ytterste lag. Laget som går på tvers av bøylene ligger ' +
+                  'innerst – det er det bøyen omslutter, og bøylen legges rett ' +
+                  'over det.' },
+        ] : []));
+  }
+  // Skal bøylen omslutte overflatearmeringa, kan den ikke ha sin egen
+  // overdekning i tillegg: den MÅ ligge rett under nettet. Da er det nettets
+  // overdekning som er det ene tallet som gjelder, og bøylens overdekning
+  // vises som avledet - ellers står det to tall i skjemaet som ikke kan
+  // stemme samtidig.
+  const wraps = tension && r.geometryType !== 'straight'
+    && r.bendBar !== 'own' && !!r.surfaceReinf?.present;
   out.push({ p: P('coverTop'), l: hasDepth ? 'Overdekning, overkant' : 'Overdekning',
     t: 'num', u: 'mm', step: 5,
-    hint: tension
-      ? 'Fra betongoverflata ned til den vannrette delen av bøylen. Styrer ' +
-        'hvor langt bøylen må stikke ut forbi bolten for å få trykkstaven i 45°.'
-      : 'Avstand fra betongoverflata (og fra kanten for kantbruddbøyler) til bøylen.' });
+    ro: wraps,
+    val: wraps ? Math.round(crownDepth(r).dCrown - r.ds / 2) : undefined,
+    hint: !tension
+      ? 'Avstand fra betongoverflata (og fra kanten for kantbruddbøyler) til bøylen.'
+      : wraps
+        ? 'Følger overflatearmeringa: bøylen legges rett OVER det laget som går ' +
+          'på tvers av bøyleretninga, så bøyen omslutter det. Sett overdekninga ' +
+          'på nettet i stedet.'
+        : 'Fra betongoverflata ned til toppen av armeringa. Stanga i bøyen ' +
+          'legges inne i bøyen, altså under den vannrette delen.' });
   if (hasDepth)
     out.push({ p: P('coverBottom'), l: 'Overdekning, underkant', t: 'num', u: 'mm', step: 5,
       hint: 'Hvor nær underkant betong beina får gå.' });
@@ -7424,7 +8231,12 @@ function reinforcementFields(m, i) {
   }
   if (r.purpose === 'tension') {
     out.push(
-      { p: P('lapToExisting.present'), l: 'Overlapp mot konstruksjonsarmering', t: 'bool' },
+      { p: P('lapToExisting.present'), l: 'Overlapp mot konstruksjonsarmering', t: 'bool',
+        hint: r.geometryType === 'straight'
+          ? 'PÅKREVD for rett tilleggsarmering: den omslutter ikke ' +
+            'overflatearmeringa, så lastoverføringa videre må dokumenteres ' +
+            'med overlapp eller tilsvarende (EN 1992-1-1 8.7).'
+          : undefined },
       { p: P('lapToExisting.lapLength'), l: 'Overlappslengde', t: 'num', u: 'mm', step: 10,
         when: () => r.lapToExisting?.present });
   }
@@ -8089,6 +8901,1048 @@ class PlanEditor {
   }
 }
 
+// ===== src/ui/figures.js ===========================================
+// ---------------------------------------------------------------------------
+//  Figurer til utregningsarket.
+//
+//  Hver kontroll kan ha en målsatt prinsippfigur som viser nøyaktig de lengdene
+//  som står i formlene. Figurene tegnes av modellen, ikke som faste bilder, så
+//  de følger geometrien brukeren har lagt inn: endrer h_ef seg, endrer kjegla
+//  seg. Alt tegnes i målestokk, og de samme lengdene heter det samme her som i
+//  utregninga under.
+//
+//  Betongkjegla har tre visninger - snitt i x, snitt i y og plan - som brukeren
+//  veksler mellom. Valget ligger i modulen, så det står fast når arket tegnes
+//  om ved hver endring.
+//
+//  Koordinater: platas system (bolter symmetrisk om origo), x og y i mm på
+//  tvers, z mm nedover med z = 0 i betongoverflata. SVG-en settes opp i piksler
+//  skalert av mm, så skrift og strektykkelser holder seg like uansett hvor stor
+//  modellen er.
+// ---------------------------------------------------------------------------
+
+const FIGURES = {
+  'N-cone': coneFigure,
+};
+
+// Kontroller som gjelder én tilleggsarmeringsgruppe heter N-sre-<hva>-<id>, så
+// de treffes på prefiks i stedet for på fullt navn.
+const PREFIX_FIGURES = [
+  [/^N-sre-(placement|steel|anchorage|lbd|cone)-/, sreFigure],
+];
+
+// Returnerer ferdig <figure>-blokk, eller tom streng når kontrollen ikke har
+// noen figur enda.
+function figureFor(check, m) {
+  const id = check?.id;
+  if (!id) return '';
+  const f = FIGURES[id] || (PREFIX_FIGURES.find(([re]) => re.test(id)) || [])[1];
+  if (!f) return '';
+  try { bindTabs(); return f(m, check); } catch { return ''; }
+}
+
+// === faner ================================================================
+// Arket bygges med innerHTML ved hver endring, så knappene er nye hver gang.
+// Én delegert lytter overlever det, og valget ligger i modulen.
+// Ett valg pr. figurtype: kjeglefigurens snitt/plan og armeringsfigurens
+// snitt/plan er to uavhengige valg som begge skal stå fast mellom tegningene.
+const views = { cone: 'x', sre: 'sec' };
+let bound = false;
+
+function bindTabs() {
+  if (bound || typeof document === 'undefined') return;
+  bound = true;
+  document.addEventListener('click', e => {
+    const btn = e.target.closest?.('[data-figview]');
+    if (!btn) return;
+    const fig = btn.closest('.fig');
+    const kind = fig?.dataset.figkind || 'cone';
+    views[kind] = btn.dataset.figview;
+    showView(fig, views[kind]);
+  });
+}
+
+function showView(fig, v) {
+  if (!fig) return;
+  for (const b of fig.querySelectorAll('[data-figview]'))
+    b.setAttribute('aria-pressed', String(b.dataset.figview === v));
+  for (const p of fig.querySelectorAll('[data-figpanel]'))
+    p.hidden = p.dataset.figpanel !== v;
+}
+
+// Faneknapp + panel, felles for begge figurtypene.
+function tabsAndPanels(kind, panels, label) {
+  const v = views[kind];
+  const tabs = panels.map(([id, lab]) =>
+    `<button class="btn" type="button" data-figview="${id}" ` +
+    `aria-pressed="${v === id}">${enc(lab)}</button>`).join('');
+  const body = panels.map(([id, , html]) =>
+    `<div class="fig-panel" data-figpanel="${id}"${v === id ? '' : ' hidden'}>` +
+    html + '</div>').join('');
+  return `<figure class="fig" data-figkind="${kind}">
+  <div class="fig-tabs btn-row">${tabs}</div>
+  ${body}
+</figure>`;
+}
+
+// === små hjelpere =========================================================
+const enc = s => String(s).replace(/[&<>"]/g, ch =>
+  ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[ch]));
+
+// Norsk tallformat: desimalkomma, ingen etterhengte nuller.
+function num(v, dec = 0) {
+  if (!Number.isFinite(v)) return '–';
+  return (+v.toFixed(dec)).toLocaleString('nb-NO');
+}
+
+const f1 = v => v.toFixed(1);
+
+// Grupperer sorterte posisjoner i klynger som overlapper hverandre. To kjegler
+// med senteravstand under 2*c_cr,N flyter sammen til ett bruddlegeme; ligger de
+// lenger fra hverandre, rives det ut hver sin kjegle. Hver klynge kommer ut som
+// [første, siste].
+function clusters(vals, gap) {
+  const out = [];
+  for (const v of [...vals].sort((a, b) => a - b)) {
+    const last = out[out.length - 1];
+    if (last && v - last[1] <= gap) last[1] = v;
+    else out.push([v, v]);
+  }
+  return out;
+}
+
+// ===========================================================================
+//  Betongkjegle, 7.2.1.4
+// ===========================================================================
+//
+//  Kjegla starter i trykkflata - overkant fot - og sprer seg opp og ut til
+//  betongoverflata, c_cr,N = 1,5*h_ef til hver side. Henger boltene i en felles
+//  endeplate, sprer den seg fra platekanten og ikke fra hver bolt for seg,
+//  nøyaktig slik A_c,N regnes i coneProjection().
+//
+function coneGeo(m) {
+  const hef = m.anchors.hef;
+  const foot = anchorFoot(m);
+  // Trykkflata: overkant fot. h_ef går til underkant fot, så kjeglespissen
+  // ligger fothøgda over det. Uten fot er det ingen trykkflate å spre fra.
+  const zTop = Math.max(0, hef - (foot.hasFoot ? foot.t : 0));
+  const pl = foot.common ? endPlate(m) : null;
+  return {
+    hef, foot, pl, zTop,
+    ccr: 1.5 * hef, scr: 3 * hef,
+    pts: anchorPositions(m),
+    box: baseBox(m),
+    h: Math.abs(+m.concrete.h || 0),
+  };
+}
+
+function coneFigure(m) {
+  const geo = coneGeo(m);
+  return tabsAndPanels('cone', [
+    ['x', 'Snitt x', sectionPanel(m, geo, 'x')],
+    ['y', 'Snitt y', sectionPanel(m, geo, 'y')],
+    ['plan', 'Plan', planPanel(m, geo)],
+  ]);
+}
+
+// Tilleggsarmeringa som er lagt inn for kjeglebrudd - brukes både av kjegle-
+// figuren (der den viser hva som griper inn i bruddlegemet) og av armerings-
+// figurene. Tom liste når ingen strekkarmering er lagt inn.
+function tensionGroups(m) {
+  return (m.reinforcements || []).filter(r => r.purpose === 'tension')
+    .map(r => { try { return { r, L: tensionLayout(m, r) }; } catch { return null; } })
+    .filter(g => g && g.L.legLen > 0);
+}
+
+// === snitt ================================================================
+// Aksegenerisk: u er retningen snittet går i, v er den vi ser inn mot.
+function axisData(m, geo, ax) {
+  const A = m.anchors, C = m.concrete, isX = ax === 'x';
+  const us = [...new Set(geo.pts.map(p => (isX ? p.x : p.y)))].sort((a, b) => a - b);
+  return {
+    us,
+    label: isX ? 's_x' : 's_y',
+    other: isX ? 'y' : 'x',
+    nOther: isX ? A.ny : A.nx,
+    plateB: m.plate.present ? (isX ? m.plate.bx : m.plate.by) : null,
+    // Endeplata i snittets retning.
+    foot0: geo.pl ? (isX ? geo.pl.x0 : geo.pl.y0) : null,
+    foot1: geo.pl ? (isX ? geo.pl.x1 : geo.pl.y1) : null,
+    // Frie kanter i platas system; null = ikke fri, betongen fortsetter.
+    e0: (isX ? C.freeEdges.xNeg : C.freeEdges.yNeg) ? (isX ? geo.box.x0 : geo.box.y0) : null,
+    e1: (isX ? C.freeEdges.xPos : C.freeEdges.yPos) ? (isX ? geo.box.x1 : geo.box.y1) : null,
+  };
+}
+
+function sectionPanel(m, geo, ax) {
+  const { hef, ccr, zTop, foot, h } = geo;
+  const a = axisData(m, geo, ax);
+  const uL = a.us[0], uR = a.us[a.us.length - 1];
+
+  // Kjeglene: én felles når boltene henger i endeplate, ellers én pr. bolt -
+  // slått sammen der de flyter over i hverandre.
+  const cones = geo.pl ? [[a.foot0, a.foot1]] : clusters(a.us, 2 * ccr);
+  const coneL = cones[0][0] - ccr;
+  const coneR = cones[cones.length - 1][1] + ccr;
+
+  const span = coneR - coneL, pad = 0.10 * span;
+  const concL = a.e0 === null ? coneL - pad : Math.max(a.e0, coneL - pad);
+  const concR = a.e1 === null ? coneR + pad : Math.min(a.e1, coneR + pad);
+  const viewL = Math.min(concL, coneL) - 0.02 * span;
+  const viewR = Math.max(concR, coneR) + 0.02 * span;
+
+  // Er betongdelen mye dypere enn kjegla, avkortes snittet: resten av
+  // tverrsnittet sier ikke noe om denne bruddformen.
+  const zBot = h <= 2.2 * hef ? h : 2.2 * hef;
+  const cutBot = zBot < h - 1;
+
+  const W = 760, padL = 70, padR = 96, padB = 54;
+  const d = m.anchors.d, tp = m.plate.present ? m.plate.t : 0;
+  const s = (W - padL - padR) / (viewR - viewL);
+  const ARR = 46, ROW = 24;
+  const padT = tp * s + ARR + 2 * ROW + 26;
+  const H = padT + padB + zBot * s;
+  const X = x => padL + (x - viewL) * s;
+  const Z = z => padT + z * s;
+
+  const g = [];
+
+  // --- betongen ---
+  g.push(`<rect class="conc" x="${f1(X(concL))}" y="${f1(Z(0))}" ` +
+    `width="${f1((concR - concL) * s)}" height="${f1(zBot * s)}"/>`);
+  if (a.e0 === null) g.push(brk(X(concL), Z(0), X(concL), Z(zBot)));
+  if (a.e1 === null) g.push(brk(X(concR), Z(0), X(concR), Z(zBot)));
+  if (cutBot) {
+    g.push(brk(X(concL), Z(zBot), X(concR), Z(zBot)));
+    g.push(txt('ann', X((concL + concR) / 2), Z(zBot) + 16,
+      `snittet er avkortet · h = ${num(h)} mm`));
+  }
+
+  // --- kjegla ---
+  if (foot.hasFoot)
+    for (const [u0, u1] of cones)
+      g.push(`<path class="cone" d="${
+        conePath(geo, a, u0, u1, concL, concR, X, Z)}"/>`);
+
+  // --- bolter, fot og plate ---
+  for (const u of a.us) {
+    g.push(`<rect class="steel" x="${f1(X(u) - d * s / 2)}" y="${f1(Z(-tp))}" ` +
+      `width="${f1(d * s)}" height="${f1((hef + tp) * s)}"/>`);
+    if (!geo.pl && foot.hasFoot)
+      g.push(`<rect class="steel" x="${f1(X(u) - foot.size * s / 2)}" ` +
+        `y="${f1(Z(zTop))}" width="${f1(foot.size * s)}" height="${f1(foot.t * s)}"/>`);
+  }
+  if (geo.pl)
+    g.push(`<rect class="steel" x="${f1(X(a.foot0))}" y="${f1(Z(zTop))}" ` +
+      `width="${f1((a.foot1 - a.foot0) * s)}" height="${f1(foot.t * s)}"/>`);
+  if (a.plateB !== null)
+    g.push(`<rect class="steel" x="${f1(X(-a.plateB / 2))}" y="${f1(Z(-tp))}" ` +
+      `width="${f1(a.plateB * s)}" height="${f1(tp * s)}"/>`);
+
+  // --- tilleggsarmering, projisert inn i snittet ---
+  // Rosa = den delen som ligger inne i kjeglebruddsona (l_1).
+  const isX = ax === 'x';
+  g.push(...reinfSplit(m, p => [X(isX ? p.x : p.y), Z(-p.z)], Z));
+
+  g.push(arrowUp(X(0), Z(-tp), ARR,
+    'N<tspan baseline-shift="sub" font-size="0.78em">Ed,g</tspan>'));
+  g.push(`<line class="surf" x1="${f1(X(concL))}" y1="${f1(Z(0))}" ` +
+    `x2="${f1(X(concR))}" y2="${f1(Z(0))}"/>`);
+
+  // --- mål ---
+  const yTop = Z(-tp) - ARR - ROW;
+  g.push(dimH(X(coneL), X(cones[0][0]), yTop, `c_cr,N = ${num(ccr)}`));
+  g.push(dimH(X(cones[cones.length - 1][1]), X(coneR), yTop, `c_cr,N = ${num(ccr)}`));
+  if (a.us.length > 1) g.push(dimH(X(uL), X(uR), yTop, `${a.label} = ${num(uR - uL)}`));
+  g.push(dimH(X(coneL), X(coneR), yTop - ROW, `2·c_cr,N + ${a.label} = ${num(coneR - coneL)}`));
+
+  g.push(dimV(X(concR) + 26, Z(0), Z(hef), `h_ef = ${num(hef)}`));
+  if (!cutBot) g.push(dimV(X(concL) - 26, Z(0), Z(h), `h = ${num(h)}`, true));
+
+  // Trykkflata er der kjegla starter - overkant fot, ikke underkant.
+  if (foot.hasFoot && zTop < hef - 0.5) {
+    const tL = cones[0][0] - 0.45 * ccr, tR = cones[cones.length - 1][1] + 0.45 * ccr;
+    g.push(brk(X(tL), Z(zTop), X(tR), Z(zTop), 'thin'));
+    g.push(txt('ann', X(tL) - 6, Z(zTop) + 4,
+      `trykkflate = overkant ${geo.pl ? 'endeplate' : 'fot'}`, 'end'));
+  }
+
+  // Vinkelen mellom kjegleflata og overflata, i det toppunktet som står fritt.
+  if (foot.hasFoot && zTop > 1) {
+    if (concR >= coneR - 1)
+      g.push(angleMark(X(coneR), Z(0), [-1, 0], [-ccr * s, zTop * s]));
+    else if (concL <= coneL + 1)
+      g.push(angleMark(X(coneL), Z(0), [1, 0], [ccr * s, zTop * s]));
+  }
+
+  // Kantavstand når kanten ligger nær nok til å slå inn i ψ_s,N.
+  const yEdge = Z(zBot) + (cutBot ? 34 : 26);
+  if (a.e1 !== null && a.e1 - uR <= 1.8 * ccr)
+    g.push(dimH(X(uR), X(a.e1), yEdge, `c = ${num(a.e1 - uR)}`));
+  if (a.e0 !== null && uL - a.e0 <= 1.8 * ccr)
+    g.push(dimH(X(a.e0), X(uL), yEdge, `c = ${num(uL - a.e0)}`));
+
+  const cap = foot.hasFoot
+    ? `Snitt i ${ax}-retning gjennom boltegruppa, sett mot ${a.other}-aksen.
+       Kjegla starter i trykkflata på overkant ${geo.pl ? 'endeplate' : 'fot'} og
+       sprer seg opp mot overflata med c<sub>cr,N</sub> = 1,5·h<sub>ef</sub> til
+       side.${geo.pl ? ' Boltene henger i en felles endeplate, så kjegla sprer seg fra platekanten og ikke fra hver bolt.' : ''}${
+         tensionGroups(m).length ? ' Tilleggsarmeringa er tegnet med i snittet: den krysser kjegleflata og fører lasta ned under bruddlegemet.' : ''}`
+    : `Snitt i ${ax}-retning. Uten forankringsfot er det ingen trykkflate å
+       spre en kjegle fra - forankringen regnes som heftforankring.`;
+  return svg(W, H, g, `Snitt i ${ax}-retning gjennom bruddkjegla`) + caption(cap);
+}
+
+// Kjeglene i én klynge, tegnet som ei sammenhengende sløyfe fra venstre
+// fotpunkt til høgre. Mellom to bolter som flyter sammen, dykker flata ned til
+// skjæringspunktet - det er den virkelige formen på bruddlegemet, ikke en
+// omhyllende trapes. Sløyfa klippes der betongen slutter.
+function conePath(geo, a, u0, u1, limL, limR, X, Z) {
+  const { ccr, zTop } = geo;
+  const us = geo.pl ? [[u0, u1]] : a.us.filter(u => u >= u0 && u <= u1).map(u => [u, u]);
+  const p = [];
+
+  // venstre skråflate opp fra overflata
+  const topL = us[0][0] - ccr;
+  if (limL > topL) {
+    const z = zTop * (us[0][0] - limL) / ccr;
+    p.push([limL, 0], [limL, Math.min(z, zTop)]);
+  } else p.push([topL, 0]);
+
+  for (let i = 0; i < us.length; i++) {
+    p.push([us[i][0], zTop], [us[i][1], zTop]);
+    if (i < us.length - 1) {
+      // Bunnpunktet mellom to nabokjegler: der de to skråflatene møtes.
+      const gap = us[i + 1][0] - us[i][1];
+      p.push([us[i][1] + gap / 2, zTop * (1 - gap / (2 * ccr))]);
+    }
+  }
+
+  // høgre skråflate ned mot overflata
+  const topR = us[us.length - 1][1] + ccr;
+  if (limR < topR) {
+    const z = zTop * (limR - us[us.length - 1][1]) / ccr;
+    p.push([limR, Math.min(z, zTop)], [limR, 0]);
+  } else p.push([topR, 0]);
+
+  return 'M' + p.map(q => `${f1(X(q[0]))} ${f1(Z(q[1]))}`).join(' L') + ' Z';
+}
+
+// === plan =================================================================
+function planPanel(m, geo) {
+  const { ccr, scr, pts, foot, pl, box } = geo;
+  const A = m.anchors;
+
+  // Grunnflata A_c,N: ett rektangel om endeplata, ellers ett om hver bolt.
+  // Boltene står i et rutenett, så unionen av kvadratene er nøyaktig
+  // klyngene i x krysset med klyngene i y - ingen indre kanter å tegne.
+  const xs0 = [...new Set(pts.map(p => p.x))];
+  const ys0 = [...new Set(pts.map(p => p.y))];
+  const rects = pl
+    ? [{ x0: pl.x0 - ccr, x1: pl.x1 + ccr, y0: pl.y0 - ccr, y1: pl.y1 + ccr }]
+    : clusters(xs0, 2 * ccr).flatMap(cx => clusters(ys0, 2 * ccr).map(cy => ({
+        x0: cx[0] - ccr, x1: cx[1] + ccr, y0: cy[0] - ccr, y1: cy[1] + ccr })));
+
+  const rx0 = Math.min(...rects.map(r => r.x0)), rx1 = Math.max(...rects.map(r => r.x1));
+  const ry0 = Math.min(...rects.map(r => r.y0)), ry1 = Math.max(...rects.map(r => r.y1));
+
+  // Betongdelen sett ovenfra. Ligger kanten langt utenfor kjegla, sier den
+  // ikke noe om denne bruddformen: da kappes tegninga et stykke utenfor
+  // arealet og snittkanten merkes stiplet. Kanter som er nær nok til å klippe
+  // A_c,N eller slå inn i ψ_s,N blir alltid med.
+  const C = m.concrete;
+  const far = 2.2 * ccr;        // så langt utenfor arealet tas en fri kant med
+  const near = 0.6 * ccr;       // en side som ikke er fri, vises bare som stubb
+  const side = (free, edge, r, dir) => {
+    const lim = r + dir * (free ? far : near);
+    if (free && (dir > 0 ? edge <= lim : edge >= lim)) return { at: edge, cut: false };
+    return { at: lim, cut: true };
+  };
+  const wx0 = side(C.freeEdges.xNeg, box.x0, rx0, -1);
+  const wx1 = side(C.freeEdges.xPos, box.x1, rx1, +1);
+  const wy0 = side(C.freeEdges.yNeg, box.y0, ry0, -1);
+  const wy1 = side(C.freeEdges.yPos, box.y1, ry1, +1);
+
+  const spanX = Math.max(wx1.at - wx0.at, wy1.at - wy0.at);
+  const viewX0 = wx0.at - 0.03 * spanX, viewX1 = wx1.at + 0.03 * spanX;
+  const viewY0 = wy0.at - 0.03 * spanX, viewY1 = wy1.at + 0.03 * spanX;
+
+  // Målestokk: samme i x og y, tilpasset både bredda og ei øvre høgde.
+  const W = 760, padL = 118, padR = 96, padT = 92, padB = 62, HMAX = 560;
+  const s = Math.min((W - padL - padR) / (viewX1 - viewX0),
+                     (HMAX - padT - padB) / (viewY1 - viewY0));
+  const H = padT + padB + (viewY1 - viewY0) * s;
+  // Er høgda det trange, blir tegninga smalere enn ruta - da sentreres den.
+  const ox = padL + ((W - padL - padR) - (viewX1 - viewX0) * s) / 2;
+  const X = x => ox + (x - viewX0) * s;
+  // y peker oppover i modellen, nedover i SVG.
+  const Y = y => padT + (viewY1 - y) * s;
+
+  const g = [];
+  const uid = Math.random().toString(36).slice(2, 8);
+  const idM = 'cone-mask-' + uid, idW = 'cone-win-' + uid;
+
+  // --- betongen, med hull der det er skåret ut ---
+  const loops = memberLoops(m);
+  const dMember = loops.length
+    ? loops.map(l => loopPath(l, X, Y)).join(' ')
+    : rectPath(wx0.at, wy0.at, wx1.at, wy1.at, X, Y);
+  g.push(`<clipPath id="${idM}" clip-rule="evenodd"><path d="${dMember}"/></clipPath>`);
+  g.push(`<clipPath id="${idW}"><path d="${
+    rectPath(wx0.at, wy0.at, wx1.at, wy1.at, X, Y)}"/></clipPath>`);
+  g.push(`<g clip-path="url(#${idW})">` +
+    `<path class="conc" fill-rule="evenodd" d="${dMember}"/></g>`);
+  // Kappede kanter: der fortsetter betongen utenfor figuren.
+  if (wx0.cut) g.push(brk(X(wx0.at), Y(wy0.at), X(wx0.at), Y(wy1.at)));
+  if (wx1.cut) g.push(brk(X(wx1.at), Y(wy0.at), X(wx1.at), Y(wy1.at)));
+  if (wy0.cut) g.push(brk(X(wx0.at), Y(wy0.at), X(wx1.at), Y(wy0.at)));
+  if (wy1.cut) g.push(brk(X(wx0.at), Y(wy1.at), X(wx1.at), Y(wy1.at)));
+
+  // --- A_c,N: union av rektanglene, klippet mot betongen ---
+  if (foot.hasFoot)
+    g.push(`<g clip-path="url(#${idM})">` + rects.map(r =>
+      `<path class="cone" d="${rectPath(r.x0, r.y0, r.x1, r.y1, X, Y)}"/>`).join('') +
+      '</g>');
+
+  // --- referansearealet A⁰_c,N = s_cr,N x s_cr,N om den første bolten ---
+  const p0 = pts[0];
+  g.push(`<rect class="ref" x="${f1(X(p0.x - scr / 2))}" y="${f1(Y(p0.y + scr / 2))}" ` +
+    `width="${f1(scr * s)}" height="${f1(scr * s)}"/>`);
+  g.push(symText('ann', X(p0.x - scr / 2) + 4, Y(p0.y - scr / 2) + 14,
+    'A⁰_c,N = s_cr,N²', 'start'));
+
+  // --- plate, endeplate og bolter ---
+  if (m.plate.present)
+    g.push(`<rect class="plate" x="${f1(X(-m.plate.bx / 2))}" y="${f1(Y(m.plate.by / 2))}" ` +
+      `width="${f1(m.plate.bx * s)}" height="${f1(m.plate.by * s)}"/>`);
+  if (pl)
+    g.push(`<rect class="foot" x="${f1(X(pl.x0))}" y="${f1(Y(pl.y1))}" ` +
+      `width="${f1(pl.bx * s)}" height="${f1(pl.by * s)}"/>`);
+  for (const p of pts)
+    g.push(`<circle class="steel" cx="${f1(X(p.x))}" cy="${f1(Y(p.y))}" ` +
+      `r="${f1(Math.max(2.5, A.d * s / 2))}"/>`);
+
+  // --- tilleggsarmering, sett ovenfra ---
+  g.push(...reinfPaths(m, p => [X(p.x), Y(p.y)]));
+
+  // --- snittlinjene, så de tre visningene henger sammen ---
+  g.push(cutLine(X(viewX0) + 6, Y(0), X(viewX1) - 6, Y(0), 'snitt x'));
+  g.push(cutLine(X(0), Y(viewY1) - 6, X(0), Y(viewY0) + 6, 'snitt y'));
+
+  // --- mål ---
+  const xs = [...new Set(pts.map(p => p.x))].sort((a, b) => a - b);
+  const ys = [...new Set(pts.map(p => p.y))].sort((a, b) => a - b);
+  // c_cr,N og senteravstanden legges i hver sin rad, ellers går påskriftene
+  // i hverandre når boltegruppa er liten.
+  const yTop = padT - 24, xLeft = X(viewX0) - 26;
+  g.push(dimH(X(rx0), X(pl ? pl.x0 : xs[0]), yTop - 24, `c_cr,N = ${num(ccr)}`));
+  g.push(dimH(X(pl ? pl.x1 : xs[xs.length - 1]), X(rx1), yTop - 24, `c_cr,N = ${num(ccr)}`));
+  if (xs.length > 1)
+    g.push(dimH(X(xs[0]), X(xs[xs.length - 1]), yTop, `s_x = ${num(xs[xs.length - 1] - xs[0])}`));
+  g.push(dimV(xLeft - 26, Y(ry1), Y(pl ? pl.y1 : ys[ys.length - 1]), `c_cr,N = ${num(ccr)}`, true));
+  g.push(dimV(xLeft - 26, Y(pl ? pl.y0 : ys[0]), Y(ry0), `c_cr,N = ${num(ccr)}`, true));
+  if (ys.length > 1)
+    g.push(dimV(xLeft, Y(ys[ys.length - 1]), Y(ys[0]), `s_y = ${num(ys[ys.length - 1] - ys[0])}`, true));
+
+  // Kantavstander der kanten er fri og nær nok til å klippe arealet.
+  const yBelow = Y(wy0.at) + 30;
+  if (!wx1.cut && box.x1 - xs[xs.length - 1] <= 1.8 * ccr)
+    g.push(dimH(X(xs[xs.length - 1]), X(box.x1), yBelow, `c = ${num(box.x1 - xs[xs.length - 1])}`));
+  if (!wx0.cut && xs[0] - box.x0 <= 1.8 * ccr)
+    g.push(dimH(X(box.x0), X(xs[0]), yBelow, `c = ${num(xs[0] - box.x0)}`));
+
+  // Påskrifta legges i hjørnefeltet mellom arealkanten og ytterste bolt, der
+  // verken snittlinjene eller referansekvadratet står.
+  g.push(symText('area', X((rx0 + xs[0]) / 2), Y((ry1 + ys[ys.length - 1]) / 2) + 4, 'A_c,N'));
+
+  return svg(W, H, g, 'Plan: utbruddsarealet A_c,N') + caption(
+    `Sett ovenfra. Det fargede feltet er utbruddsarealet A<sub>c,N</sub> i
+     formelen: kjeglene lagt sammen og klippet mot frie kanter og utsparinger.
+     Det stiplede kvadratet er referansearealet A⁰<sub>c,N</sub> = s<sub>cr,N</sub>²
+     for én bolt uten nabo eller kant - forholdet mellom de to er hele
+     gruppevirkningen.${tensionGroups(m).length
+       ? ' Tilleggsarmeringa er tegnet med, sett ovenfra.' : ''}`);
+}
+
+// ===========================================================================
+//  Tilleggsarmering ved kjeglebrudd, 7.2.1.2 (jf. B19.3.2.6)
+// ===========================================================================
+//
+//  To visninger:
+//    Snitt  langs bøyleretninga gjennom bolten. Viser hvor mye av beinet som
+//           ligger INNE i kjeglebruddsona (l_1) og hvor mye som er igjen som
+//           forankring UTENFOR den (l_bd), pluss overflatearmeringa bøyen
+//           omslutter.
+//    Plan   bolten med sona 0,75·h_ef om seg, og den FAKTISKE avstanden ut
+//           til hvert loddrett bein - det er den avstanden kravet gjelder.
+//
+const REINF_CLS = 'reinf';
+
+// Alle armeringsbanene i en gruppe, projisert med `project(punkt) -> [x, y]`.
+// `cls` gjør det mulig å tegne den samme banen to ganger med hver sin farge,
+// klippet mot kjeglesona - se reinfSplit().
+function reinfPaths(m, project, only = null, cls = REINF_CLS) {
+  const out = [];
+  for (const r of (m.reinforcements || []).filter(x => x.purpose === 'tension')) {
+    if (only && r.id !== only) continue;
+    let bars = [];
+    try { bars = buildBars(m, r); } catch { bars = []; }
+    for (const bar of bars)
+      for (const path of bar.paths) {
+        const d = 'M' + path.points.map(project)
+          .map(q => `${f1(q[0])} ${f1(q[1])}`).join(' L') + (path.closed ? ' Z' : '');
+        out.push(`<path class="${cls}" d="${d}"/>`);
+      }
+  }
+  return out;
+}
+
+// ---------------------------------------------------------------------------
+//  Armeringa i et LODDRETT snitt, delt i to på underkant bruddkjegle.
+//
+//  Den delen som ligger inne i kjeglebruddsona er l_1 - forankringa som må
+//  til for at armeringa i det hele tatt skal ta over for kjegla. Den tegnes
+//  rosa; resten, som er forankringa utenfor bruddlegemet, står i den vanlige
+//  fargen. Delinga gjøres med klipperektangler, så streken blir nøyaktig like
+//  lang som lengden som står i formelen.
+//
+//  Grensa oppe er kronen (den vannrette delen teller ikke som l_1, bare beina
+//  og hjørnebøyene), nede er h_ef. For rett stang er det stangenden oppe.
+// ---------------------------------------------------------------------------
+function reinfSplit(m, project, Z, only = null) {
+  const out = [];
+  const uid = Math.random().toString(36).slice(2, 8);
+  for (const r of (m.reinforcements || []).filter(x => x.purpose === 'tension')) {
+    if (only && r.id !== only) continue;
+    let L;
+    try { L = tensionLayout(m, r); } catch { continue; }
+    // Utenfor sona først, så den rosa biten legger seg oppå i overgangen.
+    out.push(...reinfPaths(m, project, r.id));
+    const id = `l1-${r.id}-${uid}`;
+    const d = l1ClipPath(m, L, project, Z);
+    if (!d) continue;
+    out.push(`<clipPath id="${id}"><path d="${d}"/></clipPath>`,
+      `<g clip-path="url(#${id})">` +
+      reinfPaths(m, project, r.id, 'reinf-in').join('') + '</g>');
+  }
+  return out;
+}
+
+// Klippeflata for l_1: ett felt om HVERT loddrett bein, fra kronenivå ned til
+// h_ef. Feltet er akkurat bredt nok til å ta med hjørnebøyen (en mandrel-
+// radius pluss stangas egen tykkelse til hver side). Den vannrette delen av
+// bøylen mellom beina blir dermed liggende utenfor - den er ikke en del av
+// l_1, som bare teller beina og kvartbøyene.
+function l1ClipPath(m, L, project, Z) {
+  const zTop = Z(L.bent ? L.dCrown : L.dLegTop);
+  const half = (L.bent ? L.rm : 0) + L.ds;
+  const parts = [];
+  for (const bar of L.bars)
+    for (const leg of L.legs.filter(g => g.bar === bar)) {
+      // Nedre grense er der KJEGLEFLATA krysser akkurat dette beinet - den
+      // ligger grunnere jo lenger fra bolten beinet står. Ikke h_ef.
+      const zBot = Z(leg.zCone);
+      if (!(zBot > zTop)) continue;
+      // Beinet projisert inn i figuren; bredda tas fra et punkt forskjøvet
+      // like langt langs den samme aksen, så den følger målestokken.
+      const a = project({ x: leg.x, y: leg.y, z: 0 });
+      const b = project({ x: leg.x + L.u.x * half, y: leg.y + L.u.y * half, z: 0 });
+      const w = Math.max(Math.abs(b[0] - a[0]), 2);
+      parts.push(`M${f1(a[0] - w)} ${f1(zTop)} H${f1(a[0] + w)} ` +
+                 `V${f1(zBot)} H${f1(a[0] - w)} Z`);
+    }
+  return parts.join(' ');
+}
+
+function sreFigure(m, check) {
+  const r = (m.reinforcements || []).find(x => x.id === check.group);
+  if (!r || r.purpose !== 'tension') return '';
+  const L = tensionLayout(m, r);
+  if (!(L.legLen > 0)) return '';
+  const geo = coneGeo(m);
+  return tabsAndPanels('sre', [
+    // Samme to visningene som B19 fig. 19.19/19.20: opprisset langs armeringa,
+    // og snittet på tvers av den. Begge viser HELE forbindelsen - alle boltene
+    // og hele bruddkjegla - for det er kjegla mellom boltene som avgjør hvor
+    // mye av bøylen som ligger inne i bruddlegemet.
+    ['sec', 'Oppriss langs armeringa', srePanelView(m, r, L, geo, 'u')],
+    ['cut', 'Snitt på tvers', srePanelView(m, r, L, geo, 'n')],
+    ['plan', 'Plan · 0,75·h_ef', srePanelPlan(m, r, L)],
+  ]);
+}
+
+// ---------------------------------------------------------------------------
+//  Kjeglas silhuett i et oppriss/snitt.
+//
+//  Kjegla sprer seg fra hver bolt for seg. I en projeksjon er det den ytterste
+//  flata man ser: for hver koordinat t langs visningsaksen er kjegla så dyp
+//  som den NÆRMESTE bolten tilsier. Mellom to bolter møtes de to skråflatene i
+//  en RYGG - kjegla er ikke flat der inne, den stiger opp fra hver fot og
+//  treffer nabokjegla på midten. Det er nettopp den ryggen som avgjør hvor
+//  djupt et bøylebein står inne i bruddlegemet.
+//
+//  Med felles endeplate river hele plata ut ett legeme, og da ER taket flatt
+//  under plata - derfor tas kilden som et intervall og ikke som punkter.
+// ---------------------------------------------------------------------------
+function coneProfile(geo, sources, ccr) {
+  const zTop = geo.zTop;
+  return t => {
+    let z = 0;
+    for (const [a, b] of sources) {
+      const s = Math.max(a - t, t - b, 0);
+      if (s < ccr) z = Math.max(z, zTop * (1 - s / ccr));
+    }
+    return z;
+  };
+}
+
+// --- oppriss / snitt ------------------------------------------------------
+//  axis 'u' = langs bøyleretninga (opprisset: bøylene vises i sin fulle form)
+//  axis 'n' = på tvers (snittet: beina står som par på hver side av bolten)
+function srePanelView(m, r, L, geo, axis) {
+  const hef = geo.hef, h = geo.h, foot = geo.foot;
+  const along = axis === 'u' ? L.u : L.n;
+  const T = p => p.x * along.x + p.y * along.y;
+  const pts = L.perAnchor;
+  const bent = L.bent;
+
+  // Kildene kjegla sprer seg fra, projisert på visningsaksen.
+  const sources = foot.common && geo.pl
+    ? [[Math.min(T({ x: geo.pl.x0, y: geo.pl.y0 }), T({ x: geo.pl.x1, y: geo.pl.y1 }),
+                 T({ x: geo.pl.x0, y: geo.pl.y1 }), T({ x: geo.pl.x1, y: geo.pl.y0 })),
+        Math.max(T({ x: geo.pl.x0, y: geo.pl.y0 }), T({ x: geo.pl.x1, y: geo.pl.y1 }),
+                 T({ x: geo.pl.x0, y: geo.pl.y1 }), T({ x: geo.pl.x1, y: geo.pl.y0 }))]]
+    : pts.map(p => [T(p), T(p)]);
+  const prof = coneProfile(geo, sources, geo.ccr);
+
+  // Utsnitt: hele kjegla, all armering og hele boltegruppa.
+  const ts = pts.map(T);
+  let t0 = Math.min(...ts) - geo.ccr, t1 = Math.max(...ts) + geo.ccr;
+  for (const b of L.bars)
+    for (const q of [...b.legs, ...b.endPoints]) {
+      t0 = Math.min(t0, T(q) - 40); t1 = Math.max(t1, T(q) + 40);
+    }
+  const pad = 0.04 * (t1 - t0);
+  t0 -= pad; t1 += pad;
+  const zBot = Math.min(h, Math.max(L.dBot + 70, 1.25 * hef));
+  const cutBot = zBot < h - 1;
+
+  const W = 760, padL = 82, padR = 108, padB = 56;
+  const sc = Math.min((W - padL - padR) / (t1 - t0), 430 / zBot);
+  const ARR = 40, padT = 34 + ARR;
+  const H = padT + padB + zBot * sc;
+  const X = t => padL + (t - t0) * sc;
+  const Z = z => padT + z * sc;
+  const d = m.anchors.d, tp = m.plate.present ? m.plate.t : 0;
+
+  const g = [];
+  g.push(`<rect class="conc" x="${f1(X(t0))}" y="${f1(Z(0))}" ` +
+    `width="${f1((t1 - t0) * sc)}" height="${f1(zBot * sc)}"/>`);
+  g.push(brk(X(t0), Z(0), X(t0), Z(zBot)));
+  g.push(brk(X(t1), Z(0), X(t1), Z(zBot)));
+  if (cutBot) {
+    g.push(brk(X(t0), Z(zBot), X(t1), Z(zBot)));
+    g.push(txt('ann', X((t0 + t1) / 2), Z(zBot) + 16, `snittet er avkortet · h = ${num(h)} mm`));
+  }
+
+  // --- bruddkjegla, tegnet med ryggene mellom boltene ---
+  if (foot.hasFoot) {
+    const N = 240, p = [];
+    for (let i = 0; i <= N; i++) {
+      const t = t0 + (t1 - t0) * (i / N);
+      p.push(`${f1(X(t))} ${f1(Z(prof(t)))}`);
+    }
+    g.push(`<path class="cone" d="M${f1(X(t0))} ${f1(Z(0))} L` + p.join(' L') +
+      ` L${f1(X(t1))} ${f1(Z(0))} Z"/>`);
+  }
+
+  // --- bolter, fot og plate ---
+  for (const p of pts) {
+    const t = T(p);
+    g.push(`<rect class="steel" x="${f1(X(t) - d * sc / 2)}" y="${f1(Z(-tp))}" ` +
+      `width="${f1(d * sc)}" height="${f1((hef + tp) * sc)}"/>`);
+    if (!geo.pl && foot.hasFoot)
+      g.push(`<rect class="steel" x="${f1(X(t) - foot.size * sc / 2)}" ` +
+        `y="${f1(Z(geo.zTop))}" width="${f1(foot.size * sc)}" ` +
+        `height="${f1(foot.t * sc)}"/>`);
+  }
+  if (geo.pl) {
+    const a = Math.min(...sources[0]), b = Math.max(...sources[0]);
+    g.push(`<rect class="steel" x="${f1(X(a))}" y="${f1(Z(geo.zTop))}" ` +
+      `width="${f1((b - a) * sc)}" height="${f1(foot.t * sc)}"/>`);
+  }
+  if (m.plate.present) {
+    const pb = axis === 'u' ? m.plate.bx : m.plate.by;   // tilnærmet ved dreining
+    g.push(`<rect class="steel" x="${f1(X(-pb / 2))}" y="${f1(Z(-tp))}" ` +
+      `width="${f1(pb * sc)}" height="${f1(tp * sc)}"/>`);
+  }
+  g.push(arrowUp(X(0), Z(-tp), ARR,
+    'N<tspan baseline-shift="sub" font-size="0.78em">Ed,g</tspan>'));
+  g.push(`<line class="surf" x1="${f1(X(t0))}" y1="${f1(Z(0))}" ` +
+    `x2="${f1(X(t1))}" y2="${f1(Z(0))}"/>`);
+
+  // --- stanga i bøyen ---
+  if (bent && L.dtBend > 0) {
+    const rb = Math.max(2.2, L.dtBend * sc / 2);
+    const seen = new Set();
+    for (const b of L.bars)
+      for (const uu of [b.uStart + L.rm, b.uEnd - L.rm]) {
+        const q = { x: L.u.x * uu + L.n.x * b.v, y: L.u.y * uu + L.n.y * b.v };
+        const k = Math.round(T(q));
+        if (seen.has(k)) continue;
+        seen.add(k);
+        g.push(`<circle class="mesh" cx="${f1(X(T(q)))}" cy="${f1(Z(L.dBend))}" ` +
+          `r="${f1(rb)}"/>`);
+      }
+    g.push(txt('ann', X(t1) - 6, Z(L.dBend) + 4, L.bendBarMode === 'own'
+      ? `egen stang ⌀${num(L.dtBend)} i bøyen` : `overflatearmering i bøyen`, 'end'));
+  }
+
+  // --- armeringa, med den delen inne i bruddlegemet i rosa ---
+  const project = p => [X(T(p)), Z(-p.z)];
+  g.push(...reinfPaths(m, project, r.id));
+  const clipD = l1ClipPath(m, L, project, Z);
+  if (clipD) {
+    const cid = 'l1-' + axis + '-' + Math.random().toString(36).slice(2, 8);
+    g.push(`<clipPath id="${cid}"><path d="${clipD}"/></clipPath>`);
+    g.push(`<g clip-path="url(#${cid})">` +
+      reinfPaths(m, project, r.id, 'reinf-in').join('') + '</g>');
+  }
+
+  // --- mål ---
+  const tMin = Math.min(...ts), tMax = Math.max(...ts);
+  const yTop = Z(-tp) - ARR - 4;
+  g.push(dimH(X(tMax), X(tMax + geo.ccr), yTop, `1,5·h_ef = ${num(geo.ccr)}`));
+  if (tMax > tMin + 1) g.push(dimH(X(tMin), X(tMax), yTop, `${num(tMax - tMin)}`));
+
+  g.push(dimV(X(t0) + 30, Z(0), Z(hef), `h_ef = ${num(hef)}`));
+
+  // Beinet som styrer l_1, og krysningspunktet på det.
+  const counted = L.legs.filter(q => q.serves.length > 0);
+  const gov = (counted.length ? counted : L.legs)
+    .reduce((a, b) => (!a || b.l1 < a.l1 ? b : a), null);
+  if (gov) {
+    const tg = T(gov);
+    g.push(brk(X(t0) + 6, Z(gov.zCone), X(t1) - 6, Z(gov.zCone), 'thin'));
+    g.push(txt('ann', X(t0) + 10, Z(gov.zCone) + 15,
+      'her krysser kjegla armeringa – slutt på l₁', 'start'));
+    const xd = X(tg) + Math.max(26, L.ds * sc + 20);
+    g.push(dimV(xd, Z(L.dLegTop), Z(Math.min(L.legBottom, gov.zCone)),
+      `l_1 = ${num(L.insideLen)}`));
+    if (L.legBottom > gov.zCone + 0.5)
+      g.push(dimV(xd, Z(gov.zCone), Z(L.legBottom), `l_bd = ${num(L.outsideLen)}`));
+
+    // Avstanden bolt -> bein, projisert inn i denne visninga. Selve kravet
+    // gjelder den faktiske avstanden i planet - se planvisningen.
+    const near = pts.reduce((a, b) =>
+      (Math.hypot(gov.x - b.x, gov.y - b.y) < Math.hypot(gov.x - a.x, gov.y - a.y) ? b : a));
+    const off = Math.abs(tg - T(near));
+    if (off > 1)
+      g.push(dimH(X(T(near)), X(tg), Z(hef) + 52,
+        `${axis === 'u' ? 'a' : 'd'} = ${num(off)} < 0,75·h_ef = ${num(L.dMax)}`));
+  }
+
+  g.push(txt('ann', X((t0 + t1) / 2), Z(zBot) - 12,
+    'rosa = l₁, armeringa inne i bruddlegemet · grønt = forankring utenfor'));
+
+  const fac = minAnchorageFactor(r.geometryType);
+  const l1min = minInsideLength(r.ds, r.geometryType);
+  const viewTxt = axis === 'u'
+    ? `Oppriss langs armeringsretninga – bøylene vises i sin fulle form.`
+    : `Snitt på tvers av armeringa – beina står som par på hver side av boltene.`;
+  const cap = `${viewTxt} Hele forbindelsen er tegnet – ${pts.length === 1
+      ? 'bolten' : `alle ${pts.length} boltene i gruppa, projisert inn i tegningsplanet`} –
+    sammen med hele bruddkjegla.
+    ${foot.hasFoot && sources.length > 1
+      ? `Kjegla er <b>ikke flat mellom boltene</b>: den sprer seg fra hver fot for
+         seg og møter nabokjegla i en rygg på midten. Det er den ryggen som
+         bestemmer hvor djupt bøylebeina står inne i bruddlegemet, og dermed
+         l<sub>1</sub>.` : ''}
+    Den <b>rosa</b> delen er <b>l<sub>1</sub> = ${num(L.insideLen)} mm</b>${
+      bent ? ' (inkludert kvartbøyen i hjørnet)' : ''}: armeringa inne i
+    bruddlegemet, ned til der kjegleflata krysser beinet
+    ${gov ? num(gov.zCone) + ' mm nede' : ''} – ikke til h<sub>ef</sub> = ${num(hef)} mm.
+    Kravet er ${fac}·⌀ = ${num(l1min)} mm for ${bent ? 'bøyd armering' : 'rett stang'}.
+    Under kjegleflata ligger forankringa utenfor bruddlegemet:
+    ${num(L.anchorageAvail)} mm mot l<sub>bd</sub> = ${num(L.lbd)} mm
+    (NS-EN 1992-1-1 8.4). Avstanden fra bolt til bein er målt i planet
+    – se planvisningen; her vises bare komponenten i tegningsplanet.`;
+  return svg(W, H, g, `Tilleggsarmering, ${axis === 'u' ? 'oppriss' : 'snitt'}`) +
+    caption(cap);
+}
+
+// --- plan -----------------------------------------------------------------
+//  Sett ovenfra, med nok av omgivelsene til at bildet gir mening: stålplata,
+//  ALLE boltene gruppa betjener, armeringa slik den ligger, og sona
+//  0,75*h_ef om den bolten som styrer. Uten plate og nabobolter blir
+//  bøylestrekene bare løse streker uten sammenheng.
+function srePanelPlan(m, r, L) {
+  const A = m.anchors;
+  const pts = L.perAnchor;
+  // Styrende bolt: den som har det lengste spranget ut til sitt eget bein.
+  const govOf = p => {
+    let worst = 0;
+    for (const b of L.bars) {
+      if (!b.anchors.some(q => q.id === p.id)) continue;
+      let near = Infinity;
+      for (const g of b.legs) near = Math.min(near, Math.hypot(g.x - p.x, g.y - p.y));
+      if (Number.isFinite(near)) worst = Math.max(worst, near);
+    }
+    return worst;
+  };
+  const p0 = pts.reduce((a, b) => (govOf(b) > govOf(a) ? b : a), pts[0]);
+  const R = L.dMax;
+
+  // Utsnittet: alt som hører til - bolter, plate, armering og hele sona.
+  let x0 = p0.x - R, x1 = p0.x + R, y0 = p0.y - R, y1 = p0.y + R;
+  const grow = (x, y) => { x0 = Math.min(x0, x); x1 = Math.max(x1, x);
+                           y0 = Math.min(y0, y); y1 = Math.max(y1, y); };
+  for (const p of pts) grow(p.x, p.y);
+  for (const b of L.bars) for (const q of [...b.legs, ...b.endPoints]) grow(q.x, q.y);
+  if (m.plate.present) {
+    grow(-m.plate.bx / 2, -m.plate.by / 2); grow(m.plate.bx / 2, m.plate.by / 2);
+  }
+  const pad = 0.12 * Math.max(x1 - x0, y1 - y0);
+  x0 -= pad; x1 += pad; y0 -= pad; y1 += pad;
+  // Kvadratisk utsnitt, så en sirkel blir en sirkel.
+  const span = Math.max(x1 - x0, y1 - y0);
+  const cx = (x0 + x1) / 2, cy = (y0 + y1) / 2;
+  x0 = cx - span / 2; y0 = cy - span / 2;
+
+  const W = 760, padL = 56, padR = 56, padT = 46, padB = 62, HMAX = 500;
+  const sc = Math.min((W - padL - padR) / span, (HMAX - padT - padB) / span);
+  const H = padT + padB + span * sc;
+  const ox = padL + ((W - padL - padR) - span * sc) / 2;
+  const X = x => ox + (x - x0) * sc;
+  const Y = y => padT + (span - (y - y0)) * sc;
+
+  const g = [];
+  // Alt klippes til utsnittet: stanga i bøyen er l_bd lang og ville ellers
+  // stukket langt utenfor figuren. Utsnittet er valgt for å vise sona, ikke
+  // hele den stanga - lengden hennes står i sin egen kontroll.
+  const clip = 'plan-' + Math.random().toString(36).slice(2, 8);
+  g.push(`<clipPath id="${clip}"><rect x="${f1(X(x0))}" y="${f1(Y(y0 + span))}" ` +
+    `width="${f1(span * sc)}" height="${f1(span * sc)}"/></clipPath>`);
+
+  // Betongkanten, der den er nær nok til å komme med.
+  const box = baseBox(m);
+  const e = m.concrete.freeEdges;
+  const edge = (a, b, c, d) =>
+    `<line class="brk" x1="${f1(a)}" y1="${f1(b)}" x2="${f1(c)}" y2="${f1(d)}"/>`;
+  if (e.xNeg && box.x0 > x0) g.push(edge(X(box.x0), Y(y0), X(box.x0), Y(y0 + span)));
+  if (e.xPos && box.x1 < x0 + span) g.push(edge(X(box.x1), Y(y0), X(box.x1), Y(y0 + span)));
+  if (e.yNeg && box.y0 > y0) g.push(edge(X(x0), Y(box.y0), X(x0 + span), Y(box.y0)));
+  if (e.yPos && box.y1 < y0 + span) g.push(edge(X(x0), Y(box.y1), X(x0 + span), Y(box.y1)));
+
+  // Sona 0,75*h_ef om den styrende bolten.
+  g.push(`<circle class="zone" cx="${f1(X(p0.x))}" cy="${f1(Y(p0.y))}" r="${f1(R * sc)}"/>`);
+  g.push(symText('ann', X(p0.x), Y(p0.y - R) + 15, `0,75·h_ef = ${num(R)} mm`));
+
+  // Stålplata, så bildet henger sammen med resten av modellen.
+  if (m.plate.present)
+    g.push(`<rect class="plate" x="${f1(X(-m.plate.bx / 2))}" y="${f1(Y(m.plate.by / 2))}" ` +
+      `width="${f1(m.plate.bx * sc)}" height="${f1(m.plate.by * sc)}"/>`);
+
+  // Stanga i bøyen, sett ovenfra: den går på TVERS av bøylene, gjennom bøyene.
+  // Tegnes under bøylene, så det er tydelig at bøylene ligger over den.
+  {
+    const lines = [];
+    for (const bb of bendBarsFor(m, r))
+      for (const path of bb.paths)
+        lines.push(`<path class="mesh-line" d="M` + path.points
+          .map(q => `${f1(X(q.x))} ${f1(Y(q.y))}`).join(' L') + '"/>');
+    if (lines.length) g.push(`<g clip-path="url(#${clip})">${lines.join('')}</g>`);
+  }
+
+  // Armeringa sett ovenfra: den vannrette delen som strek, beina som ringer.
+  g.push(...reinfPaths(m, p => [X(p.x), Y(p.y)], r.id));
+  for (const q of L.legs)
+    g.push(`<circle class="leg" cx="${f1(X(q.x))}" cy="${f1(Y(q.y))}" ` +
+      `r="${f1(Math.max(2.6, r.ds * sc / 2))}"/>`);
+
+  // Boltene. Bare den styrende får påskrift - med en bøyle på hver side av
+  // hver bolt blir det ikke plass til fire navn uten at de legger seg oppå
+  // armeringa, og det er den styrende bolten figuren handler om.
+  for (const p of pts) {
+    const rr = Math.max(3.5, A.d * sc / 2);
+    g.push(`<circle class="steel" cx="${f1(X(p.x))}" cy="${f1(Y(p.y))}" ` +
+      `r="${f1(rr)}"/>`);
+  }
+  // Den styrende bolten merkes med en ring i stedet for en påskrift: med
+  // bøyler på begge sider av hver bolt er det ikke ledig plass til tekst.
+  g.push(`<circle class="gov" cx="${f1(X(p0.x))}" cy="${f1(Y(p0.y))}" ` +
+    `r="${f1(Math.max(9, A.d * sc / 2 + 6))}"/>`);
+
+  // Målet ut til gruppas eget nærmeste og ytterste bein om den styrende bolten.
+  const own = L.bars.filter(b => b.anchors.some(q => q.id === p0.id));
+  const legs = L.legs.filter(q => own.includes(q.bar))
+    .map(q => ({ ...q, dist: Math.hypot(q.x - p0.x, q.y - p0.y) }))
+    .sort((a, b) => a.dist - b.dist);
+  if (legs.length) {
+    g.push(dimDiag(X(p0.x), Y(p0.y), X(legs[0].x), Y(legs[0].y),
+      `d_1 = ${num(legs[0].dist)}`));
+    const far = legs[legs.length - 1];
+    if (far.dist - legs[0].dist > 1)
+      g.push(dimDiag(X(p0.x), Y(p0.y), X(far.x), Y(far.y), `d_n = ${num(far.dist)}`));
+  }
+
+  const rowMode = L.barLayout === 'row';
+  const cap = `Sett ovenfra. Grå sirkler er boltene, den stiplede sirkelen er sona
+    0,75·h<sub>ef</sub> = ${num(R)} mm om den bolten som styrer –
+    <b>bolt ${enc(String(p0.id))}</b>, ringet inn i rødt.
+    Grønt er tilleggsarmeringa: streken er den vannrette delen av bøylen, og de
+    fylte ringene er de <b>loddrette beina</b> – det er avstanden ut til dem
+    kravet gjelder, målt som den <b>faktiske avstanden i planet</b>
+    √(Δx² + Δy²), ikke langs x eller y hver for seg. De tynne strekene på tvers
+    er ${L.bendBarMode === 'own' ? 'de egne stengene' : 'nettlaget'} som ligger
+    <b>i bøyene</b>, under bøylene.
+    ${rowMode
+      ? `Her spenner én bøyle hele boltraden, så beina står bare i endene – bolter
+         midt i raden får ikke noe bein nær seg.`
+      : `Her ligger ${L.nSide} bøyle${L.nSide > 1 ? 'r' : ''} på hver side av hver bolt,
+         pakket utover fra bolten med minste senteravstand ${num(L.sMin)} mm
+         (NS-EN 1992-1-1 8.2) – ikke spredt ut til sonegrensa.`}
+    Nærmeste bein ligger ${num(L.dNearest)} mm fra boltaksen.`;
+  return svg(W, H, g, 'Plan: avstand fra bolt til armeringsbein') + caption(cap);
+}
+
+// Stengene som ligger i bøyene - egen stang, eller det nettlaget som går på
+// tvers. Begge tegnes likt: én strek gjennom bøyene, på tvers av bøylene.
+function bendBarsFor(m, r) {
+  try {
+    if (r.bendBar === 'own') return buildBendBars(m, r);
+    return buildSurfaceMesh(m, r).filter(b => b.layer === 2);
+  } catch { return []; }
+}
+
+// Skrått mål mellom to punkt, med pil i begge ender.
+function dimDiag(x1, y1, x2, y2, label) {
+  const len = Math.hypot(x2 - x1, y2 - y1);
+  if (len < 6) return '';
+  const ux = (x2 - x1) / len, uy = (y2 - y1) / len;
+  const head = (x, y, sx, sy) =>
+    `<path d="M${f1(x)} ${f1(y)} l${f1(6 * sx - 2.6 * sy)} ${f1(6 * sy + 2.6 * sx)} ` +
+    `l${f1(5.2 * sy)} ${f1(-5.2 * sx)} z"/>`;
+  // Avstandene er små i forhold til sona, så påskrifta settes utenfor beinet
+  // langs samme linje - midt på ville den havnet oppå bolten.
+  const mx = x2 + ux * 12, my = y2 + uy * 12 + 4;
+  return `<g class="dim">` +
+    `<line x1="${f1(x1)}" y1="${f1(y1)}" x2="${f1(x2)}" y2="${f1(y2)}"/>` +
+    head(x1, y1, ux, uy) + head(x2, y2, -ux, -uy) +
+    `<text x="${f1(mx)}" y="${f1(my)}" text-anchor="${ux < -0.3 ? 'end' : 'start'}">` +
+    `${sub(label)}</text></g>`;
+}
+
+// Betongdelens omriss sett ovenfra, i platas system: ytterkanter og hull i
+// skiva som ligger under boltene.
+function memberLoops(m) {
+  const [z0, z1] = anchorDepth(m);
+  const zm = (z0 + z1) / 2;
+  const slabs = solidSlabs(m);
+  const slab = slabs.find(sl => sl.z0 <= zm && zm <= sl.z1) || slabs[0];
+  if (!slab) return [];
+  const out = [];
+  for (const f of slab.faces) { out.push(f.outer); for (const h of f.holes) out.push(h); }
+  return out;
+}
+
+const loopPath = (loop, X, Y) =>
+  'M' + loop.map(p => `${f1(X(p.x))} ${f1(Y(p.y))}`).join(' L') + ' Z';
+
+const rectPath = (x0, y0, x1, y1, X, Y) =>
+  `M${f1(X(x0))} ${f1(Y(y0))} L${f1(X(x1))} ${f1(Y(y0))} ` +
+  `L${f1(X(x1))} ${f1(Y(y1))} L${f1(X(x0))} ${f1(Y(y1))} Z`;
+
+// === strektegning =========================================================
+function svg(W, H, g, label) {
+  return `<svg viewBox="0 0 ${W} ${H.toFixed(0)}" width="100%" role="img"
+       aria-label="${enc(label)}">
+    ${g.join('\n    ')}
+  </svg>`;
+}
+
+const caption = html => `<figcaption>${html}</figcaption>`;
+
+const txt = (cls, x, y, s, anchor = 'middle') =>
+  `<text class="${cls}" x="${f1(x)}" y="${f1(y)}" text-anchor="${anchor}">${enc(s)}</text>`;
+
+const brk = (x1, y1, x2, y2, cls = '') =>
+  `<line class="brk ${cls}" x1="${f1(x1)}" y1="${f1(y1)}" x2="${f1(x2)}" y2="${f1(y2)}"/>`;
+
+// Snittlinje med påskrift i enden.
+function cutLine(x1, y1, x2, y2, label) {
+  const horiz = Math.abs(y2 - y1) < 1;
+  return `<g class="cut"><line x1="${f1(x1)}" y1="${f1(y1)}" x2="${f1(x2)}" y2="${f1(y2)}"/>` +
+    `<text x="${f1(horiz ? x2 : x2 + 6)}" y="${f1(horiz ? y2 - 6 : y2 - 4)}" ` +
+    `text-anchor="${horiz ? 'end' : 'start'}">${enc(label)}</text></g>`;
+}
+
+function arrowUp(x, yBase, len, label) {
+  const y2 = yBase - len;
+  return `<g class="load"><line x1="${f1(x)}" y1="${f1(yBase)}" ` +
+    `x2="${f1(x)}" y2="${f1(y2 + 7)}"/>` +
+    `<path d="M${f1(x)} ${f1(y2)} l-4.5 9 h9 z"/>` +
+    `<text x="${f1(x + 9)}" y="${f1(y2 + 11)}">${label}</text></g>`;
+}
+
+// Vinkelbue mellom to retninger ut fra samme punkt, med gradtallet utenfor
+// buen. Retningene er i pikselkoordinater (y nedover).
+function angleMark(px, py, v1, v2, r = 42) {
+  const u = v => { const L = Math.hypot(v[0], v[1]); return [v[0] / L, v[1] / L]; };
+  const a = u(v1), b = u(v2);
+  const deg = Math.round(Math.acos(Math.max(-1, Math.min(1, a[0] * b[0] + a[1] * b[1])))
+    * 180 / Math.PI);
+  const sweep = a[0] * b[1] - a[1] * b[0] > 0 ? 1 : 0;
+  const bis = u([a[0] + b[0], a[1] + b[1]]);
+  return `<g><path class="arc" d="M${f1(px + r * a[0])} ${f1(py + r * a[1])} ` +
+    `A${r} ${r} 0 0 ${sweep} ${f1(px + r * b[0])} ${f1(py + r * b[1])}"/>` +
+    `<text class="ann" x="${f1(px + (r + 15) * bis[0])}" ` +
+    `y="${f1(py + (r + 15) * bis[1] + 4)}">${deg}°</text></g>`;
+}
+
+// Horisontalt mål med hjelpelinjer og piler i endene.
+function dimH(x1, x2, y, label) {
+  if (Math.abs(x2 - x1) < 1) return '';
+  const mid = (x1 + x2) / 2;
+  const narrow = Math.abs(x2 - x1) < 64;
+  return `<g class="dim">` + tickV(x1, y) + tickV(x2, y) +
+    `<line x1="${f1(x1)}" y1="${f1(y)}" x2="${f1(x2)}" y2="${f1(y)}"/>` +
+    `<path d="M${f1(x1)} ${f1(y)} l6 -2.6 v5.2 z"/>` +
+    `<path d="M${f1(x2)} ${f1(y)} l-6 -2.6 v5.2 z"/>` +
+    `<text x="${f1(mid)}" y="${f1(y - 6)}" text-anchor="middle"` +
+    (narrow ? ' class="sm"' : '') + `>${sub(label)}</text></g>`;
+}
+
+// Vertikalt mål. left = teksten står til venstre for linja.
+function dimV(x, y1, y2, label, left = false) {
+  if (Math.abs(y2 - y1) < 1) return '';
+  const mid = (y1 + y2) / 2;
+  const narrow = Math.abs(y2 - y1) < 30;
+  return `<g class="dim">` + tickH(x, y1) + tickH(x, y2) +
+    `<line x1="${f1(x)}" y1="${f1(y1)}" x2="${f1(x)}" y2="${f1(y2)}"/>` +
+    `<path d="M${f1(x)} ${f1(y1)} l-2.6 6 h5.2 z"/>` +
+    `<path d="M${f1(x)} ${f1(y2)} l-2.6 -6 h5.2 z"/>` +
+    `<text x="${f1(left ? x - 7 : x + 7)}" y="${f1(mid + 4)}"` +
+    ` text-anchor="${left ? 'end' : 'start'}"` +
+    (narrow ? ' class="sm"' : '') + `>${sub(label)}</text></g>`;
+}
+
+const tickV = (x, y) => `<line class="ext" x1="${f1(x)}" y1="${f1(y + 5)}" ` +
+  `x2="${f1(x)}" y2="${f1(y - 4)}"/>`;
+const tickH = (x, y) => `<line class="ext" x1="${f1(x - 5)}" y1="${f1(y)}" ` +
+  `x2="${f1(x + 4)}" y2="${f1(y)}"/>`;
+
+// «h_ef = 150» -> h med senket ef. Alle symbol på formen x_yyy settes med
+// senka indeks, resten står som det er.
+const subs = str => enc(str).replace(/([A-Za-zΨψ⌀⁰])_([A-Za-z0-9,]+)/g,
+  (_, a, b) => `${a}<tspan baseline-shift="sub" font-size="0.78em">${b}</tspan>`);
+const sub = label => subs(label + ' mm');
+
+// Symboltekst med senka indeks, plassert fritt i figuren.
+const symText = (cls, x, y, str, anchor = 'middle') =>
+  `<text class="${cls}" x="${f1(x)}" y="${f1(y)}" text-anchor="${anchor}">` +
+  `${subs(str)}</text>`;
+
 // ===== src/ui/app.js ===============================================
 // ---------------------------------------------------------------------------
 //  Applikasjonslag: skjema -> modell -> beregning -> 3D + resultat.
@@ -8112,11 +9966,13 @@ const END_TXT = { nut: 'endemutter', plate: 'felles endeplate',
 
 let model = defaultModel();
 let showOpts = { cone: true, wedge: true, loads: true, labels: false, concrete: true,
-                 rebar: true, dims: true, colorMode: 'material', shape: null };
+                 rebar: true, surfaceMesh: true, dims: true,
+                 colorMode: 'material', shape: null };
 let hudItems = [];        // {el, pos, quat, scale} – sendes til stage.setLabels
 let activeGroup = 'Betongdel';
 let activeCheck = null;
 let viewTab = '3d';
+let resultsTab = 'summary';
 
 // Kort sammendrag pr. gruppe, så velgeren viser tilstanden uten at du åpner den.
 const SUMMARY = {
@@ -8450,44 +10306,6 @@ function bar(u, cls = '') {
          `<i style="width:${w}%;background:${utilCss(u)}"></i></div>`;
 }
 
-// Kortere navn enn c.mode, kun for den trange stolpeoversikten.
-const SHORT_NAME = { 'V-pryout': 'Pry-out' };
-// Uten mellomrom foran %-tegnet - kun her, resten av appen bruker pct().
-const pctTight = u => Number.isFinite(u) ? Math.round(u * 100) + '%' : '–';
-
-// Alle utnyttelsene i ett samlet oversiktsbilde: loddrette stolper med navnet
-// loddrett til venstre for stolpen, prosenten vannrett rett under, og en
-// felles 100 %-strek på tvers. Trykk for å hoppe til utregningsarket,
-// akkurat som radene lenger ned i lista.
-const USUM_CAP = 1.3;      // stolpen klippes ved 130 % av grensa
-const USUM_H = 84;         // px – høyden som tilsvarer 100 %
-
-function renderUtilSummary(v) {
-  const list = v.checks.filter(applicable);
-  if (!list.length) return null;
-  const wrap = el('div', 'usum');
-  const track = el('div', 'usum-track');
-  const plot = el('div', 'usum-plot');
-  plot.appendChild(el('div', 'usum-100', `<b>100%</b>`));
-  for (const c of list) {
-    const item = el('button', 'usum-item' + (c.util > 1 ? ' over' : ''));
-    item.setAttribute('aria-current', String(activeCheck === c.id));
-    item.title = `${c.mode} · ${pct(c.util)}`;
-    const h = Math.round(Math.min(c.util, USUM_CAP) * USUM_H);
-    item.innerHTML =
-      `<span class="nm">${esc(SHORT_NAME[c.id] ?? c.mode)}</span>` +
-      `<span class="stack">` +
-        `<span class="col"><i style="height:${h}px;background:${utilCss(c.util)}"></i></span>` +
-        `<span class="pc">${pctTight(c.util)}</span>` +
-      `</span>`;
-    item.onclick = () => { activeCheck = c.id; setViewTab('calc'); refresh(false); };
-    plot.appendChild(item);
-  }
-  track.appendChild(plot);
-  wrap.appendChild(track);
-  return wrap;
-}
-
 // Formen på betongdelen hører hjemme i forutsetningene: leseren av en
 // beregning må se at kapasitetene ikke er regnet av en rett kloss.
 function concreteShapeTxt(m) {
@@ -8505,6 +10323,15 @@ function concreteShapeTxt(m) {
   return `tegnet i plan (${txt}: ${kinds}) · omriss ${base}`;
 }
 
+function setResultsTab(t) {
+  resultsTab = t;
+  $('#tab-summary').setAttribute('aria-pressed', String(t === 'summary'));
+  $('#tab-util').setAttribute('aria-pressed', String(t === 'util'));
+  const summary = $('#results-summary'), util = $('#results-util');
+  if (summary) summary.hidden = t !== 'summary';
+  if (util) util.hidden = t !== 'util';
+}
+
 function renderResults(v) {
   const m = model, a = m.anchors, g = v.gamma;
   const foot = anchorFoot(m);
@@ -8514,6 +10341,12 @@ function renderResults(v) {
 
   const host = $('#results');
   host.innerHTML = '';
+  const summary = el('div', 'tabpane');
+  summary.id = 'results-summary';
+  const util = el('div', 'tabpane');
+  util.id = 'results-util';
+  host.appendChild(summary);
+  host.appendChild(util);
 
   const rows = [
     ['Lastkombinasjon', `${model.load.name} · ${
@@ -8545,40 +10378,12 @@ function renderResults(v) {
   const ass = el('div', 'assump');
   for (const [k, val] of rows)
     ass.appendChild(el('div', 'row', `<span class="k">${esc(k)}</span><span class="v">${esc(val)}</span>`));
-  host.appendChild(ass);
-
-  const usum = renderUtilSummary(v);
-  if (usum) host.appendChild(usum);
+  summary.appendChild(ass);
 
   for (const i of v.issues)
-    host.appendChild(el('div', 'msg ' + (i.level === 'error' ? 'err' : 'warn'), esc(i.text)));
-  if (v.bearing && !v.bearing.ok)
-    host.appendChild(el('div', 'msg warn',
-      `Kontakttrykk ${n(v.bearing.sigma, 2)} N/mm² > f_cd ${n(v.bearing.fcd, 2)} N/mm². ` +
-      'Øk plata eller betongfastheten.'));
-  for (const fam of ['Strekk', 'Skjær', 'Samvirkning']) {
-    const list = v.checks.filter(c => family(c) === fam)
-      .sort((x, y) => (applicable(y) ? y.util : -1) - (applicable(x) ? x.util : -1));
-    if (!list.length) continue;
-    host.appendChild(el('h3', 'sect', fam));
-    for (const c of list) host.appendChild(checkRow(c));
-  }
+    summary.appendChild(el('div', 'msg ' + (i.level === 'error' ? 'err' : 'warn'), esc(i.text)));
 
-  // Betongbrudd som tilleggsarmering har erstattet som dimensjonerende - vist
-  // for seg, så det er tydelig hva som er byttet ut og hva som fortsatt
-  // kontrolleres (spesifikasjonens pkt. 8/11). Kontrollen er fortsatt regnet
-  // fullt ut, bare ikke styrende lenger.
-  if (v.replacedConcreteChecks?.length) {
-    host.appendChild(el('h3', 'sect', 'Erstattet av tilleggsarmering'));
-    for (const c of v.replacedConcreteChecks) {
-      const row = checkRow(c);
-      row.classList.add('na');
-      row.title = c.replacedBy;
-      host.appendChild(row);
-    }
-  }
-
-  host.appendChild(el('h3', 'sect', 'Kraftfordeling i boltegruppa'));
+  summary.appendChild(el('h3', 'sect', 'Kraftfordeling i boltegruppa'));
   const wrap = el('div', 'pad');
   const t = el('table', 'anchors');
   t.innerHTML = '<thead><tr><th>Bolt</th><th>x</th><th>y</th><th>N</th><th>V</th></tr></thead>' +
@@ -8596,8 +10401,39 @@ function renderResults(v) {
     : m.plate.present
       ? 'Ingen kontakt mot betongen – plata er avstivet, og boltene tar trykk i bøyning.'
       : 'Ingen plate, altså ingen trykkflate – boltene tar både strekk og trykk.'));
-  host.appendChild(wrap);
+  summary.appendChild(wrap);
+
+  if (v.bearing && !v.bearing.ok)
+    util.appendChild(el('div', 'msg warn',
+      `Kontakttrykk ${n(v.bearing.sigma, 2)} N/mm² > f_cd ${n(v.bearing.fcd, 2)} N/mm². ` +
+      'Øk plata eller betongfastheten.'));
+  for (const fam of ['Strekk', 'Skjær', 'Samvirkning']) {
+    const list = v.checks.filter(c => family(c) === fam)
+      .sort((x, y) => (applicable(y) ? y.util : -1) - (applicable(x) ? x.util : -1));
+    if (!list.length) continue;
+    util.appendChild(el('h3', `sect fam-${family2cls(fam)}`, fam));
+    for (const c of list) util.appendChild(checkRow(c));
+  }
+
+  // Betongbrudd som tilleggsarmering har erstattet som dimensjonerende - vist
+  // for seg, så det er tydelig hva som er byttet ut og hva som fortsatt
+  // kontrolleres (spesifikasjonens pkt. 8/11). Kontrollen er fortsatt regnet
+  // fullt ut, bare ikke styrende lenger.
+  if (v.replacedConcreteChecks?.length) {
+    util.appendChild(el('h3', 'sect', 'Erstattet av tilleggsarmering'));
+    for (const c of v.replacedConcreteChecks) {
+      const row = checkRow(c);
+      row.classList.add('na');
+      row.title = c.replacedBy;
+      util.appendChild(row);
+    }
+  }
+
+  setResultsTab(resultsTab);
 }
+
+const FAM_CLS = { 'Strekk': 'tension', 'Skjær': 'shear', 'Samvirkning': 'combo' };
+function family2cls(fam) { return FAM_CLS[fam] || ''; }
 
 function checkRow(c) {
   const ok = applicable(c);
@@ -8750,6 +10586,9 @@ function renderSheet(v) {
     return;
   }
   if (!cal) { host.innerHTML = H.join('') + '<p class="empty">Ingen utregning registrert.</p>'; return; }
+
+  const fig = figureFor(c, model);
+  if (fig) H.push('<h3>Figur</h3>', fig);
 
   if (cal.inputs.length) {
     H.push('<h3>Inndata</h3><table class="io"><thead><tr>' +
@@ -9015,6 +10854,9 @@ function boot() {
   $('#tab-plan').onclick = () => setViewTab('plan');
   $('#tab-calc').onclick = () => setViewTab('calc');
 
+  $('#tab-summary').onclick = () => setResultsTab('summary');
+  $('#tab-util').onclick = () => setResultsTab('util');
+
   // ---- plantegninga ------------------------------------------------------
   // Tegninga skriver rett i modellen og ber om ny beregning. `rebuild` sier om
   // skjemaet må bygges om - under et dra gjør det ikke det, ellers ville lista
@@ -9164,6 +11006,16 @@ function buildReport(v) {
       L.push(`${r.id}  ${PURPOSE_LABEL[r.purpose]}  ⌀${r.ds}, ${r.geometryType}`);
       L.push(`  Nødvendig: ${s.need}×⌀${r.ds}    Valgt: ${r.count}×⌀${r.ds}    ` +
         `Status: ${s.ok && !issues.length ? 'OK' : 'IKKE OK'}`);
+      // Plasseringa er selve kravet i pkt. 7.2.1.2 - den hører hjemme i
+      // sammendraget, ikke bare nede i den enkelte kontrollen.
+      if (r.purpose === 'tension') {
+        const G = groupGeometry(model, null, r);
+        const g = G.geo;
+        if (g) L.push(`  Avstand bolt→bein: ${n(g.dNearest, 0)}–${n(g.dOwn, 0)} mm ` +
+          `(maks. 0,75·h_ef = ${n(g.dMax, 0)} mm), c/c ${n(g.sMin, 0)} mm, ` +
+          `l_1 = ${n(g.insideLen, 0)} mm, forankring utenfor kjegla ` +
+          `${n(g.anchorageAvail, 0)}/${n(g.lbd, 0)} mm`);
+      }
       if (issues.length) L.push(`  ${issues.join(' ')}`);
       if (s.replaced)
         L.push(`  Erstatter ${r.purpose === 'tension' ? 'betongkjeglebrudd' : 'kantbrudd'} ` +

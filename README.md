@@ -43,9 +43,14 @@ en melding om å bytte regelverk – standarden har ingen heftmodell.
 | Betongutstøting (pry-out) | 7.2.2.4 | gruppe |
 | Kantbrudd | 7.2.2.5 | gruppe |
 | Samvirkning strekk + skjær | 7.2.3 | kombinasjon |
-| Tilleggsarmering, strekk – stål og forankring | 7.2.1.2 / 7.2.2.6 | gruppe (valgfri) |
+| Tilleggsarmering, strekk – stålbrudd | 7.2.1.2 / 7.2.2.6 | gruppe (valgfri) |
+| Tilleggsarmering, strekk – plassering innenfor 0,75·h_ef | 7.2.1.2 | gruppe (valgfri) |
+| Tilleggsarmering, strekk – forankring i bruddlegemet (l₁) | 7.2.1.2 | gruppe (valgfri) |
+| Tilleggsarmering, strekk – forankringslengde utenfor kjegla (l_bd) | EN 1992-1-1 8.4 | gruppe (valgfri) |
+| Tilleggsarmering, strekk – kjeglebrudd fra armeringsenden | 7.2.1.2 | gruppe (valgfri) |
+| Tilleggsarmering, strekk – stang i bøyen | EN 1992-1-1 8.4 | gruppe (valgfri) |
+| Tilleggsarmering – overlapp mot konstruksjonsarmering | EN 1992-1-1 8.7 | gruppe (valgfri) |
 | Tilleggsarmering, skjær – stål og forankring | 7.2.2.2 / 7.2.2.6 | gruppe (valgfri) |
-| Tilleggsarmering – stavmodell fot→armering | EN 1992-1-1 6.5 | gruppe (valgfri) |
 
 Kontrollene som forutsetter en fot (uttrekk, betongkjegle, utblåsing, spalting,
 pry-out) hoppes over når forankringen ikke har endemutter.
@@ -632,17 +637,77 @@ eksempelet B 19.4.2 med innstøpt plate og fire forankringer. 25 av 25 stemmer.
 * Effektivitetsfaktoren for en løkke/bøyle i skjær (at ikke hele A_s·f_yd kan
   regnes mobilisert) er en dokumentert antakelse (`LOOP_SHEAR_EFFICIENCY` i
   `supplementary-reinforcement.js`), ikke en verdi hentet fra trykt tillegg C.
-* Stavmodellen i `stm.js` bruker en antatt effektiv stavbredde (2 ×
-  overdekning) for trykkspenningen i staven fra fot til bøyle – dette er ikke
-  gitt av standarden eller spesifikasjonen, og bør kontrolleres mot faktisk
-  noderegion (EN 1992-1-1 6.5.4) før prosjektering.
+* Plasseringa av kjeglebruddarmeringa styres av avstandskravet i pkt. 7.2.1.2
+  (jf. B19.3.2.6): den **faktiske** avstanden i planet fra boltaksen til det
+  loddrette beinet, √(Δx² + Δy²), skal være ≤ 0,75·h_ef. Grensa er en øvre
+  grense for hva som regnes som effektivt, ikke en anbefalt plassering:
+  bøylene legges symmetrisk om bolten og pakkes fra den og utover med minste
+  senteravstand etter NS-EN 1992-1-1 8.2 (`minBarSpacing`, som bruker
+  `concrete.dg`). Et bein som ligger innenfor sona til flere bolter deles
+  mellom dem, så den samme stanga ikke telles to ganger.
+* Tidligere ble plasseringa bestemt av en 45° trykkstav fra endeplata ut til
+  bøylehjørnet. Det er **ikke** et plasseringskrav i NS-EN 1992-4, og det ga
+  bein langt utenfor 0,75·h_ef – modellen er lagt om. `stm.js` står igjen som
+  en generell byggekloss, men brukes ikke lenger til å plassere armeringa.
+* Bøylene kan fordeles på to måter (`barLayout`): **om hver bolt**, som gir et
+  bein like ved hver bolt, eller **over hele boltraden**, der én bøyle spenner
+  fra ytterste til ytterste bolt med beina rett utenfor hjørneboltene. Det
+  siste gir færre stenger og ett bøyeskjema, men bare boltene i endene får et
+  bein nær seg – ligger en bolt midt i raden lenger enn 0,75·h_ef fra nærmeste
+  bein, faller den ut av `allServed` og flagges av plasseringskontrollen.
+  Rett stang har ingen spennvidde og legges alltid pr. bolt.
+* **Stanga i bøyen** (`bendBar`). Bøyen på en U-bøyle krøller seg *rundt* en
+  stang på tvers: stanga ligger inne i bøyen, og bøylen ligger altså **over**
+  den. Stanga tar radialtrykket fra bøyen og fører strekkraften videre. To
+  valg:
+  * `surface` – overflatearmeringa brukes. Nettet ligger der det ligger, og
+    bøylen følger etter: den legges rett over det nettlaget som går på tvers av
+    bøyleretninga, slik at bøyen omslutter det (bøyens innside tangerer
+    overkant stang). `buildSurfaceMesh()` legger derfor nettet i bøylens eget
+    system – ytre lag *langs* bøylene, indre lag *på tvers* – så laget bøyen
+    skal hekte seg i alltid er det innerste. Bøylens `coverTop` er da avledet
+    og låst; det er nettets overdekning som er det ene tallet som gjelder.
+  * `own` – egen stang i bøyen. Bøylen står fritt med sin egen overdekning,
+    overflatearmeringa tegnes ikke, og `buildBendBars()` legger én stang pr.
+    bøy på tvers av bøyleretninga, med ⌀ minst lik bøylens og forankring
+    l_bd i hver ende etter NS-EN 1992-1-1 8.4 (egen kontroll,
+    `N-sre-bendbar-*`).
+
+  Selve kapasiteten til overflatearmeringa er ikke kontrollert her – nettet
+  tegnes over utstrekninga til tilleggsarmeringa, utvidet med c_cr,N. Rett tilleggsarmering omslutter ingenting og må
+  i stedet skjøtes mot konstruksjonens armering – overlapp er derfor et krav
+  (`requirementIssues`), ikke et valg. Minstelengden inne i bruddlegemet
+  følger utforminga: l₁ ≥ 4·⌀ for bøyd, l₁ ≥ 10·⌀ for rett.
+* l₁ måles ned til der **kjegleflata faktisk krysser beinet**, ikke til h_ef.
+  Bruddkjegla er en kjegle: den er dypest ved bolten (trykkflata, overkant fot)
+  og sprer seg opp og ut til overflata c_cr,N unna. Et bein som står lenger fra
+  bolten krysser derfor flata høyere og har kortere l₁ – et bein langt nok ute
+  havner helt utenfor bruddlegemet, og da bidrar bare bøyen.
+* Kjegla er **ikke flat mellom boltene**. Den sprer seg fra hver bolt for seg,
+  og nabokjeglene møtes i en rygg midt mellom dem – akkurat som i B19
+  fig. 19.19/19.20. Det er den ryggen som avgjør hvor djupt et bøylebein mellom
+  to bolter står inne i bruddlegemet, og dermed l₁ når hver bolt har sin egen
+  bøyle. `coneSurfaceDepth()` tar den nærmeste bolten (unionen av kjeglene), og
+  både 3D-visninga (`coneMesh`) og figurene tegner den samme flata. Med felles
+  endeplate river hele plata ut ett legeme, og da *er* taket flatt under plata.
+  `coneSurfaceDepth()` i `engine/geometry.js` gir dybden til flata i et vilkårlig
+  punkt i planet, med Chebyshev-avstand så den faller sammen med A_c,N (som
+  legges opp av kvadrater). `splitPathAtCone()` deler en armeringsbane på den
+  samme flata, så figurene og 3D-visninga viser nøyaktig det samme: den delen av
+  armeringa som ligger inne i bruddlegemet tegnes **rosa**, resten – forankringa
+  utenfor – i vanlig farge.
+* Figurene til tilleggsarmeringa følger B19 fig. 19.19/19.20: **oppriss** langs
+  armeringsretninga (bøylene i sin fulle form) og **snitt** på tvers (beina som
+  par på hver side av boltene). Begge viser hele forbindelsen – alle boltene og
+  hele bruddkjegla med ryggene mellom dem – med h_ef, 1,5·h_ef, l₁, l_bd og
+  avstanden bolt → bein målt av. Planvisninga er beholdt som en tredje fane
+  fordi 0,75·h_ef-kravet gjelder den *faktiske* avstanden i planet, √(Δx²+Δy²),
+  og den kan bare males der.
 * Forankringslengden `l_bd` utenfor bruddlegemet (EN 1992-1-1 8.4.4) er
   forenklet med α₂…α₅ = 1,0 – ingen kreditt for tverrtrykk eller vinkelrett
   armering. Konservativt.
-* U-formet bøyle for tynne betongplater (der kreftene føres gjennom nye
-  trykkstaver fra bøyene) og forankring uten endeplate/endemutter via
-  overlapp/lapping er ikke implementert ennå – de forutsetter en mer generell
-  stavmodell enn første versjon over dekker.
+* Forankring uten endeplate/endemutter via overlapp/lapping er ikke
+  implementert ennå – den forutsetter en mer generell stavmodell.
 * Spenningsarealer og nøkkelvidder for gjengestang er tab. B 19.7.1 i boka,
   altså M10–M42.
 * `c_cr,sp` for spalting er satt til 2·h_ef som en typisk verdi. Reell verdi

@@ -20,6 +20,8 @@ import { planShapes, shapeLoop, shapeZ, loopArea, isShaped,
 import { PlanEditor, TOOLS } from './plan-editor.js';
 import { n, kN } from '../engine/calc.js';
 import { saveFile, saveError } from '../core/download.js';
+import { figureFor } from './figures.js';
+import { groupGeometry } from '../engine/supplementary-reinforcement.js';
 import '../viz/three-d-stage.js';
 
 const $ = s => document.querySelector(s);
@@ -36,11 +38,13 @@ const END_TXT = { nut: 'endemutter', plate: 'felles endeplate',
 
 let model = defaultModel();
 let showOpts = { cone: true, wedge: true, loads: true, labels: false, concrete: true,
-                 rebar: true, dims: true, colorMode: 'material', shape: null };
+                 rebar: true, surfaceMesh: true, dims: true,
+                 colorMode: 'material', shape: null };
 let hudItems = [];        // {el, pos, quat, scale} – sendes til stage.setLabels
 let activeGroup = 'Betongdel';
 let activeCheck = null;
 let viewTab = '3d';
+let resultsTab = 'summary';
 
 // Kort sammendrag pr. gruppe, så velgeren viser tilstanden uten at du åpner den.
 const SUMMARY = {
@@ -374,44 +378,6 @@ function bar(u, cls = '') {
          `<i style="width:${w}%;background:${utilCss(u)}"></i></div>`;
 }
 
-// Kortere navn enn c.mode, kun for den trange stolpeoversikten.
-const SHORT_NAME = { 'V-pryout': 'Pry-out' };
-// Uten mellomrom foran %-tegnet - kun her, resten av appen bruker pct().
-const pctTight = u => Number.isFinite(u) ? Math.round(u * 100) + '%' : '–';
-
-// Alle utnyttelsene i ett samlet oversiktsbilde: loddrette stolper med navnet
-// loddrett til venstre for stolpen, prosenten vannrett rett under, og en
-// felles 100 %-strek på tvers. Trykk for å hoppe til utregningsarket,
-// akkurat som radene lenger ned i lista.
-const USUM_CAP = 1.3;      // stolpen klippes ved 130 % av grensa
-const USUM_H = 84;         // px – høyden som tilsvarer 100 %
-
-function renderUtilSummary(v) {
-  const list = v.checks.filter(applicable);
-  if (!list.length) return null;
-  const wrap = el('div', 'usum');
-  const track = el('div', 'usum-track');
-  const plot = el('div', 'usum-plot');
-  plot.appendChild(el('div', 'usum-100', `<b>100%</b>`));
-  for (const c of list) {
-    const item = el('button', 'usum-item' + (c.util > 1 ? ' over' : ''));
-    item.setAttribute('aria-current', String(activeCheck === c.id));
-    item.title = `${c.mode} · ${pct(c.util)}`;
-    const h = Math.round(Math.min(c.util, USUM_CAP) * USUM_H);
-    item.innerHTML =
-      `<span class="nm">${esc(SHORT_NAME[c.id] ?? c.mode)}</span>` +
-      `<span class="stack">` +
-        `<span class="col"><i style="height:${h}px;background:${utilCss(c.util)}"></i></span>` +
-        `<span class="pc">${pctTight(c.util)}</span>` +
-      `</span>`;
-    item.onclick = () => { activeCheck = c.id; setViewTab('calc'); refresh(false); };
-    plot.appendChild(item);
-  }
-  track.appendChild(plot);
-  wrap.appendChild(track);
-  return wrap;
-}
-
 // Formen på betongdelen hører hjemme i forutsetningene: leseren av en
 // beregning må se at kapasitetene ikke er regnet av en rett kloss.
 function concreteShapeTxt(m) {
@@ -429,6 +395,15 @@ function concreteShapeTxt(m) {
   return `tegnet i plan (${txt}: ${kinds}) · omriss ${base}`;
 }
 
+function setResultsTab(t) {
+  resultsTab = t;
+  $('#tab-summary').setAttribute('aria-pressed', String(t === 'summary'));
+  $('#tab-util').setAttribute('aria-pressed', String(t === 'util'));
+  const summary = $('#results-summary'), util = $('#results-util');
+  if (summary) summary.hidden = t !== 'summary';
+  if (util) util.hidden = t !== 'util';
+}
+
 function renderResults(v) {
   const m = model, a = m.anchors, g = v.gamma;
   const foot = anchorFoot(m);
@@ -438,6 +413,12 @@ function renderResults(v) {
 
   const host = $('#results');
   host.innerHTML = '';
+  const summary = el('div', 'tabpane');
+  summary.id = 'results-summary';
+  const util = el('div', 'tabpane');
+  util.id = 'results-util';
+  host.appendChild(summary);
+  host.appendChild(util);
 
   const rows = [
     ['Lastkombinasjon', `${model.load.name} · ${
@@ -469,40 +450,12 @@ function renderResults(v) {
   const ass = el('div', 'assump');
   for (const [k, val] of rows)
     ass.appendChild(el('div', 'row', `<span class="k">${esc(k)}</span><span class="v">${esc(val)}</span>`));
-  host.appendChild(ass);
-
-  const usum = renderUtilSummary(v);
-  if (usum) host.appendChild(usum);
+  summary.appendChild(ass);
 
   for (const i of v.issues)
-    host.appendChild(el('div', 'msg ' + (i.level === 'error' ? 'err' : 'warn'), esc(i.text)));
-  if (v.bearing && !v.bearing.ok)
-    host.appendChild(el('div', 'msg warn',
-      `Kontakttrykk ${n(v.bearing.sigma, 2)} N/mm² > f_cd ${n(v.bearing.fcd, 2)} N/mm². ` +
-      'Øk plata eller betongfastheten.'));
-  for (const fam of ['Strekk', 'Skjær', 'Samvirkning']) {
-    const list = v.checks.filter(c => family(c) === fam)
-      .sort((x, y) => (applicable(y) ? y.util : -1) - (applicable(x) ? x.util : -1));
-    if (!list.length) continue;
-    host.appendChild(el('h3', 'sect', fam));
-    for (const c of list) host.appendChild(checkRow(c));
-  }
+    summary.appendChild(el('div', 'msg ' + (i.level === 'error' ? 'err' : 'warn'), esc(i.text)));
 
-  // Betongbrudd som tilleggsarmering har erstattet som dimensjonerende - vist
-  // for seg, så det er tydelig hva som er byttet ut og hva som fortsatt
-  // kontrolleres (spesifikasjonens pkt. 8/11). Kontrollen er fortsatt regnet
-  // fullt ut, bare ikke styrende lenger.
-  if (v.replacedConcreteChecks?.length) {
-    host.appendChild(el('h3', 'sect', 'Erstattet av tilleggsarmering'));
-    for (const c of v.replacedConcreteChecks) {
-      const row = checkRow(c);
-      row.classList.add('na');
-      row.title = c.replacedBy;
-      host.appendChild(row);
-    }
-  }
-
-  host.appendChild(el('h3', 'sect', 'Kraftfordeling i boltegruppa'));
+  summary.appendChild(el('h3', 'sect', 'Kraftfordeling i boltegruppa'));
   const wrap = el('div', 'pad');
   const t = el('table', 'anchors');
   t.innerHTML = '<thead><tr><th>Bolt</th><th>x</th><th>y</th><th>N</th><th>V</th></tr></thead>' +
@@ -520,8 +473,39 @@ function renderResults(v) {
     : m.plate.present
       ? 'Ingen kontakt mot betongen – plata er avstivet, og boltene tar trykk i bøyning.'
       : 'Ingen plate, altså ingen trykkflate – boltene tar både strekk og trykk.'));
-  host.appendChild(wrap);
+  summary.appendChild(wrap);
+
+  if (v.bearing && !v.bearing.ok)
+    util.appendChild(el('div', 'msg warn',
+      `Kontakttrykk ${n(v.bearing.sigma, 2)} N/mm² > f_cd ${n(v.bearing.fcd, 2)} N/mm². ` +
+      'Øk plata eller betongfastheten.'));
+  for (const fam of ['Strekk', 'Skjær', 'Samvirkning']) {
+    const list = v.checks.filter(c => family(c) === fam)
+      .sort((x, y) => (applicable(y) ? y.util : -1) - (applicable(x) ? x.util : -1));
+    if (!list.length) continue;
+    util.appendChild(el('h3', `sect fam-${family2cls(fam)}`, fam));
+    for (const c of list) util.appendChild(checkRow(c));
+  }
+
+  // Betongbrudd som tilleggsarmering har erstattet som dimensjonerende - vist
+  // for seg, så det er tydelig hva som er byttet ut og hva som fortsatt
+  // kontrolleres (spesifikasjonens pkt. 8/11). Kontrollen er fortsatt regnet
+  // fullt ut, bare ikke styrende lenger.
+  if (v.replacedConcreteChecks?.length) {
+    util.appendChild(el('h3', 'sect', 'Erstattet av tilleggsarmering'));
+    for (const c of v.replacedConcreteChecks) {
+      const row = checkRow(c);
+      row.classList.add('na');
+      row.title = c.replacedBy;
+      util.appendChild(row);
+    }
+  }
+
+  setResultsTab(resultsTab);
 }
+
+const FAM_CLS = { 'Strekk': 'tension', 'Skjær': 'shear', 'Samvirkning': 'combo' };
+function family2cls(fam) { return FAM_CLS[fam] || ''; }
 
 function checkRow(c) {
   const ok = applicable(c);
@@ -674,6 +658,9 @@ function renderSheet(v) {
     return;
   }
   if (!cal) { host.innerHTML = H.join('') + '<p class="empty">Ingen utregning registrert.</p>'; return; }
+
+  const fig = figureFor(c, model);
+  if (fig) H.push('<h3>Figur</h3>', fig);
 
   if (cal.inputs.length) {
     H.push('<h3>Inndata</h3><table class="io"><thead><tr>' +
@@ -939,6 +926,9 @@ export function boot() {
   $('#tab-plan').onclick = () => setViewTab('plan');
   $('#tab-calc').onclick = () => setViewTab('calc');
 
+  $('#tab-summary').onclick = () => setResultsTab('summary');
+  $('#tab-util').onclick = () => setResultsTab('util');
+
   // ---- plantegninga ------------------------------------------------------
   // Tegninga skriver rett i modellen og ber om ny beregning. `rebuild` sier om
   // skjemaet må bygges om - under et dra gjør det ikke det, ellers ville lista
@@ -1088,6 +1078,16 @@ function buildReport(v) {
       L.push(`${r.id}  ${PURPOSE_LABEL[r.purpose]}  ⌀${r.ds}, ${r.geometryType}`);
       L.push(`  Nødvendig: ${s.need}×⌀${r.ds}    Valgt: ${r.count}×⌀${r.ds}    ` +
         `Status: ${s.ok && !issues.length ? 'OK' : 'IKKE OK'}`);
+      // Plasseringa er selve kravet i pkt. 7.2.1.2 - den hører hjemme i
+      // sammendraget, ikke bare nede i den enkelte kontrollen.
+      if (r.purpose === 'tension') {
+        const G = groupGeometry(model, null, r);
+        const g = G.geo;
+        if (g) L.push(`  Avstand bolt→bein: ${n(g.dNearest, 0)}–${n(g.dOwn, 0)} mm ` +
+          `(maks. 0,75·h_ef = ${n(g.dMax, 0)} mm), c/c ${n(g.sMin, 0)} mm, ` +
+          `l_1 = ${n(g.insideLen, 0)} mm, forankring utenfor kjegla ` +
+          `${n(g.anchorageAvail, 0)}/${n(g.lbd, 0)} mm`);
+      }
       if (issues.length) L.push(`  ${issues.join(' ')}`);
       if (s.replaced)
         L.push(`  Erstatter ${r.purpose === 'tension' ? 'betongkjeglebrudd' : 'kantbrudd'} ` +

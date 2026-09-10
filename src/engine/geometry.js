@@ -193,3 +193,37 @@ function wedgeBody([tl, th], { S, c1, al, ah, height, ax, sgn, axisX }) {
 }
 
 export const clamp = (v, lo, hi) => Math.min(hi, Math.max(lo, v));
+
+// ---------------------------------------------------------------------------
+//  Bruddkjegleflata som en DYBDE-funksjon i planet.
+//
+//  Kjegla starter i trykkflata - overkant fot/endeplate, dybde z_top - og
+//  sprer seg opp og ut til betongoverflata c_cr,N = 1,5*h_ef utenfor. Alt som
+//  ligger GRUNNERE enn flata er inne i bruddlegemet; alt under er utenfor.
+//
+//  Spredninga regnes med Chebyshev-avstand (den største av |dx| og |dy|), ikke
+//  radiell - da faller flata sammen med A_c,N, som legges opp av KVADRATER med
+//  halvbredde c_cr,N (clippedSquares/coneProjection). Med felles endeplate
+//  sprer kjegla seg fra platekanten, ellers fra hver bolt.
+//
+//  Returnerer dybden (positiv nedover) der flata krysser den loddrette linja
+//  gjennom (x, y), eller null når det ikke er noen kjegle å krysse.
+// ---------------------------------------------------------------------------
+export function coneSurfaceDepth(m, foot, pts, hef, x, y) {
+  if (!foot?.hasFoot) return null;
+  const zTop = Math.max(0, hef - (foot.t || 0));   // trykkflate = overkant fot
+  const ccr = 1.5 * hef;
+  if (!(ccr > 0)) return null;
+
+  // Avstanden ut fra kilden, i Chebyshev-metrikk. 0 inne i kilden.
+  let s = Infinity;
+  if (foot.common && foot.plate) {
+    const pl = foot.plate;
+    s = Math.max(0, pl.x0 - x, x - pl.x1, pl.y0 - y, y - pl.y1);
+  } else {
+    for (const p of pts)
+      s = Math.min(s, Math.max(Math.abs(x - p.x), Math.abs(y - p.y)));
+  }
+  if (!Number.isFinite(s)) return null;
+  return clamp(zTop * (1 - s / ccr), 0, zTop);
+}

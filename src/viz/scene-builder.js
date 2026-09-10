@@ -12,7 +12,8 @@ import { solidSlabs, solidOutline, surfaceZ, planMask, anchorDepth, baseBox,
          planShapes, shapeLoop, shapeZ, toPlate, spansFullDepth,
          SHAPE_LABEL } from '../engine/solid.js';
 import { edgeBreakout } from '../engine/geometry.js';
-import { buildBars } from '../engine/reinforcement-geometry.js';
+import { buildBars, buildSurfaceMesh, buildBendBars,
+         splitPathAtCone } from '../engine/reinforcement-geometry.js';
 import { n } from '../engine/calc.js';
 
 // ---------------------------------------------------------------------------
@@ -127,22 +128,28 @@ function polyCurve(points, closed) {
   return c;
 }
 
-function barMesh(bar, mat) {
+// `split` deler hver bane i bitene som ligger inne i bruddlegemet og de som
+// ligger utenfor, og `matIn` farger de første. Uten split tegnes hele stanga i
+// én farge - det er slik overflatenettet og kantbruddbøylene tegnes.
+function barMesh(bar, mat, split = null, matIn = null) {
   const g = new THREE.Group();
   const r = bar.ds / 2;
-  for (const path of bar.paths) {
+  const paths = split ? bar.paths.flatMap(split) : bar.paths;
+  for (const path of paths) {
+    const m2 = path.inside && matIn ? matIn : mat;
     const pts = path.points.map(p => new THREE.Vector3(p.x, p.y, p.z));
     if (pts.length < 2) continue;
     const curve = polyCurve(pts, path.closed);
     const seg = Math.max(24, Math.min(600, Math.round(curve.totalLength / 6)));
     const tube = new THREE.Mesh(
-      new THREE.TubeGeometry(curve, seg, r, 8, path.closed), mat);
-    tube.name = 'tilleggsarmering';
+      new THREE.TubeGeometry(curve, seg, r, 8, path.closed), m2);
+    tube.name = path.inside ? 'tilleggsarmering_i_kjegle' : 'tilleggsarmering';
     g.add(tube);
-    // Rør er åpne i endene - en liten kule lukker stangenden.
+    // Rør er åpne i endene - en liten kule lukker stangenden. Skjøtene mellom
+    // de to fargene lukkes på samme måte, så streken blir sammenhengende.
     if (!path.closed)
       for (const end of [pts[0], pts[pts.length - 1]]) {
-        const cap = new THREE.Mesh(new THREE.SphereGeometry(r, 8, 6), mat);
+        const cap = new THREE.Mesh(new THREE.SphereGeometry(r, 8, 6), m2);
         cap.position.copy(end);
         cap.name = 'tilleggsarmering_ende';
         g.add(cap);
@@ -231,6 +238,18 @@ const MAT = {
   // forankringsarmeringa (reinf) så de to kamstål-elementene ikke blandes.
   rebarAnchor: () => new THREE.MeshStandardMaterial({
     name: 'kamstaal', color: 0xc19a6b, roughness: 0.85, metalness: 0.1,
+    ...OVER_CONCRETE,
+  }),
+  // Den delen av tilleggsarmeringa som ligger INNE i bruddkjegla - l_1, den
+  // forankringa som holder kjegla. Samme rosa som i figurene i utregninga.
+  rebarInCone: () => new THREE.MeshStandardMaterial({
+    name: 'armering_i_kjegle', color: 0xe0559b, roughness: 0.7, metalness: 0.15,
+    ...OVER_CONCRETE,
+  }),
+  // Overflatearmeringa U-bøyla omslutter. Kjøligere og lysere enn
+  // tilleggsarmeringa, så de to nettene skiller seg fra hverandre.
+  surfaceMesh: () => new THREE.MeshStandardMaterial({
+    name: 'overflatearmering', color: 0x6f7d86, roughness: 0.85, metalness: 0.15,
     ...OVER_CONCRETE,
   }),
 };
@@ -754,18 +773,26 @@ export function buildScene(v, opts = {}) {
   // ---- bruddkjegle i strekk --------------------------------------------
   // Bruddkjegla vises for det regelverket som faktisk regner kjeglebrudd:
   // EN 1992-4 alltid, B19 bare når kjeglemodellen er den styrende.
-  const cone = v.checks.find(k => k.id === 'N-cone' || (k.id === 'N-conc' && k.showCone));
+  // Erstatter tilleggsarmeringa kjeglebruddet, flyttes N-cone ut av
+  // v.checks og over i v.replacedConcreteChecks - men kjegla er fortsatt
+  // geometrien armeringa skal krysse, så den skal bli stående i 3D.
+  const cone = [...v.checks, ...(v.replacedConcreteChecks || [])]
+    .find(k => k.id === 'N-cone' || (k.id === 'N-conc' && k.showCone));
   if (show.cone && res.tension.anchors.length && cone && Number.isFinite(cone.NRd)) {
     const ccr = 1.5 * a.hef;
     // Med felles endeplate river hele plata ut ett legeme, så kjegla starter
     // ved platekanten - det samme arealet som A_c,N regnes av.
-    const xs = res.tension.anchors.map(t => t.x), ys = res.tension.anchors.map(t => t.y);
-    const b = foot.common
-      ? { x0: foot.plate.x0, x1: foot.plate.x1,
-          y0: foot.plate.y0, y1: foot.plate.y1 }
-      : { x0: Math.min(...xs), x1: Math.max(...xs),
-          y0: Math.min(...ys), y1: Math.max(...ys) };
-    const cm = coneMesh(m, b, ccr, a.hef);
+    // Med felles endeplate river hele plata ut ett legeme - da er kilden
+    // platerektangelet. Ellers sprer kjegla seg fra hver bolt for seg, og
+    // nabokjeglene moetes i en rygg mellom boltene.
+    const srcs = foot.common
+      ? [{ x0: foot.plate.x0, x1: foot.plate.x1,
+           y0: foot.plate.y0, y1: foot.plate.y1 }]
+      // Spredninga regnes fra boltaksen, ikke fra fotkanten - det er slik
+      // A_c,N er lagt opp (clippedSquares om boltpunktene), og bildet skal
+      // vise akkurat den kjegla tallene er regnet av.
+      : res.tension.anchors.map(t => ({ x0: t.x, x1: t.x, y0: t.y, y1: t.y }));
+    const cm = coneMesh(m, srcs, ccr, a.hef);
     if (cm) {
       cm.renderOrder = 3;
       root.add(cm, outline(cm, 0xffa53d));
@@ -785,13 +812,39 @@ export function buildScene(v, opts = {}) {
 
   // ---- tilleggsarmering --------------------------------------------------
   if (show.rebar && m.reinforcements?.length) {
-    const rm = MAT.rebar();
-    for (const r of m.reinforcements)
+    const rm = MAT.rebar(), rin = MAT.rebarInCone();
+    for (const r of m.reinforcements) {
+      // Kjeglebruddarmeringa deles i to farger: rosa der den ligger inne i
+      // bruddlegemet (l_1), vanlig farge der den er forankring utenfor.
+      const split = r.purpose === 'tension'
+        ? path => splitPathAtCone(m, r, path) : null;
       for (const bar of buildBars(m, r)) {
-        const bm = barMesh(bar, rm);
+        const bm = barMesh(bar, rm, split, rin);
         bm.renderOrder = ORDER.steel;
         root.add(bm);
       }
+    }
+    // Stanga i bøyen på bøylene - enten overflatearmeringa (to lag rett under
+    // overflata, det innerste på tvers så bøyen kan omslutte det), eller en
+    // egen stang lagt inne i hver bøy. Nettet tegnes bare én gang selv om
+    // flere grupper viser til det samme.
+    if (show.surfaceMesh !== false) {
+      const sm = MAT.surfaceMesh();
+      const drawn = new Set();
+      for (const r of m.reinforcements) {
+        const key = JSON.stringify([r.bendBar, r.surfaceReinf ?? null, r.direction]);
+        if (drawn.has(key)) continue;
+        const bars = [...buildSurfaceMesh(m, r), ...buildBendBars(m, r)];
+        if (!bars.length) continue;
+        drawn.add(key);
+        for (const bar of bars) {
+          const bm = barMesh(bar, sm);
+          bm.name = bar.bendBar ? 'stang_i_boyen' : 'overflatearmering';
+          bm.renderOrder = ORDER.steel;
+          root.add(bm);
+        }
+      }
+    }
   }
 
   // ---- laster -----------------------------------------------------------
@@ -821,21 +874,48 @@ export function buildScene(v, opts = {}) {
 //  Underflata i et punkt ligger like hoeyt som avstanden ut fra b tilsier:
 //  rett over b er den i -h_ef, og 1,5*h_ef lengre ut har den naadd overflata.
 // ---------------------------------------------------------------------------
-function coneMesh(m, b, ccr, hef) {
+//  `srcs` er kildene kjegla sprer seg fra, som rektangler: én pr. bolt naar
+//  boltene har hver sin fot, eller ett for hele endeplata naar de henger i en
+//  felles plate. Med en kilde pr. bolt moetes nabokjeglene i en RYGG mellom
+//  boltene - taket er ikke flatt der inne, det stiger opp fra hver fot og
+//  treffer nabokjegla paa midten. Det er den ryggen som avgjoer hvor djupt
+//  tilleggsarmeringa staar inne i bruddlegemet (se engine/geometry.js
+//  coneSurfaceDepth, som regner det samme for kontrollene).
+function coneMesh(m, srcs, ccr, hef) {
   const [z0, z1] = anchorDepth(m);
   const mask = planMask(m, z0, z1);
+  const b = {
+    x0: Math.min(...srcs.map(q => q.x0)), x1: Math.max(...srcs.map(q => q.x1)),
+    y0: Math.min(...srcs.map(q => q.y0)), y1: Math.max(...srcs.map(q => q.y1)),
+  };
   const t = { x0: b.x0 - ccr, x1: b.x1 + ccr, y0: b.y0 - ccr, y1: b.y1 + ccr };
   const cuts = (base, extra, lo, hi) =>
-    [...new Set([...base, ...extra, lo, hi])]
+    [...new Set([...base, ...extra, lo, hi].map(v => Math.round(v * 1e3) / 1e3))]
       .filter(v => v > lo - 1e-9 && v < hi + 1e-9).sort((u, w) => u - w);
-  const xs = cuts(mask.xs, [b.x0, b.x1], t.x0, t.x1);
-  const ys = cuts(mask.ys, [b.y0, b.y1], t.y0, t.y1);
+  // Snittlinjer ved hver kildekant OG midt mellom naboene: ryggen ligger der,
+  // og uten en linje akkurat der ville trianguleringa skaaret tvers over den.
+  const mids = (vals) => {
+    const v = [...new Set(vals)].sort((a, c) => a - c);
+    const out = [];
+    for (let i = 1; i < v.length; i++) out.push((v[i - 1] + v[i]) / 2);
+    return out;
+  };
+  const sx = srcs.flatMap(q => [q.x0, q.x1]), sy = srcs.flatMap(q => [q.y0, q.y1]);
+  const xs = cuts(mask.xs, [...sx, ...mids(sx)], t.x0, t.x1);
+  const ys = cuts(mask.ys, [...sy, ...mids(sy)], t.y0, t.y1);
   if (xs.length < 2 || ys.length < 2) return null;
 
+  // Kjegleflata er unionen av kjeglene: i et punkt ligger taket saa djupt som
+  // den naermeste kilden tilsier.
   const low = (x, y) => {
-    const dx = Math.max(b.x0 - x, x - b.x1, 0);
-    const dy = Math.max(b.y0 - y, y - b.y1, 0);
-    return -hef * (1 - Math.min(Math.max(dx, dy), ccr) / ccr);
+    let z = 0;
+    for (const q of srcs) {
+      const dx = Math.max(q.x0 - x, x - q.x1, 0);
+      const dy = Math.max(q.y0 - y, y - q.y1, 0);
+      const s = Math.max(dx, dy);
+      if (s < ccr) z = Math.max(z, hef * (1 - s / ccr));
+    }
+    return -z;
   };
   const nx = xs.length - 1, ny = ys.length - 1;
   const keep = new Uint8Array(nx * ny);

@@ -400,6 +400,9 @@ export function defaultModel() {
       grade: 'B35',
       fck: 35,
       h: 300,     // tykkelse
+      // Største tilslagskorn. Brukes bare til minste senteravstand mellom
+      // parallelle armeringsstenger, NS-EN 1992-1-1 pkt. 8.2(2).
+      dg: 16,
       // Plassering av platas senter i betongdelens lokale system.
       // Formene tegnes i delas system; plata ligger i (e_x, e_y) der.
       ex: 0,

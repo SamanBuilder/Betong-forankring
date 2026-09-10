@@ -5,10 +5,15 @@
 //
 //  Erstatter den tidligere src/engine/anchor-reinforcement.js, som brukte
 //  andre punkthenvisninger (7.2.1.8/7.2.2.6) og manglet: krav til diameter/
-//  stålkvalitet, 0,75·h_ef/0,75·c_1-sona, riktig 4⌀/10⌀-grense etter
-//  geometritype, og en STM-kontroll for kraftoverføringa fra fot til
-//  armering. Se src/engine/reinforcement-geometry.js for geometrien og
-//  src/engine/stm.js for stavmodellen.
+//  stålkvalitet, 0,75·h_ef/0,75·c_1-sona og riktig 4⌀/10⌀-grense etter
+//  geometritype. Se src/engine/reinforcement-geometry.js for geometrien.
+//
+//  MERK om stavmodell: plasseringa av kjeglebruddarmeringa ble tidligere
+//  bestemt av en 45° trykkstav fra endeplata ut til bøylehjørnet. Det er ikke
+//  et plasseringskrav i NS-EN 1992-4, og ga bein langt utenfor 0,75·h_ef.
+//  Plasseringa styres nå av selve avstandskravet (pkt. 7.2.1.2 / B19.3.2.6);
+//  src/engine/stm.js står igjen som en generell byggekloss, men brukes ikke
+//  til å plassere armeringa.
 //
 //  VIKTIG - flagget forenkling: effektiviteten til en løkke/bøyle i skjær er
 //  ikke satt likt A_s·f_yd i denne modellen (se pkt. 3 i spesifikasjonen),
@@ -24,8 +29,7 @@ import { K, partialFactors } from './en1992-4.js';
 import { requirementIssues, minAnchorageFactor } from '../core/reinforcement.js';
 import { fbd, anchorageLength, minInsideLength, barGeometry, anchorsServed,
          effectiveCount, minEdgeForAnchors, tensionLayout,
-         DEFAULT_COVER } from './reinforcement-geometry.js';
-import { endplateToLoopSTM, STRUT_ANGLE } from './stm.js';
+         buildBendBars } from './reinforcement-geometry.js';
 
 const GAMMA_S = 1.15;
 export const LOOP_SHEAR_EFFICIENCY = 0.7;   // se fil-hodets forbehold
@@ -41,14 +45,17 @@ export function groupGeometry(m, res, r) {
   const insideMin = minInsideLength(r.ds, r.geometryType);
   const reqIssues = requirementIssues(r);
 
-  // Kjeglebrudd: bøylene ligger radvis ved siden av boltene, så både antallet
-  // som teller og kravene kommer fra oppsettet (se tensionLayout).
+  // Kjeglebrudd: bøylene ligger symmetrisk om hver bolt, så nær den som
+  // praktisk mulig, og bare bein med FAKTISK avstand <= 0,75*h_ef teller med
+  // (se tensionLayout).
   if (r.purpose === 'tension') {
     const geo = pts.length ? tensionLayout(m, r) : null;
-    const effCount = geo ? geo.effLegsPerRow : 0;
+    // Bein pr. bolt for den bolten som har færrest - det er den som styrer.
+    const effCount = geo && geo.perAnchor.length
+      ? Math.min(...geo.perAnchor.map(q => q.nEff)) : 0;
     const insideLen = geo ? geo.insideLen : 0;
     const qualifies = reqIssues.length === 0 && !!geo && geo.fits && geo.zoneOk
-      && geo.angleOk && insideLen >= insideMin && effCount > 0;
+      && geo.allServed && geo.spacingOk && insideLen >= insideMin && effCount > 0;
     return { pts, hef, c1, zoneRef: hef, geo, effCount, insideLen, insideMin,
              reqIssues, qualifies };
   }
@@ -84,7 +91,7 @@ function reinforcementCone(m, res, r, L) {
   const cracked = m.code.cracked;
   const hef = L.dBot;                          // dybden armeringa leverer i
   const ccr = 1.5 * hef, scr = 3 * hef;
-  const pts = L.rows.flatMap(row => row.bars.flatMap(b => b.endPoints));
+  const pts = L.bars.flatMap(b => b.endPoints);
   const NEd = res.tension.Ntot;                // hele gruppa henger i denne kjegla
 
   const c = new Calc('7.2.1.2');
@@ -144,134 +151,280 @@ function reinforcementCone(m, res, r, L) {
           ' Forenklet: ψ_ec,N = 1,0, siden bøylene ligger symmetrisk om boltraden.' };
 }
 
-// Strekket fordelt på bøyleradene: hver rad tas av sine egne bøyler, så det er
-// den mest belastede raden som styrer - ikke summen for hele gruppa.
-function tensionRows(layout, anchors) {
-  const rows = layout.rows.map(row => ({ row, N: 0 }));
-  if (!rows.length) return rows;
-  for (const p of anchors) {
-    const v = p.x * layout.n.x + p.y * layout.n.y;
-    const hit = rows.reduce((a, b) =>
-      Math.abs(b.row.v - v) < Math.abs(a.row.v - v) ? b : a);
-    hit.N += p.N;
-  }
-  return rows;
-}
-
 // ===========================================================================
-//  STREKK - erstatter betongkjeglebrudd, pkt. 7.2.1.2
+//  STREKK - erstatter betongkjeglebrudd, pkt. 7.2.1.2 (jf. B19.3.2.6)
+//
+//  Kontrollrekka:
+//    a) stålbrudd i beina som ligger innenfor 0,75*h_ef fra bolten
+//    b) plassering: faktisk avstand bolt -> loddrett bein, symmetri, avstand
+//       mellom bøylene etter NS-EN 1992-1-1 pkt. 8.2
+//    c) forankring INNE i kjegla: l_1 >= 4*⌀ (bøyd) / 10*⌀ (rett), og heft
+//    d) forankring UTENFOR kjegla: l_bd etter NS-EN 1992-1-1 pkt. 8.4
+//    e) kjeglebrudd regnet på nytt fra enden av armeringa
+//    f) overlapp mot konstruksjonens armering (påkrevd for rett stang)
 // ===========================================================================
 export function tensionSupplementary(m, res, r) {
   const G = groupGeometry(m, res, r);
   const L = G.geo;
   const checks = [];
+  const bent = r.geometryType !== 'straight';
+  const typeTxt = bent ? 'U-bøyle/løkke' : 'rett stang';
 
-  // Hver boltrad tas av sine egne bøyler, så det er den mest belastede raden
-  // som styrer - ikke summen for hele gruppa.
-  const rows = L ? tensionRows(L, res.tension.anchors) : [];
-  const gov = rows.length ? rows.reduce((a, b) => (b.N > a.N ? b : a)) : null;
-  const NEd = gov ? gov.N : res.tension.Ntot;
-  const nLegs = G.effCount;                       // bein pr. rad som teller med
-  const rowTxt = rows.length > 1
-    ? `Styrende av ${rows.length} boltrader på tvers av bøyleretninga (${n(r.direction || 0, 0)}°).`
-    : undefined;
+  // Hver bolt henger i sine egne bein, så det er den bolten som har mest kraft
+  // pr. effektivt bein som styrer - ikke summen for hele gruppa.
+  const byId = new Map((L?.perAnchor || []).map(q => [q.id, q]));
+  let gov = null;
+  for (const p of res.tension.anchors) {
+    const q = byId.get(p.id);
+    const nEff = q ? q.nEff : 0;
+    const dem = nEff > 0 ? p.N / nEff : Infinity;
+    if (!gov || dem > gov.dem) gov = { p, q, nEff, dem };
+  }
+  const NEd = gov ? gov.p.N : res.tension.Ntot;
+  const nLegs = gov ? gov.nEff : 0;
+  const boltTxt = gov && res.tension.anchors.length > 1
+    ? `Styrende bolt ${gov.p.id} av ${res.tension.anchors.length} i strekk.` : undefined;
 
   // --- a) stålbrudd i armeringa ------------------------------------------
   const ca = new Calc('7.2.1.2');
-  ca.in('n_bøyler', L ? L.barsPerRow : 0, 'stk', 'Tilleggsarmering · bøyler pr. boltrad');
+  ca.in('n_bøyler', L ? L.barsPerAnchor : 0, 'stk',
+    `Tilleggsarmering · ${bent ? 'bøyler' : 'stenger'} pr. bolt, symmetrisk fordelt`);
   ca.in('⌀_s', r.ds, 'mm', 'Tilleggsarmering');
   ca.in('f_yk', r.fyk, 'N/mm²', 'Tilleggsarmering (kamstål, ⌀ ≤ 16 mm, f_yk ≤ 600 – 7.2.2.6)');
   ca.in('γ_Ms,re', GAMMA_S, '–', 'Armeringsstål – NS-EN 1992-1-1');
-  ca.in('N_Ed,rad', NEd, 'N', 'Strekk i den mest belastede boltraden');
-  const nEff = ca.step({ sym: 'n_eff', desc: 'Bein som teller med – to pr. bøyle',
-    formula: '2 · (bøyler med avstand ≤ 0,75·h_ef fra bolten)',
-    subst: L ? `2 · ${L.effPerRow} av ${L.barsPerRow / 2} pr. side · ` +
-      `0,75·h_ef = ${n(0.75 * G.hef, 0)} mm` : '–',
+  ca.in('N_Ed,bolt', NEd, 'N', 'Strekk i den styrende bolten');
+  const nEff = ca.step({ sym: 'n_eff', desc:
+      'Loddrette bein med faktisk avstand ≤ 0,75·h_ef fra boltaksen',
+    formula: bent
+      ? '2 · (bøyler med √(a² + d²) ≤ 0,75·h_ef), delt med antall bolter beinet dekker'
+      : '(stenger med √(a² + d²) ≤ 0,75·h_ef), delt med antall bolter stanga dekker',
+    subst: L ? `0,75·h_ef = ${n(L.dMax, 0)} mm, nærmeste bein ${n(L.dNearest, 0)} mm, ` +
+      `fjerneste bein som teller med ${n(L.dFarthest, 0)} mm` : '–',
     value: nLegs, unit: 'stk' });
-  const As = ca.step({ sym: 'A_s,re', desc: 'Effektivt armeringsareal pr. rad',
-    formula: 'n_eff · π · ⌀_s² / 4', subst: `${n(nEff, 0)} · π · ${n(r.ds, 0)}² / 4`,
+  const As = ca.step({ sym: 'A_s,re', desc: 'Effektivt armeringsareal pr. bolt',
+    formula: 'n_eff · π · ⌀_s² / 4', subst: `${n(nEff)} · π · ${n(r.ds, 0)}² / 4`,
     value: nEff * Math.PI * r.ds * r.ds / 4, unit: 'mm²' });
   const NRk_s = ca.res({ sym: 'N_Rk,re', formula: 'A_s,re · f_yk',
     subst: `${n(As)} · ${n(r.fyk, 0)}`, value: As * r.fyk, unit: 'N' });
   const NRd_s = NRk_s / GAMMA_S;
   ca.step({ sym: 'N_Rd,re', desc: 'Dimensjonerende kapasitet',
     formula: 'N_Rk,re / γ_Ms,re', subst: `${n(NRk_s)} / ${n(GAMMA_S)}`, value: NRd_s, unit: 'N' });
-  ca.util({ formula: 'N_Ed,rad / N_Rd,re', subst: `${n(NEd)} / ${n(NRd_s)}`, value: NEd / NRd_s });
+  ca.util({ formula: 'N_Ed,bolt / N_Rd,re', subst: `${n(NEd)} / ${n(NRd_s)}`, value: NEd / NRd_s });
   checks.push({ id: `N-sre-steel-${r.id}`, mode: `Tilleggsarmering ${r.id} – stålbrudd`,
     clause: '7.2.1.2', scope: 'gruppe', NRk: NRk_s, NRd: NRd_s, NEd, util: NEd / NRd_s, calc: ca,
-    group: r.id, note: !L || L.zoneOk ? rowTxt
-      : `Bøylene får ikke plass innenfor 0,75·h_ef = ${n(0.75 * G.hef, 0)} mm når de ` +
-        `samtidig skal gå klar av bolten (${n(L.dMin, 0)} mm). Øk h_ef, eller reduser ⌀/avstand.` });
+    group: r.id, note: boltTxt });
 
-  // --- b) forankring/heft over lengden inne i bruddlegemet ---------------
+  // --- b) plassering: faktisk avstand, symmetri og senteravstand ----------
+  if (L) {
+    const cp = new Calc('7.2.1.2');
+    cp.in('h_ef', G.hef, 'mm', 'Bolter · effektiv forankringsdybde');
+    const dMax = cp.step({ sym: '0,75·h_ef', desc:
+        'Største avstand fra boltaksen til det loddrette beinet som fortsatt regnes som effektiv',
+      formula: '0,75 · h_ef', subst: `0,75 · ${n(G.hef, 0)}`, value: L.dMax, unit: 'mm',
+      note: 'Øvre grense, ikke en anbefalt plassering: armeringa legges så nær ' +
+            'bolten som praktisk mulig.' });
+    const aa = cp.in('a', L.halfSpan, 'mm', bent
+      ? 'Halve bøylebredda – beinets avstand fra ytterste bolt LANGS bøyleretninga'
+      : 'Rett stang står i boltsnittet – ingen forskyvning langs retninga');
+    cp.in('fordeling', L.bars.length, 'stk', L.barLayout === 'row'
+      ? 'Bøyler i alt – én bøyle spenner hele boltraden'
+      : 'Bøyler i alt – én bøyle om hver bolt');
+    const dd = cp.in('d', L.dMin, 'mm',
+      'Nærmeste bøyle på TVERS av retninga – akkurat klar av bolten ' +
+      `(${n(r.clearance, 0)} + ⌀_bolt/2 + ⌀_s/2)`);
+    cp.step({ sym: 'd_1', desc:
+        'Faktisk avstand fra boltaksen til nærmeste loddrette bein, uavhengig av x/y-retning',
+      formula: '√(a² + d²)', subst: `√(${n(aa, 0)}² + ${n(dd, 0)}²)`,
+      value: L.dNearest, unit: 'mm' });
+    const sMin = cp.in('s_min', L.sMin, 'mm',
+      `Minste senteravstand – NS-EN 1992-1-1 8.2, d_g = ${n(m.concrete?.dg ?? 16, 0)} mm`);
+    const rowMode = L.barLayout === 'row';
+    cp.step({ sym: 'd_n', desc: rowMode
+        ? 'Største avstand fra en bolt til nærmeste bein i bøylen som betjener den'
+        : `Faktisk avstand ut til den ytterste bøylen gruppa legger om bolten ` +
+          `(${L.nSide} pr. side, pakket med s_min)`,
+      formula: rowMode
+        ? 'maks over boltene av √(Δu² + d²) til nærmeste bein'
+        : '√(a² + (d + (n−1)·s_min)²)',
+      subst: rowMode
+        ? 'bøylen spenner hele boltraden – beina står bare i endene'
+        : L.nSide > 1
+          ? `√(${n(aa, 0)}² + (${n(dd, 0)} + ${L.nSide - 1}·${n(sMin, 0)})²)`
+          : 'bare én bøyle pr. side',
+      value: L.dOwn, unit: 'mm' });
+    cp.util({ formula: 'd_n / (0,75·h_ef)', subst: `${n(L.dOwn, 0)} / ${n(dMax, 0)}`,
+      value: L.dOwn / Math.max(dMax, 1e-6) });
+    const placeNotes = [];
+    if (!L.zoneOk)
+      placeNotes.push(`Bøylene får ikke plass innenfor 0,75·h_ef = ${n(L.dMax, 0)} mm når de ` +
+        `samtidig skal gå klar av bolten (√(a² + d²) = ${n(L.dNearest, 0)} mm). ` +
+        'Øk h_ef, reduser bøylebredda, eller reduser ⌀/klaringa.');
+    if (!L.allServed)
+      placeNotes.push(L.barLayout === 'row'
+        ? 'Ikke alle boltene har et bein innenfor 0,75·h_ef: bøylen spenner hele ' +
+          'boltraden, så bare boltene i endene får et bein nær seg. Velg «bøyle om ' +
+          'hver bolt», eller del raden i flere grupper.'
+        : 'Ikke alle boltene gruppa betjener har et bein innenfor 0,75·h_ef.');
+    if (!L.spacingOk)
+      placeNotes.push(`Minste avstand mellom to bein er ${n(L.gapMin, 0)} mm < s_min = ` +
+        `${n(L.sMin, 0)} mm – bøyler fra nabobolter kolliderer. Reduser antallet ` +
+        'pr. bolt, eller la færre bolter dele gruppa.');
+    checks.push({ id: `N-sre-placement-${r.id}`,
+      mode: `Tilleggsarmering ${r.id} – plassering innenfor 0,75·h_ef`,
+      clause: '7.2.1.2', scope: 'gruppe', NRk: NaN, NRd: NaN, NEd: NaN,
+      util: L.dOwn / Math.max(L.dMax, 1e-6), calc: cp, group: r.id,
+      expr: 'd_n / (0,75·h_ef) ≤ 1,0',
+      note: placeNotes.length ? placeNotes.join(' ')
+        : (L.barLayout === 'row'
+            ? `Én bøyle spenner hele boltraden, med beina rett utenfor de ytterste ` +
+              `boltene. ${L.nSide} bøyle${L.nSide > 1 ? 'r' : ''} på hver side av raden, ` +
+              `pakket med minste tillatte senteravstand.`
+            : `Armeringa ligger symmetrisk om bolten, ${L.nSide} ${bent ? 'bøyle' : 'stang'}` +
+              `${L.nSide > 1 ? 'r' : ''} på hver side, pakket fra bolten og utover med ` +
+              `minste tillatte senteravstand – ikke spredt ut til 0,75·h_ef.`) });
+  }
+
+  // --- c) forankring/heft over lengden inne i bruddlegemet ---------------
   const cb = new Calc('7.2.1.2');
   const f = fbd(m.concrete.fck, r.ds, true);
-  const alpha1 = 0.7;                              // bøyd stangende
-  cb.in('n_eff', nLegs, 'stk', 'Bein pr. rad, se stålkontrollen');
+  const alpha1 = bent ? 0.7 : 1.0;                 // bøyd stangende
+  cb.in('n_eff', nLegs, 'stk', 'Bein pr. bolt, se stålkontrollen');
   cb.in('⌀_s', r.ds, 'mm', 'Tilleggsarmering');
-  cb.in('l_1', G.insideLen, 'mm',
-    'Bein inne i bruddkjegla (ned til h_ef) + kvartbøyen i hjørnet, pr. bein');
+  // Kjegla er en kjegle: den er dypest ved bolten og grunnere lenger ut, så
+  // et bein som står lenger fra bolten krysser kjegleflata høyere og har
+  // kortere l_1. Det korteste beinet blant dem som teller med styrer.
+  cb.in('l_1', G.insideLen, 'mm', bent
+    ? 'Bein inne i bruddlegemet + kvartbøyen i hjørnet, pr. bein – målt ned til ' +
+      'der kjegleflata krysser beinet'
+    : 'Rett stang inne i bruddlegemet, ned til der kjegleflata krysser stanga');
+  if (L) {
+    cb.in('z_kjegle', L.zConeMin, 'mm',
+      'Dybden der kjegleflata krysser det styrende beinet' +
+      (L.zConeMax - L.zConeMin > 1
+        ? ` (${n(L.zConeMin, 0)}–${n(L.zConeMax, 0)} mm over beina)` : ''));
+  }
+  cb.in('l_1,min', G.insideMin, 'mm',
+    `${minAnchorageFactor(r.geometryType)}·⌀_s – minste forankring i bruddlegemet (${typeTxt})`);
   cb.in('f_ck', m.concrete.fck, 'N/mm²', `Betongdel · ${m.concrete.grade}`);
-  cb.in('α_1', alpha1, '–', 'Bøyd stangende');
-  cb.in('N_Ed,rad', NEd, 'N', 'Strekk i den mest belastede boltraden');
+  cb.in('α_1', alpha1, '–', bent ? 'Bøyd stangende' : 'Rett stangende');
+  cb.in('N_Ed,bolt', NEd, 'N', 'Strekk i den styrende bolten');
   cb.step({ sym: 'f_bd', desc: 'Dimensjonerende heftfasthet',
     formula: '2,25 · η_1 · η_2 · f_ctk;0,05 / γ_c', subst: '–', value: f, unit: 'N/mm²',
     ref: 'EN 1992-1-1 8.4.2' });
   const NRk_a = cb.res({ sym: 'N_Rk,a', formula: 'n_eff · π · ⌀_s · l_1 · f_bd / α_1',
-    subst: `${n(nLegs, 0)} · π · ${n(r.ds, 0)} · ${n(G.insideLen, 0)} · ${n(f)} / ${n(alpha1)}`,
+    subst: `${n(nLegs)} · π · ${n(r.ds, 0)} · ${n(G.insideLen, 0)} · ${n(f)} / ${n(alpha1)}`,
     value: nLegs * (G.insideLen * Math.PI * r.ds * f) / alpha1, unit: 'N' });
-  cb.util({ formula: 'N_Ed,rad / N_Rd,a', subst: `${n(NEd)} / ${n(NRk_a)}`, value: NEd / NRk_a });
-  const anchorTxt = L && L.anchorageAvail + 1e-6 < L.lbd
-    ? `Utenfor kjegla er det bare ${n(L.anchorageAvail, 0)} mm forankring mot ` +
-      `l_bd = ${n(L.lbd, 0)} mm.` + (L.endBend ? '' : ' En bøy ut i enden av beina ' +
-      'gir bøyen pluss foten som forankring, og hjelper i en tynn plate.')
-    : L && L.endBend
-      ? `Forankring utenfor kjegla: ${n(L.outsideLen, 0)} mm rett bein + ` +
-        `${n(L.bendArc, 0)} mm bøy + ${n(L.footLen, 0)} mm fot = ` +
-        `${n(L.anchorageAvail, 0)} mm mot l_bd = ${n(L.lbd, 0)} mm.`
-      : undefined;
+  cb.util({ formula: 'N_Ed,bolt / N_Rd,a', subst: `${n(NEd)} / ${n(NRk_a)}`, value: NEd / NRk_a });
   const minLenTxt = G.insideLen < G.insideMin
     ? `l₁ = ${n(G.insideLen, 0)} mm < ${minAnchorageFactor(r.geometryType)}⌀ = ${n(G.insideMin, 0)} mm – ` +
-      'kravet til minste forankringslengde inne i bruddlegemet er ikke oppfylt.'
-    : [anchorTxt, rowTxt].filter(Boolean).join(' ') || undefined;
+      `kravet til minste forankringslengde inne i bruddlegemet (${typeTxt}) er ikke oppfylt.`
+    : `l₁ = ${n(G.insideLen, 0)} mm ≥ ${minAnchorageFactor(r.geometryType)}⌀ = ` +
+      `${n(G.insideMin, 0)} mm (${typeTxt}).` +
+      (L ? ` Målt ned til ${n(L.zConeMin, 0)} mm, der kjegleflata krysser beinet – ` +
+        `ikke til h_ef = ${n(G.hef, 0)} mm.` : '') +
+      (boltTxt ? ' ' + boltTxt : '');
+  const noReach = L && L.zConeMin <= L.dLegTop + 1e-6;
   checks.push({ id: `N-sre-anchorage-${r.id}`, mode: `Tilleggsarmering ${r.id} – forankring i bruddlegemet`,
     clause: '7.2.1.2', scope: 'gruppe', NRk: NRk_a, NRd: NRk_a, NEd, util: NEd / NRk_a, calc: cb,
-    group: r.id, note: minLenTxt });
+    group: r.id, note: noReach
+      ? `Kjegleflata krysser beinet ${n(L.zConeMin, 0)} mm nede, over der beinet ` +
+        `begynner (${n(L.dLegTop, 0)} mm): det rette beinet ligger helt utenfor ` +
+        `bruddlegemet, og bare bøyen bidrar. Legg armeringa nærmere bolten, ` +
+        `eller øk h_ef.` + ' ' + minLenTxt
+      : minLenTxt });
 
-  // --- c) STM: endeplate -> trykkstav -> bøylehjørne -> strekk i bøylen ---
-  if (L && nLegs > 0) {
-    const fcd = m.concrete.fck / 1.5;
-    const bar = L.govBar;                          // flatest stav styrer
-    const NCorner = NEd / nLegs;                   // ett hjørne pr. bein
-    const stm = endplateToLoopSTM(m, {
-      NEd: NCorner, hStrut: bar.diag, wTie: bar.L,
-      bStrut: 2 * (r.coverTop ?? DEFAULT_COVER), dBolt: m.anchors.d,
-      fck: m.concrete.fck, fcd, cracked: m.code.cracked,
-    });
-    const spanTxt = `Alle bøylene er like: ${n(L.barLength, 0)} mm vannrett, ` +
-      `med ${n(L.overhang, 0)} mm utstikk i hver ende.`;
-    const angleTxt = L.angleOk
-      ? `${spanTxt} Én felles lengde gir staver i ${n(L.alphaMin, 0)}–${n(L.alphaMax, 0)}° ` +
-        `mot den vannrette delen, innenfor ${STRUT_ANGLE.min}–${STRUT_ANGLE.max}°.`
-      : !L.windowOk
-        ? `${spanTxt} Bøylene ligger så spredt at ingen felles lengde gir alle ` +
-          `staver innenfor ${STRUT_ANGLE.min}–${STRUT_ANGLE.max}° (${n(L.alphaMin, 0)}–` +
-          `${n(L.alphaMax, 0)}°). Reduser antallet bøyler pr. rad, eller øk h_ef.`
-        : `${spanTxt} Staven står i ${n(L.alphaMin, 0)}–${n(L.alphaMax, 0)}°, utenfor ` +
-          `${STRUT_ANGLE.min}–${STRUT_ANGLE.max}°: betongen gir ikke plass til utstikket ` +
-          'bøylene trenger. Reduser overdekninga, flytt boltene inn, eller øk delen.';
-    checks.push({ ...stm, id: `N-sre-stm-${r.id}`, group: r.id,
-      mode: `Tilleggsarmering ${r.id} – stavmodell endeplate→bøyle`,
-      note: `${angleTxt} ${stm.note}` });
+  // --- d) forankringslengde UTENFOR kjegla, EN 1992-1-1 8.4 ---------------
+  if (L) {
+    const cl = new Calc('EN 1992-1-1 8.4');
+    cl.in('⌀_s', r.ds, 'mm', 'Tilleggsarmering');
+    cl.in('f_yd', r.fyk / GAMMA_S, 'N/mm²', 'f_yk / γ_Ms,re – full utnyttelse forutsatt');
+    cl.in('f_bd', f, 'N/mm²', 'Heftfasthet, se forankringskontrollen');
+    const lbr = cl.step({ sym: 'l_b,rqd', desc: 'Grunnleggende forankringslengde',
+      formula: '(⌀_s / 4) · (f_yd / f_bd)',
+      subst: `(${n(r.ds, 0)} / 4) · (${n(r.fyk / GAMMA_S)} / ${n(f)})`,
+      value: L.lbRqd, unit: 'mm', ref: '(8.3)' });
+    const a1 = cl.in('α_1', alpha1, '–', bent ? 'Krok/bøy i enden – tab. 8.2' : 'Rett stang');
+    cl.step({ sym: 'l_b,min', desc: 'Nedre grense for strekkforankring',
+      formula: 'maks(0,3·l_b,rqd; 10·⌀_s; 100 mm)',
+      subst: `maks(${n(0.3 * L.lbRqd, 0)}; ${n(10 * r.ds, 0)}; 100)`,
+      value: L.lbmin, unit: 'mm', ref: '(8.6)' });
+    const lbd = cl.res({ sym: 'l_bd', formula: 'maks(α_1 · l_b,rqd; l_b,min)',
+      subst: `maks(${n(a1)} · ${n(lbr, 0)}; ${n(L.lbmin, 0)})`, value: L.lbd, unit: 'mm',
+      ref: '(8.4)' });
+    const avail = cl.step({ sym: 'l_bd,tilgj.', desc:
+        'Forankring tilgjengelig UTENFOR bruddkjegla, langs stanga fra h_ef og nedover',
+      formula: L.endBend ? 'rett bein + endebøy + fot' : 'rett bein under kjegla',
+      subst: L.endBend
+        ? `${n(L.outsideLen, 0)} + ${n(L.bendArc, 0)} + ${n(L.footLen, 0)}`
+        : `${n(L.outsideLen, 0)}`,
+      value: L.anchorageAvail, unit: 'mm' });
+    cl.util({ formula: 'l_bd / l_bd,tilgj.', subst: `${n(lbd, 0)} / ${n(avail, 0)}`,
+      value: L.lbd / Math.max(avail, 1e-6) });
+    checks.push({ id: `N-sre-lbd-${r.id}`,
+      mode: `Tilleggsarmering ${r.id} – forankringslengde utenfor kjegla`,
+      clause: 'EN 1992-1-1 8.4', scope: 'gruppe', NRk: NaN, NRd: NaN, NEd: NaN,
+      util: L.lbd / Math.max(avail, 1e-6), calc: cl, group: r.id,
+      expr: 'l_bd / l_bd,tilgj. ≤ 1,0',
+      note: L.fits
+        ? undefined
+        : `Bare ${n(L.anchorageAvail, 0)} mm forankring utenfor kjegla mot l_bd = ` +
+          `${n(L.lbd, 0)} mm.` + (bent && !L.endBend
+            ? ' En bøy ut i enden av beina gir bøyen pluss foten som forankring, ' +
+              'og hjelper i en tynn plate.'
+            : ' Øk tykkelsen, reduser ⌀, eller legg inn endebøy.') });
   }
 
-  // --- d) kjeglebrudd på nytt, fra enden av armeringa ---------------------
-  if (L && L.rows.length) checks.push(reinforcementCone(m, res, r, L));
+  // --- d2) egen stang i bøyen: forankring, EN 1992-1-1 8.4 ----------------
+  //  Bøyen på bøylen krøller seg rundt en stang på tvers. Er den stanga egen
+  //  (ikke overflatearmeringa), er det den som fører kraften fra bøyene ut i
+  //  konstruksjonen, og da må den forankres for seg.
+  if (L && bent && L.bendBarMode === 'own') {
+    const bars = buildBendBars(m, r);
+    const worst = bars.length
+      ? bars.reduce((a, b) => (b.anchorage < a.anchorage ? b : a)) : null;
+    const cbb = new Calc('EN 1992-1-1 8.4');
+    cbb.in('⌀_b', L.dtBend, 'mm',
+      `Stang i bøyen – minst like tjukk som bøylen (⌀_s = ${n(r.ds, 0)} mm)`);
+    cbb.in('n_stenger', bars.length, 'stk', 'Én stang pr. bøy, lagt på tvers av bøyleretninga');
+    cbb.in('d_b', L.dBend, 'mm',
+      'Dybde til senter av stanga – den ligger INNE i bøyen, under den ' +
+      'vannrette delen av bøylen');
+    const fb = fbd(m.concrete.fck, L.dtBend, true);
+    cbb.step({ sym: 'f_bd', desc: 'Dimensjonerende heftfasthet',
+      formula: '2,25 · η_1 · η_2 · f_ctk;0,05 / γ_c', subst: '–', value: fb,
+      unit: 'N/mm²', ref: 'EN 1992-1-1 8.4.2' });
+    const lreq = cbb.res({ sym: 'l_bd', desc: 'Nødvendig forankring utenfor ytterste bøyle',
+      formula: 'maks(α_1 · l_b,rqd; l_b,min)', subst: '–', value: L.bendBarLbd,
+      unit: 'mm', ref: '(8.4)' });
+    const lprov = cbb.in('l_bd,tilgj.', worst ? worst.anchorage : 0, 'mm',
+      'Oppnådd forankring – begrenset av betongdelen');
+    cbb.util({ formula: 'l_bd / l_bd,tilgj.', subst: `${n(lreq, 0)} / ${n(lprov, 0)}`,
+      value: lreq / Math.max(lprov, 1e-6) });
+    checks.push({ id: `N-sre-bendbar-${r.id}`,
+      mode: `Tilleggsarmering ${r.id} – stang i bøyen`,
+      clause: 'EN 1992-1-1 8.4', scope: 'gruppe', NRk: NaN, NRd: NaN, NEd: NaN,
+      util: lreq / Math.max(lprov, 1e-6), calc: cbb, group: r.id,
+      expr: 'l_bd / l_bd,tilgj. ≤ 1,0',
+      note: 'Bøyen krøller seg rundt denne stanga, så bøylen ligger over den. ' +
+        (worst && worst.anchorage + 1e-6 < L.bendBarLbd
+          ? `Betongdelen gir bare ${n(worst.anchorage, 0)} mm forankring utenfor ` +
+            `ytterste bøyle mot l_bd = ${n(L.bendBarLbd, 0)} mm – forleng stanga, ` +
+            'reduser ⌀_b, eller bruk overflatearmeringa i bøyen i stedet.'
+          : `Stanga er ${n(worst ? worst.span : 0, 0)} mm lang, med ` +
+            `${n(worst ? worst.anchorage : 0, 0)} mm forankring utenfor ytterste bøyle ` +
+            'i hver ende.') });
+  }
 
-  // --- e) overlapp mot eksisterende konstruksjonsarmering, dersom oppgitt ---
+  // --- e) kjeglebrudd på nytt, fra enden av armeringa ---------------------
+  if (L && L.bars.length) checks.push(reinforcementCone(m, res, r, L));
+
+  // --- f) videre kraftoverføring til konstruksjonens armering -------------
+  //  U-bøyle/løkke: bøyen skal fortrinnsvis omslutte overflatearmeringa, så
+  //  kraften føres videre gjennom nettet. Rett stang omslutter ingenting og
+  //  MÅ i stedet skjøtes mot konstruksjonens armering.
   if (r.lapToExisting?.present) {
     const cl = new Calc('EN 1992-1-1 8.7');
-    const al = anchorageLength(m.concrete.fck, r.ds, r.fyk / 1.15, true);
+    const al = anchorageLength(m.concrete.fck, r.ds, r.fyk / 1.15, bent);
     // Forenklet: α6 = 1,5 antatt (mer enn 50 % skjøtet i samme snitt, 8.7.3).
     // Kontroller den faktiske skjøteprosenten mot tab. 8.3 i printet standard.
     const lap0 = cl.in('l_bd', al.lbd, 'mm', 'Forankringslengde, se forankringskontrollen');
@@ -284,8 +437,12 @@ export function tensionSupplementary(m, res, r) {
     checks.push({ id: `N-sre-lap-${r.id}`, mode: `Tilleggsarmering ${r.id} – overlapp mot konstruksjonsarmering`,
       clause: 'EN 1992-1-1 8.7', scope: 'gruppe', NRk: NaN, NRd: NaN, NEd: NaN,
       util: lapReq / Math.max(lapProv, 1e-6), calc: cl, group: r.id, expr: 'l_0 / l_0,valgt ≤ 1,0',
-      note: 'Overlappet er ikke kontrollert mot den faktiske armeringen i konstruksjonen for øvrig, ' +
-            'bare mot den oppgitte lengden.' });
+      note: (bent
+        ? 'U-bøyla omslutter overflatearmeringa; overlappet er en tilleggsdokumentasjon. '
+        : 'Rett tilleggsarmering omslutter ikke overflatearmeringa – dette overlappet ' +
+          'er kraftveien videre inn i konstruksjonen. ') +
+        'Overlappet er ikke kontrollert mot den faktiske armeringen i konstruksjonen ' +
+        'for øvrig, bare mot den oppgitte lengden.' });
   }
 
   return { checks, qualifies: G.qualifies, geometry: G };

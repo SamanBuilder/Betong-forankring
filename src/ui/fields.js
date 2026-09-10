@@ -5,9 +5,11 @@
 import { CONCRETE_GRADES, STUD_SIZES, REBAR_SIZES, ROD_SIZES,
          steelsFor, endsFor, soleBox } from '../core/model.js';
 import { planShapes, shapeZ, SHAPE_LABEL } from '../engine/solid.js';
-import { REINF_DIAMETERS, PURPOSE_LABEL, GEOMETRY_LABEL,
-         GEOMETRY_FOR } from '../core/reinforcement.js';
+import { REINF_DIAMETERS, PURPOSE_LABEL, GEOMETRY_LABEL, GEOMETRY_FOR,
+         TENSION_LAYOUTS, TENSION_LAYOUT_LABEL, BEND_BARS, BEND_BAR_LABEL,
+         bendBarDiameter } from '../core/reinforcement.js';
 import { groupGeometry } from '../engine/supplementary-reinforcement.js';
+import { crownDepth } from '../engine/reinforcement-geometry.js';
 
 // Diameterne som finnes for hver stangtype.
 export function barSizes(m) {
@@ -77,6 +79,10 @@ export const FIELDS = [
     { p: 'concrete.h', l: 'Tykkelse h', t: 'num', u: 'mm', step: 10,
       hint: 'Tykkelsen former som følger tykkelsen får. Former med egen ' +
             'over- og underkant står i ro når h endres.' },
+    { p: 'concrete.dg', l: 'Største tilslag d_g', t: 'num', u: 'mm', step: 2, min: 0,
+      hint: 'Brukes bare til minste senteravstand mellom parallelle ' +
+            'armeringsstenger, NS-EN 1992-1-1 8.2 – den avstanden ' +
+            'tilleggsarmeringa pakkes med rundt bolten.' },
     { p: 'concrete.ex', l: 'Plate offset e_x', t: 'num', u: 'mm', step: 10,
       hint: 'Hvor plata står i betongdelens eget system. Formene du har ' +
             'tegnet står stille når plata flyttes.' },
@@ -261,21 +267,34 @@ export function reinforcementFields(m, i) {
     { p: P('geometryType'), l: 'Utforming', t: 'select',
       o: (GEOMETRY_FOR[r.purpose] || Object.keys(GEOMETRY_LABEL))
         .map(v => [v, GEOMETRY_LABEL[v]]) },
-    { p: P('count'), l: tension ? 'Bøyler pr. boltrad' : 'Antall bein',
+    { p: P('count'), l: tension
+        ? (r.geometryType === 'straight' ? 'Stenger pr. bolt' : 'Bøyler pr. bolt')
+        : 'Antall bein',
       t: 'num', step: 2, min: 2,
       hint: tension
-        ? 'Fordeles symmetrisk om boltraden, minst én bøyle på hver side, alle ' +
-          'innenfor 0,75·h_ef fra bolten.' : undefined },
+        ? 'Fordeles symmetrisk om bolten, minst én på hver side. De legges så ' +
+          'nær bolten som praktisk mulig og pakkes utover med minste tillatte ' +
+          'senteravstand (NS-EN 1992-1-1 8.2). 0,75·h_ef er den ytre grensa ' +
+          'for hva som teller med, ikke der de skal ligge.' : undefined },
     { p: P('ds'), l: 'Diameter ⌀', t: 'select', num: true,
       o: REINF_DIAMETERS.map(d => [d, `⌀${d}`]) },
     { p: P('fyk'), l: 'f_yk', t: 'num', u: 'MPa', step: 50,
       hint: 'Ribbet armeringsstål, f_yk ≤ 600 N/mm² – pkt. 7.2.2.6.' },
   ];
+  if (tension && r.geometryType !== 'straight')
+    out.push({ p: P('barLayout'), l: 'Bøylefordeling', t: 'select',
+      o: TENSION_LAYOUTS.map(v => [v, TENSION_LAYOUT_LABEL[v]]),
+      hint: 'Én bøyle om hver bolt gir et bein like ved hver bolt. Én bøyle ' +
+            'over hele boltraden gir færre stenger og ett bøyeskjema, men bare ' +
+            'boltene i endene av raden får et bein nær seg – ligger noen bolt ' +
+            'midt i raden lenger enn 0,75·h_ef fra nærmeste bein, flagges det ' +
+            'av plasseringskontrollen.' });
   if (tension)
     out.push({ p: P('direction'), l: 'Retning', t: 'num', u: '°', step: 15,
-      hint: 'Hvilken vei bøylene ligger, dreid om loddaksen. Boltene deles i ' +
-            'rader på tvers av denne retninga, og hver rad spennes av sine ' +
-            'egne bøyler.' });
+      hint: r.geometryType === 'straight'
+        ? 'Hvilken vei stengene fordeles om bolten, dreid om loddaksen.'
+        : 'Hvilken vei bøylene ligger, dreid om loddaksen. Bøylene straddler ' +
+          'bolten i denne retninga, og forskyves på tvers av den for å gå klar.' });
   else
     out.push({ p: P('placement'), l: 'Plassering', t: 'select', o: [
       ['auto', 'Automatisk'], ['manual', 'Manuell']] });
@@ -284,12 +303,67 @@ export function reinforcementFields(m, i) {
   // ned mot den); kantbruddbøylen ligger i ett vannrett nivå og har bare en
   // overkant å forholde seg til.
   const hasDepth = tension || r.purpose === 'generic';
+  // Bøylebredda og overflatearmeringa gjelder bare de bøyde utformingene:
+  // rett stang har verken bøy å omslutte med eller to bein å spenne mellom.
+  if (tension && r.geometryType !== 'straight') {
+    const G = groupGeometry(m, null, r);
+    out.push({ p: P('span'), l: 'Bøylebredde (mellom beina)', t: 'num', u: 'mm', step: 10,
+      val: r.span ?? Math.round(2 * (G.geo?.halfSpan ?? 0)),
+      hint: 'Avstanden mellom de to loddrette beina, målt langs bøyleretninga. ' +
+            'Tomt = så trangt bøyeradien tillater, altså beina så nær bolten ' +
+            'som praktisk mulig. Bredda går inn i den faktiske avstanden ' +
+            'bolt → bein: √((bredde/2)² + tverravstand²) ≤ 0,75·h_ef.' });
+    out.push({ p: P('bendBar'), l: 'Stang i bøyen', t: 'select',
+      o: BEND_BARS.map(v => [v, BEND_BAR_LABEL[v]]),
+      hint: 'Bøyen krøller seg rundt en stang på tvers, så bøylen ligger OVER ' +
+            'den. Stanga tar radialtrykket fra bøyen og fører strekkraften ' +
+            'videre. Enten brukes overflatearmeringa til dette – da følger ' +
+            'bøylen nettet – eller det legges en egen stang, og da står bøylen ' +
+            'fritt og nettet tegnes ikke.' });
+    if (r.bendBar === 'own')
+      out.push({ p: P('bendBarDs'), l: 'Stang i bøyen ⌀', t: 'select', num: true,
+        val: bendBarDiameter(r),
+        o: REBAR_SIZES.filter(d => d >= r.ds).map(d => [d, `⌀${d}`]),
+        hint: `Minst like tjukk som bøylen (⌀${r.ds}). Forankres etter ` +
+              'NS-EN 1992-1-1 8.4 – se kontrollen «stang i bøyen».' });
+    else
+      out.push(
+        { p: P('surfaceReinf.present'), l: 'Overflatearmering lagt inn', t: 'bool',
+          hint: 'Uten nett er det ingenting i bøyen – da bør du velge egen ' +
+                'stang i bøyen i stedet.' },
+        ...(r.surfaceReinf?.present ? [
+          { p: P('surfaceReinf.ds'), l: 'Overflatearmering ⌀', t: 'select', num: true,
+            o: REBAR_SIZES.map(d => [d, `⌀${d}`]) },
+          { p: P('surfaceReinf.spacing'), l: 'Overflatearmering c/c', t: 'num',
+            u: 'mm', step: 25, min: 25,
+            hint: 'Senteravstand i nettet. Brukes til å tegne nettet i 3D – ' +
+                  'kapasiteten til overflatearmeringa er ikke kontrollert her.' },
+          { p: P('surfaceReinf.cover'), l: 'Overflatearmering, overdekning',
+            t: 'num', u: 'mm', step: 5, min: 0,
+            hint: 'Til ytterste lag. Laget som går på tvers av bøylene ligger ' +
+                  'innerst – det er det bøyen omslutter, og bøylen legges rett ' +
+                  'over det.' },
+        ] : []));
+  }
+  // Skal bøylen omslutte overflatearmeringa, kan den ikke ha sin egen
+  // overdekning i tillegg: den MÅ ligge rett under nettet. Da er det nettets
+  // overdekning som er det ene tallet som gjelder, og bøylens overdekning
+  // vises som avledet - ellers står det to tall i skjemaet som ikke kan
+  // stemme samtidig.
+  const wraps = tension && r.geometryType !== 'straight'
+    && r.bendBar !== 'own' && !!r.surfaceReinf?.present;
   out.push({ p: P('coverTop'), l: hasDepth ? 'Overdekning, overkant' : 'Overdekning',
     t: 'num', u: 'mm', step: 5,
-    hint: tension
-      ? 'Fra betongoverflata ned til den vannrette delen av bøylen. Styrer ' +
-        'hvor langt bøylen må stikke ut forbi bolten for å få trykkstaven i 45°.'
-      : 'Avstand fra betongoverflata (og fra kanten for kantbruddbøyler) til bøylen.' });
+    ro: wraps,
+    val: wraps ? Math.round(crownDepth(r).dCrown - r.ds / 2) : undefined,
+    hint: !tension
+      ? 'Avstand fra betongoverflata (og fra kanten for kantbruddbøyler) til bøylen.'
+      : wraps
+        ? 'Følger overflatearmeringa: bøylen legges rett OVER det laget som går ' +
+          'på tvers av bøyleretninga, så bøyen omslutter det. Sett overdekninga ' +
+          'på nettet i stedet.'
+        : 'Fra betongoverflata ned til toppen av armeringa. Stanga i bøyen ' +
+          'legges inne i bøyen, altså under den vannrette delen.' });
   if (hasDepth)
     out.push({ p: P('coverBottom'), l: 'Overdekning, underkant', t: 'num', u: 'mm', step: 5,
       hint: 'Hvor nær underkant betong beina får gå.' });
@@ -320,7 +394,12 @@ export function reinforcementFields(m, i) {
   }
   if (r.purpose === 'tension') {
     out.push(
-      { p: P('lapToExisting.present'), l: 'Overlapp mot konstruksjonsarmering', t: 'bool' },
+      { p: P('lapToExisting.present'), l: 'Overlapp mot konstruksjonsarmering', t: 'bool',
+        hint: r.geometryType === 'straight'
+          ? 'PÅKREVD for rett tilleggsarmering: den omslutter ikke ' +
+            'overflatearmeringa, så lastoverføringa videre må dokumenteres ' +
+            'med overlapp eller tilsvarende (EN 1992-1-1 8.7).'
+          : undefined },
       { p: P('lapToExisting.lapLength'), l: 'Overlappslengde', t: 'num', u: 'mm', step: 10,
         when: () => r.lapToExisting?.present });
   }

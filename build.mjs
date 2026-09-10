@@ -37,6 +37,7 @@ const ORDER = [
   'src/viz/scene-builder.js',
   'src/ui/fields.js',
   'src/ui/plan-editor.js',
+  'src/ui/figures.js',
   'src/ui/app.js',
 ];
 

@@ -224,36 +224,21 @@ three-d-stage { position:absolute; inset:0; }
 .assump .k { color:var(--tx2); font-size:11.5px; }
 .assump .v { color:var(--tx); font:11px var(--mono); text-align:right; }
 
-/* Utnyttelsessammendrag: alle kontrollene samtidig, som loddrette stolper i
-   ett felles diagram med en 100 %-strek på tvers. Navnet står loddrett
-   (bunn-til-topp) til VENSTRE for stolpen; prosenten står vannrett rett
-   under. Alt bunnankres (align-items:flex-end), så 0 %-grunnlinja - og
-   dermed 100 %-streken - ligger fast uansett hvor lange navnene er. */
-.usum { border-bottom:1px solid var(--line); }
-.usum-track { overflow-x:auto; padding:24px 14px 20px; }
-.usum-plot { position:relative; display:inline-flex; align-items:flex-end; gap:16px; }
-/* 102px = stolpehøyden (84px) + rommet prosenten + luft under tar (18px). */
-.usum-100 { position:absolute; left:0; right:0; bottom:102px; height:0;
-  border-top:1px dashed var(--line2); }
-.usum-100 b { position:absolute; left:2px; bottom:4px; font:10px var(--mono);
-  color:var(--tx3); white-space:nowrap; }
-.usum-item { flex:0 0 auto; display:flex; align-items:flex-end; gap:5px;
-  border:0; background:none; cursor:pointer; padding:0; }
-/* Loddrett tekst, bunn-til-topp - se samme teknikk brukt i .hud for målsatte tall. */
-.usum-item .nm { writing-mode:vertical-rl; transform:rotate(180deg);
-  font-size:10px; line-height:1.2; color:var(--tx2); white-space:nowrap;
-  transition:color .12s; }
-.usum-item .stack { display:flex; flex-direction:column; align-items:center; gap:4px; }
-.usum-item .col { width:14px; height:84px; display:flex; align-items:flex-end; }
-.usum-item .col i { display:block; width:100%; border-radius:2px 2px 0 0; }
-.usum-item .pc { font:600 10px var(--mono); color:var(--tx2); white-space:nowrap; }
-.usum-item.over .pc { color:var(--bad); }
-.usum-item:hover .nm, .usum-item:hover .pc { color:var(--tx); }
-.usum-item[aria-current="true"] .nm { color:var(--acc); font-weight:500; }
-
 .sect { margin:20px 14px 0; font-size:10px; font-weight:600; letter-spacing:.11em;
   text-transform:uppercase; color:var(--tx3); padding-bottom:6px;
   border-bottom:1px solid var(--line); }
+
+/* Strekk / skjær / samvirkning skal skille seg klart fra hverandre og fra de
+   øvrige overskriftene - tyngre skrift, litt større, og en fargeprikk som
+   går igjen på stolpene i utnyttelsessammendraget. */
+.sect.fam-tension, .sect.fam-shear, .sect.fam-combo { margin-top:24px; font-size:12px;
+  font-weight:700; letter-spacing:.04em; color:var(--tx); padding:0 0 8px 12px;
+  position:relative; border-bottom:1px solid var(--line2); }
+.sect.fam-tension::before, .sect.fam-shear::before, .sect.fam-combo::before {
+  content:''; position:absolute; left:0; top:1px; bottom:9px; width:3px; border-radius:2px; }
+.sect.fam-tension::before { background:#5b8def; }
+.sect.fam-shear::before { background:#e0a72f; }
+.sect.fam-combo::before { background:#8f6ae0; }
 
 /* Utnyttelsen skal kunne leses på avstand: tykk stolpe, tydelig prosent. */
 .chk { display:block; width:100%; text-align:left; border:0; background:none;
@@ -341,6 +326,62 @@ table.io td.src { color:var(--tx2); font-size:11.5px; }
 .sheet .empty { color:var(--tx2); font-size:13px; padding:40px 0; text-align:center; }
 .sheet .note { margin:10px 0 0; padding:9px 11px; border-radius:6px; font-size:11.5px;
   background:#fbf3e0; border:1px solid #ecdcb4; color:#8a6516; }
+
+/* === figur i utregningsarket ============================================
+   Prinsippsnitt tegnet av modellen (src/ui/figures.js). Betongen er den
+   samme sanden som i 3D, stålet mørkt, og bruddkjegla en dus tone av
+   aksentfargen slik at målene blir det tydeligste i figuren. */
+.fig { margin:0; padding:14px 8px 10px; background:var(--panel2);
+  border:1px solid var(--line); border-radius:8px; }
+.fig svg { display:block; overflow:visible; }
+.fig figcaption { margin:12px 6px 2px; font-size:11.5px; color:var(--tx2);
+  max-width:64ch; }
+.fig figcaption sub { font-size:.8em; }
+
+.fig-tabs { margin:0 0 12px 2px; }
+.fig-panel { margin:0; }
+
+.fig .conc  { fill:#e3ddcd; stroke:var(--line2); stroke-width:1; }
+.fig .plate { fill:none; stroke:#5d5a52; stroke-width:1.1; stroke-dasharray:1.5 2.5; }
+.fig .foot  { fill:#5d5a52; fill-opacity:.35; stroke:#3d3b35; stroke-width:.9; }
+.fig .ref   { fill:none; stroke:var(--tx2); stroke-width:1; stroke-dasharray:4 4; }
+.fig .area  { font:12px var(--mono); fill:#6b5a2e; }
+.fig .cut line { stroke:var(--tx3); stroke-width:.9; stroke-dasharray:12 3 2 3; }
+.fig .cut text { font:10px var(--sans); fill:var(--tx3); }
+.fig .cone  { fill:#c9b98e; fill-opacity:.5; stroke:var(--acc); stroke-width:1.4; }
+.fig .steel { fill:#5d5a52; stroke:#3d3b35; stroke-width:.8; }
+.fig .surf  { stroke:var(--tx); stroke-width:1.6; }
+/* Tilleggsarmering: egen, tydelig strek - den skal leses som armering og ikke
+   forveksles med hverken betong, bolt eller malelinjer. */
+.fig .reinf { fill:none; stroke:#0f7b6c; stroke-width:2; stroke-linejoin:round;
+              stroke-linecap:round; }
+.fig .leg   { fill:#0f7b6c; stroke:#0a5a4f; stroke-width:.8; }
+/* Den delen av armeringa som ligger inne i kjeglebruddsona - l_1. Tegnes
+   oppa den vanlige streken, klippet mot sona, sa lengden leses direkte. */
+.fig .reinf-in { fill:none; stroke:#e0559b; stroke-width:2.6; stroke-linejoin:round;
+                 stroke-linecap:round; }
+.fig .mesh  { fill:#0f7b6c; fill-opacity:.45; stroke:#0a5a4f; stroke-width:.9; }
+/* Stanga som ligger i boyen, sett ovenfra - tynnere enn boylene, sa den leses
+   som noe som ligger under dem. */
+.fig .mesh-line { fill:none; stroke:#6f7d86; stroke-width:1.4; stroke-linecap:round; }
+/* Ring om den bolten kontrollen er regnet for. */
+.fig .gov { fill:none; stroke:var(--bad); stroke-width:1.6; }
+.fig .zone  { fill:var(--acc); fill-opacity:.08; stroke:var(--acc);
+              stroke-width:1.2; stroke-dasharray:5 4; }
+.fig .brk   { stroke:var(--line2); stroke-width:1.2; stroke-dasharray:7 5; }
+.fig .brk.thin { stroke:var(--acc); stroke-width:.9; stroke-dasharray:4 4; }
+
+.fig .dim line { stroke:var(--tx2); stroke-width:.9; }
+.fig .dim .ext { stroke:var(--line2); }
+.fig .dim path { fill:var(--tx2); }
+.fig .dim text { font:11px var(--mono); fill:var(--tx); }
+.fig .dim text.sm { font-size:9.5px; }
+
+.fig .load line { stroke:var(--bad); stroke-width:1.8; }
+.fig .load path { fill:var(--bad); }
+.fig .load text { font:11px var(--mono); fill:var(--bad); }
+.fig .ann { font:10.5px var(--sans); fill:var(--tx3); text-anchor:middle; }
+.fig .arc { fill:none; stroke:var(--tx3); stroke-width:.9; }
 
 /* === smale skjermer ===================================================== */
 /* --- draghåndtak ---------------------------------------------------------

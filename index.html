@@ -76,6 +76,7 @@
         <label class="tog"><input type="checkbox" data-show="cone"> Bruddkjegle</label>
         <label class="tog"><input type="checkbox" data-show="wedge"> Kantbrudd</label>
         <label class="tog"><input type="checkbox" data-show="rebar"> Armering</label>
+        <label class="tog"><input type="checkbox" data-show="surfaceMesh"> Overflatearmering</label>
         <label class="tog"><input type="checkbox" data-show="loads"> Laster</label>
         <label class="tog"><input type="checkbox" data-show="labels"> Boltkrefter</label>
         <label class="tog"><input type="checkbox" data-show="dims"> Mål</label>
@@ -119,6 +120,12 @@
       <div class="pane-head">
         <h2>Kontroll</h2><span class="grow"></span>
         <span class="stat" id="verdict"></span>
+      </div>
+      <div class="pane-sub" id="resultsub">
+        <div class="btn-row">
+          <button class="btn" id="tab-summary" aria-pressed="true">Oppsummering</button>
+          <button class="btn" id="tab-util" aria-pressed="false">Utnyttelser</button>
+        </div>
       </div>
       <div class="pane-body" id="results"></div>
       <div class="split col r" data-split="right" role="separator"
