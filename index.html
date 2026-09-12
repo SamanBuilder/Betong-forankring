@@ -27,11 +27,16 @@
     </select>
     <span class="units">mm · kN · N/mm²</span>
     <span class="grow"></span>
-    <button class="btn" id="save-project">Lagre prosjekt</button>
-    <button class="btn" id="open-project">Åpne prosjekt</button>
-    <input type="file" id="open-project-file" accept="application/json,.json" hidden>
-    <button class="btn" id="reset">Nullstill</button>
-    <button class="btn" id="report">Beregningsrapport</button>
+    <details class="menu project-menu" name="workspace-menu">
+      <summary>Prosjekt</summary>
+      <div class="menu-content actions">
+        <button class="btn" id="save-project">Lagre prosjekt</button>
+        <button class="btn" id="open-project">Åpne prosjekt</button>
+        <input type="file" id="open-project-file" accept="application/json,.json" hidden>
+        <button class="btn" id="report">Beregningsrapport</button>
+        <button class="btn" id="reset">Nullstill</button>
+      </div>
+    </details>
   </div>
 
   <div class="body">
@@ -55,6 +60,9 @@
           <button class="btn" id="tab-calc" aria-pressed="false">Utregning</button>
         </div>
         <span class="grow"></span>
+        <details class="menu camera-menu" name="workspace-menu">
+          <summary>Kamera</summary>
+          <div class="menu-content">
         <div class="btn-row" id="viewbtns">
           <button class="btn ghost" data-view="iso">ISO</button>
           <button class="btn ghost" data-view="top">Plan</button>
@@ -62,16 +70,51 @@
           <button class="btn ghost" data-view="side">Side</button>
           <button class="btn ghost" data-view="fit">Tilpass</button>
         </div>
-        <span class="sep"></span>
         <button class="btn ghost" id="ortho" aria-pressed="false"
           title="Parallellprojeksjon: like store ting tegnes like store uansett avstand">Parallell</button>
-        <span class="sep"></span>
+          </div>
+        </details>
+        <details class="menu export-menu" name="workspace-menu">
+          <summary>Eksport</summary>
+          <div class="menu-content">
         <div class="btn-row" id="exportbtns">
           <button class="btn ghost" data-exp="obj">OBJ</button>
           <button class="btn ghost" data-exp="glb">GLB</button>
         </div>
+          </div>
+        </details>
       </div>
       <div class="pane-sub" id="viewsub">
+        <div class="render-control">
+          <label for="render-mode">Visning</label>
+          <select id="render-mode">
+            <option value="cutaway">Snitt</option>
+            <option value="solid">Materialer</option>
+            <option value="xray">Transparent</option>
+          </select>
+        </div>
+        <details class="menu" name="workspace-menu">
+          <summary>Opasitet</summary>
+          <div class="menu-content control-fields">
+            <label for="concrete-opacity">Betongopasitet (%)</label>
+            <input type="range" id="concrete-opacity" min="10" max="100" value="28">
+          </div>
+        </details>
+        <details class="menu" name="workspace-menu">
+          <summary>Snitt</summary>
+          <div class="menu-content control-fields">
+            <label for="section-axis">Snittakse</label>
+            <select id="section-axis">
+              <option value="x">X</option>
+              <option value="y">Y</option>
+            </select>
+            <label for="section-position">Snittposisjon (%)</label>
+            <input type="range" id="section-position" min="0" max="100" value="50">
+          </div>
+        </details>
+        <details class="menu" name="workspace-menu">
+          <summary>Lag</summary>
+          <div class="menu-content layer-options">
         <label class="tog"><input type="checkbox" data-show="concrete"> Betong</label>
         <label class="tog"><input type="checkbox" data-show="cone"> Bruddkjegle</label>
         <label class="tog"><input type="checkbox" data-show="wedge"> Kantbrudd</label>
@@ -82,6 +125,8 @@
         <label class="tog"><input type="checkbox" data-show="dims"> Mål</label>
         <label class="tog"><input type="checkbox" id="colormode"> Fargelegg utnyttelse</label>
         <span class="stat" id="legend" hidden></span>
+          </div>
+        </details>
       </div>
       <div class="pane-sub" id="plansub" hidden>
         <div class="btn-row" id="plantools"></div>
@@ -95,7 +140,7 @@
       </div>
       <div class="plan-wrap" id="wrap-plan" hidden></div>
       <div class="stage-wrap" id="wrap-3d">
-        <three-d-stage id="stage" background="#efede8" controls="none"></three-d-stage>
+        <three-d-stage id="stage" background="#f1f3f4" controls="none"></three-d-stage>
         <div class="hud" id="hud"></div>
       </div>
       <div class="pane-body" id="wrap-calc" hidden><div class="sheet" id="sheet"></div></div>

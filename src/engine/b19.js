@@ -36,7 +36,7 @@
 
 import { anchorPositions, edgeDistances, shaftProps, anchorFoot,
          grade, steelGrade, mounting } from '../core/model.js';
-import { clamp, coneProjection, frontWidth } from './geometry.js';
+import { clamp, clippedSquares, frontWidth } from './geometry.js';
 import { Calc, skipped, n } from './calc.js';
 
 export const KB = {
@@ -139,7 +139,10 @@ function b19EffectiveHef(m, pts) {
   const near = [];
   for (const dir of ['xNeg', 'xPos', 'yNeg', 'yPos']) {
     const ds = pts.map(p => edgeDistances(m, p.x, p.y)[dir]).filter(Number.isFinite);
-    if (ds.length && Math.min(...ds) < 1.5 * hef) near.push(Math.max(...ds));
+    // Fig. B 19.13: each edge distance starts at the nearest outer bolt row;
+    // the distance between rows is accounted for separately by s_maks.
+    const edge = Math.min(...ds);
+    if (edge < 1.5 * hef) near.push(edge);
   }
   if (near.length < 3) return { hef, reduced: false, nEdges: near.length };
 
@@ -195,7 +198,7 @@ function b19ConeBranch(m, res, c) {
       subst: `maks(${n(he.aMax, 0)}/1,5 ; ${n(he.sMax, 0)}/3)`,
       value: hef, unit: 'mm', ref: '19.3.2.2' });
 
-  const plain = m.code.cracked && m.code.edgeReinf === 'none';
+  const plain = m.code.cracked && m.code.edgeReinf !== 'bars+stirrups';
   const k1 = c.step({ sym: 'k_1', desc: plain
       ? 'Risset uarmert betong (uten kantarmering eller bøyler): 0,7 · k_1'
       : 'Urisset betong, eller risset med kantarmering og bøyler',
@@ -212,14 +215,9 @@ function b19ConeBranch(m, res, c) {
     formula: '9 · h_ef²', subst: `9 · ${n(hef, 0)}²`,
     value: 9 * hef * hef, unit: 'mm²', ref: '19.3.2.2' });
   const Ac = c.step({ sym: 'A_c,N', desc: 'Bruddareal for gruppa',
-    formula: foot.common
-      ? 'endeplata ± 1,5·h_ef, klippet mot frie kanter'
-      : 'union av (⌀ ± 1,5·h_ef), klippet mot frie kanter',
-    subst: foot.common
-      ? `felles endeplate ${n(foot.plate.bx, 0)} × ${n(foot.plate.by, 0)} mm, ` +
-        `1,5·h_ef = ${n(1.5 * hef, 0)} mm`
-      : `${pts.length} bolter i strekk, 1,5·h_ef = ${n(1.5 * hef, 0)} mm`,
-    value: coneProjection(m, foot, pts, 1.5 * hef), unit: 'mm²',
+    formula: 'union av kvadrater rundt boltakser (± 1,5·h_ef), klippet mot frie kanter',
+    subst: `${pts.length} bolter i strekk, 1,5·h_ef = ${n(1.5 * hef, 0)} mm`,
+    value: clippedSquares(m, pts, 1.5 * hef), unit: 'mm²',
     ref: 'fig. B 19.11' });
 
   const cmin = minEdgeDist(m, pts);
@@ -342,7 +340,7 @@ export function b19TensionConcrete(m, res) {
   const cd = b19Concrete(m);
   c.in('⌀', sh.d, 'mm', 'Bolter');
   c.in('h_ef', m.anchors.hef, 'mm',
-    foot.hasFoot ? 'Bolter · dybde til underkant fot' : 'Bolter · innstøpt lengde');
+    foot.hasFoot ? 'Bolter · dybde til overkant fot (trykkflaten)' : 'Bolter · innstøpt lengde');
   c.in('f_ck,cube', cd.fckCube, 'N/mm²', `Betongdel · ${cd.grade} · terningfasthet`);
   c.in('f_ctk,0,05', cd.fctk, 'N/mm²', `Betongdel · ${cd.grade}`);
   c.in('γ_c', cd.gc, '–', 'Regelverk');
@@ -373,11 +371,16 @@ export function b19TensionConcrete(m, res) {
     subst: `${n(win.NEd)} / ${n(win.NRd)}`, value: win.util });
 
   const notes = [`Styrende modell: ${win.name.toLowerCase()} (pkt. ${win.clause}).`];
+  if (anchorFoot(m).common)
+    notes.push('Kjeglearealet beregnes konservativt fra boltakser uten tillegg for ' +
+      'felles endeplate. Stor fot etter fig. B 19.17 krever separat dokumentasjon ' +
+      'av medvirkende utstikk og stivhet.');
   if (!cd.inRange)
     notes.push(`B19 dekker selv B25–B55; ${cd.grade} er ekstrapolert.`);
 
   return { id: 'N-conc', mode: `Utrivning – ${win.name.toLowerCase()}`,
            clause: win.clause, scope: win.scope, showCone: win === cone,
+           effectiveHef: win === cone ? cone.hef : undefined,
            NRk: win.NRd, NRd: win.NRd, NEd: win.NEd, util: win.util,
            calc: c, note: notes.join(' ') };
 }
@@ -394,7 +397,7 @@ export function b19FootPressure(m, res) {
   }
   const cd = b19Concrete(m), sh = shaftProps(m);
   const c = new Calc('19.3.2.4');
-  const plain = m.code.cracked && m.code.edgeReinf === 'none';
+  const plain = m.code.cracked && m.code.edgeReinf !== 'bars+stirrups';
   const FOOT = { head: 'bolthode', nut: 'endemutter',
                  plate: 'felles innstøpt endeplate' };
 

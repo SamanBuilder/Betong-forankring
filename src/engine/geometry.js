@@ -45,11 +45,8 @@ export function clippedSquares(m, pts, r) {
   })));
 }
 
-// Prosjektert bruddareal for strekkbrudd.
-//
-// Henger boltene i en felles endeplate, er forankringen ett stivt legeme:
-// kjegla sprer seg fra platekanten, ikke fra hver bolt for seg. Uten slik
-// plate er arealet unionen av de enkelte boltenes kjegler.
+// Geometrisk plateprojeksjon for spesialmodeller. EN/B19-kjeglekapasiteten
+// bruker clippedSquares direkte; en felles plate gir ikke automatisk tillegg.
 export function coneProjection(m, foot, pts, r) {
   if (foot && foot.common) {
     const pl = foot.plate;
@@ -203,27 +200,21 @@ export const clamp = (v, lo, hi) => Math.min(hi, Math.max(lo, v));
 //
 //  Spredninga regnes med Chebyshev-avstand (den største av |dx| og |dy|), ikke
 //  radiell - da faller flata sammen med A_c,N, som legges opp av KVADRATER med
-//  halvbredde c_cr,N (clippedSquares/coneProjection). Med felles endeplate
-//  sprer kjegla seg fra platekanten, ellers fra hver bolt.
+//  halvbredde c_cr,N (clippedSquares), sentrert rundt bolteaksene.
 //
 //  Returnerer dybden (positiv nedover) der flata krysser den loddrette linja
 //  gjennom (x, y), eller null når det ikke er noen kjegle å krysse.
 // ---------------------------------------------------------------------------
 export function coneSurfaceDepth(m, foot, pts, hef, x, y) {
   if (!foot?.hasFoot) return null;
-  const zTop = Math.max(0, hef - (foot.t || 0));   // trykkflate = overkant fot
+  const zTop = Math.max(0, hef); // h_ef ends at the top bearing face.
   const ccr = 1.5 * hef;
   if (!(ccr > 0)) return null;
 
   // Avstanden ut fra kilden, i Chebyshev-metrikk. 0 inne i kilden.
   let s = Infinity;
-  if (foot.common && foot.plate) {
-    const pl = foot.plate;
-    s = Math.max(0, pl.x0 - x, x - pl.x1, pl.y0 - y, y - pl.y1);
-  } else {
-    for (const p of pts)
-      s = Math.min(s, Math.max(Math.abs(x - p.x), Math.abs(y - p.y)));
-  }
+  for (const p of pts)
+    s = Math.min(s, Math.max(Math.abs(x - p.x), Math.abs(y - p.y)));
   if (!Number.isFinite(s)) return null;
   return clamp(zTop * (1 - s / ccr), 0, zTop);
 }

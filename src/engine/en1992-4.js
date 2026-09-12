@@ -17,7 +17,7 @@
 
 import { anchorPositions, shaftProps, anchorFoot, edgeDistances,
          memberThickness } from '../core/model.js';
-import { clamp, coneProjection, edgeBreakout } from './geometry.js';
+import { clamp, clippedSquares, edgeBreakout } from './geometry.js';
 import { Calc, skipped, n } from './calc.js';
 import { requirementIssues } from '../core/reinforcement.js';
 
@@ -81,7 +81,9 @@ export function partialFactors(m) {
 // Prosjektert areal for betongkjegle, 7.2.1.4 - union av rektangler klippet
 // mot betongdelens frie kanter.
 function coneArea(m, pts, ccr) {
-  return coneProjection(m, anchorFoot(m), pts, ccr);
+  // EN 1992-4 7.2.1.4(3): projection is centred on the fastener axes.
+  // A common end plate does not automatically earn additional cone area.
+  return clippedSquares(m, pts, ccr);
 }
 
 function minEdge(m, pts) {
@@ -187,7 +189,7 @@ export function tensionConcreteCone(m, res, g) {
   const NEd = c.in('N_Ed,g', res.tension.Ntot, 'N', 'Sum strekk i boltegruppa');
 
   const scr = c.step({ sym: 's_cr,N', desc: 'Karakteristisk senteravstand',
-    formula: '3 · h_ef', subst: `3 · ${n(hef, 0)}`, value: 3 * hef, unit: 'mm', ref: '(7.4)' });
+    formula: '3 · h_ef', subst: `3 · ${n(hef, 0)}`, value: 3 * hef, unit: 'mm', ref: '7.2.1.4(3)' });
   const ccr = c.step({ sym: 'c_cr,N', desc: 'Karakteristisk kantavstand',
     formula: 's_cr,N / 2 = 1,5 · h_ef', subst: `1,5 · ${n(hef, 0)}`,
     value: 1.5 * hef, unit: 'mm' });
@@ -200,17 +202,11 @@ export function tensionConcreteCone(m, res, g) {
   });
   const A0 = c.step({ sym: 'A⁰_c,N', desc: 'Referanseareal for én bolt',
     formula: 's_cr,N²', subst: `${n(scr, 0)}²`, value: scr * scr, unit: 'mm²' });
-  const cfoot = anchorFoot(m);
   const Ac = c.step({
     sym: 'A_c,N', desc: 'Faktisk utbruddsareal for gruppa',
-    formula: cfoot.common
-      ? 'endeplata ± c_cr,N, klippet mot frie kanter'
-      : 'union av (⌀ ± c_cr,N) for strekkboltene, klippet mot frie kanter',
-    subst: cfoot.common
-      ? `felles endeplate ${n(cfoot.plate.bx, 0)} × ${n(cfoot.plate.by, 0)} mm, ` +
-        `c_cr,N = ${n(ccr, 0)} mm`
-      : `${nt} bolter, c_cr,N = ${n(ccr, 0)} mm`,
-    value: coneArea(m, pts, 1.5 * hef), unit: 'mm²', ref: '(7.3)',
+    formula: 'union av kvadrater rundt boltakser (± c_cr,N), klippet mot frie kanter',
+    subst: `${nt} strekkbolter, c_cr,N = ${n(ccr, 0)} mm`,
+    value: coneArea(m, pts, ccr), unit: 'mm²', ref: '7.2.1.4(3)',
   });
 
   const cmin = minEdge(m, pts);
@@ -235,13 +231,18 @@ export function tensionConcreteCone(m, res, g) {
     formula: '1 / (1 + 2·e_N/s_cr,N) ≤ 1,0   (x-retning · y-retning)',
     subst: `e_N,x = ${n(res.tension.eNx, 1)} mm → ${n(psi_ecx)} · ` +
            `e_N,y = ${n(res.tension.eNy, 1)} mm → ${n(psi_ecy)}`,
-    value: psi_ecx * psi_ecy, unit: '–', ref: '(7.3)',
+    value: psi_ecx * psi_ecy, unit: '–', ref: '(7.6)',
+  });
+  const psi_M = c.step({
+    sym: 'ψ_M,N', desc: 'Konservativt uten gunstig virkning av kontakttrykk',
+    formula: '1,0', subst: 'Ingen kapasitetsøkning fra moment og kontakttrykk',
+    value: 1, unit: '–', ref: '7.2.1.4(7), (7.7)',
   });
 
   const NRk = c.res({
-    sym: 'N_Rk,c', formula: 'N⁰_Rk,c · (A_c,N / A⁰_c,N) · ψ_s,N · ψ_re,N · ψ_ec,N',
-    subst: `${n(N0)} · (${n(Ac, 0)}/${n(A0, 0)}) · ${n(psi_s)} · ${n(psi_re)} · ${n(psi_ec)}`,
-    value: N0 * (Ac / A0) * psi_s * psi_re * psi_ec, unit: 'N', ref: '(7.1)',
+    sym: 'N_Rk,c', formula: 'N⁰_Rk,c · (A_c,N / A⁰_c,N) · ψ_s,N · ψ_re,N · ψ_ec,N · ψ_M,N',
+    subst: `${n(N0)} · (${n(Ac, 0)}/${n(A0, 0)}) · ${n(psi_s)} · ${n(psi_re)} · ${n(psi_ec)} · ${n(psi_M)}`,
+    value: N0 * (Ac / A0) * psi_s * psi_re * psi_ec * psi_M, unit: 'N', ref: '(7.1)',
   });
   const NRd = NRk / gM;
   c.step({ sym: 'N_Rd,c', desc: 'Dimensjonerende kapasitet',
@@ -249,7 +250,12 @@ export function tensionConcreteCone(m, res, g) {
   c.util({ formula: 'N_Ed,g / N_Rd,c', subst: `${n(NEd)} / ${n(NRd)}`, value: NEd / NRd });
 
   return { id: 'N-cone', mode: 'Betongkjegle', clause: '7.2.1.4', scope: 'gruppe',
-           NRk, NRd, NEd, util: NEd / NRd, calc: c };
+           NRk, NRd, NEd, util: NRd > 0 ? NEd / NRd : Infinity, calc: c,
+           tensionAnchorIds: pts.map(p => p.id),
+           note: 'ψ_M,N = 1,0: gunstig kontakttrykk er ikke utnyttet. ' +
+             'Redusert h\u2032_ef ved tre eller flere nære kanter er ikke utnyttet.' +
+             (anchorFoot(m).common ? ' Felles endeplate gir ikke ekstra projisert areal; ' +
+               'kjeglen beregnes fra boltakser.' : '') };
 }
 
 // 7.2.1.9 Utblåsing ved kant - kun når c <= 0,5·h_ef

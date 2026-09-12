@@ -110,9 +110,14 @@ export function verify(m) {
       })()
     : gEN;
 
-  const valid = checks.filter(c => Number.isFinite(c.util));
+  // Infinite utilization is a failed check, not a reason to omit it.
+  const invalid = checks.filter(c => !Number.isFinite(c.util) && c.util !== Infinity);
+  if (invalid.length)
+    issues.push({ level: 'error', text: `Ugyldig beregningsresultat: ${invalid.map(c => c.mode).join(', ')}.` });
+  const valid = checks.filter(c => Number.isFinite(c.util) || c.util === Infinity);
   const governing = valid.length
     ? valid.reduce((a, b) => (b.util > a.util ? b : a)) : null;
+  const bearing = bearingCheck(m, res);
 
   return {
     model: m, res, standard: STD_LABEL[general],
@@ -123,9 +128,10 @@ export function verify(m) {
       scLabel: STD_LABEL[scStd],
     },
     gamma,
-    issues, bearing: bearingCheck(m, res),
+    issues, bearing,
     checks, replacedConcreteChecks, governing,
     maxUtil: governing ? governing.util : NaN,
-    ok: governing ? governing.util <= 1.0 : false,
+    ok: !!governing && governing.util <= 1.0 && res.converged &&
+      !issues.some(i => i.level === 'error') && (!bearing || bearing.ok),
   };
 }

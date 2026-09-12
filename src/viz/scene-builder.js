@@ -6,8 +6,9 @@
 // ---------------------------------------------------------------------------
 
 import * as THREE from 'three';
+import { RoundedBoxGeometry } from 'three/addons/geometries/RoundedBoxGeometry.js';
 import { anchorPositions, edgeDistances, anchorFoot, mounting,
-         shaftProps, memberThickness, soleBox } from '../core/model.js';
+         shaftProps, memberThickness, soleBox, newShape } from '../core/model.js';
 import { solidSlabs, solidOutline, surfaceZ, planMask, anchorDepth, baseBox,
          planShapes, shapeLoop, shapeZ, toPlate, spansFullDepth,
          SHAPE_LABEL } from '../engine/solid.js';
@@ -163,19 +164,23 @@ function barMesh(bar, mat, split = null, matIn = null) {
 // støpt karakter i stedet for jevn plastgrå.
 // Fullt dekkende, men malt i den gjennomskinnelige passeringa så stålet
 // legger seg over betongen i stedet for å bli tonet ned av den.
-const OVER_CONCRETE = { transparent: true, opacity: 1, depthWrite: true };
+const OVER_CONCRETE = { transparent: false, opacity: 1, depthWrite: true };
 const ORDER = { body: 0, outline: 2, load: 3, steel: 4, tag: 10 };
 
 let GRAIN = null;
 function grainTexture() {
   if (GRAIN) return GRAIN;
-  const S = 256, c = document.createElement('canvas');
+  const S = 512, c = document.createElement('canvas');
   c.width = c.height = S;
   const g = c.getContext('2d');
   const img = g.createImageData(S, S);
+  let seed = 7341;
+  const random = () => ((seed = (1664525 * seed + 1013904223) >>> 0) / 4294967296);
   for (let i = 0; i < S * S; i++) {
-    let v = 224 + (Math.random() - 0.5) * 30;
-    if (Math.random() < 0.0045) v -= 45 + Math.random() * 45;   // luftporer
+    const x = i % S, y = Math.floor(i / S);
+    let v = 210 + (random() - 0.5) * 19
+      + 5 * Math.sin(x * Math.PI * 8 / S) * Math.sin(y * Math.PI * 6 / S);
+    if (random() < 0.003) v -= 30 + random() * 35;
     const k = i * 4;
     img.data[k] = img.data[k + 1] = img.data[k + 2] = Math.max(0, Math.min(255, v));
     img.data[k + 3] = 255;
@@ -186,6 +191,11 @@ function grainTexture() {
   g.filter = 'blur(1px)';
   g.drawImage(c, 0, 0);
   g.filter = 'none'; g.globalAlpha = 1;
+  for (let i = 0; i < 160; i++) {
+    const x = random() * S, y = random() * S, r = 0.4 + random() * 2;
+    g.fillStyle = 'rgba(85,89,87,0.16)';
+    g.beginPath(); g.ellipse(x, y, r, r * 0.65, random() * Math.PI, 0, Math.PI * 2); g.fill();
+  }
 
   GRAIN = new THREE.CanvasTexture(c);
   GRAIN.wrapS = GRAIN.wrapT = THREE.RepeatWrapping;
@@ -194,7 +204,7 @@ function grainTexture() {
   return GRAIN;
 }
 
-// Ekte materialfarger: grå betong, blåaktig konstruksjonsstål, rustrød armering.
+// Materialfarger: grå betong, metallisk konstruksjonsstål og grå armering.
 // De semantiske fargene (grønn/gul/rød) brukes bare når visningen settes til
 // utnyttelse - ellers holder modellen seg til materialene.
 const MAT = {
@@ -203,20 +213,20 @@ const MAT = {
     t.needsUpdate = true;
     t.repeat.set(Math.max(1, Lx / 350), Math.max(1, Ly / 350));  // ~1 flis pr. 350 mm
     return new THREE.MeshStandardMaterial({
-      name: 'betong', color: 0xc3c0b8, map: t, bumpMap: t, bumpScale: 0.5,
+      name: 'betong', color: 0xd5d7d4, map: t, bumpMap: t, bumpScale: 0.35,
       roughness: 1.0, metalness: 0.0,
-      transparent: true, opacity: 0.5, side: THREE.DoubleSide,
-      depthWrite: false,
+      transparent: false, opacity: 1, side: THREE.DoubleSide,
+      depthWrite: true,
     });
   },
   // Valset konstruksjonsstål er matt, ikke forkrommet: lav metalness og høy
   // ruhet, ellers får plata speilglans som ikke finnes i virkeligheten.
   plate: () => new THREE.MeshStandardMaterial({
-    name: 'staalplate', color: 0x54606e, roughness: 0.72, metalness: 0.3,
+    name: 'staalplate', color: 0x626d75, roughness: 0.43, metalness: 0.75,
     ...OVER_CONCRETE,
   }),
   steel: () => new THREE.MeshStandardMaterial({
-    name: 'bolt', color: 0xaeb6bd, roughness: 0.55, metalness: 0.45,
+    name: 'bolt', color: 0xbac1c5, roughness: 0.3, metalness: 0.85,
     ...OVER_CONCRETE,
   }),
   cone: () => new THREE.MeshStandardMaterial({
@@ -231,13 +241,13 @@ const MAT = {
     name: 'gytemasse', color: 0xc2baa8, roughness: 0.96, metalness: 0.0,
   }),
   rebar: () => new THREE.MeshStandardMaterial({
-    name: 'armering', color: 0x9e5232, roughness: 0.82, metalness: 0.15,
+    name: 'armering', color: 0x666967, roughness: 0.68, metalness: 0.55,
     ...OVER_CONCRETE,
   }),
   // Kamstål som forankringsstang: lysbrun valsehud, skilt fra den rustrøde
   // forankringsarmeringa (reinf) så de to kamstål-elementene ikke blandes.
   rebarAnchor: () => new THREE.MeshStandardMaterial({
-    name: 'kamstaal', color: 0xc19a6b, roughness: 0.85, metalness: 0.1,
+    name: 'kamstaal', color: 0x747975, roughness: 0.7, metalness: 0.5,
     ...OVER_CONCRETE,
   }),
   // Den delen av tilleggsarmeringa som ligger INNE i bruddkjegla - l_1, den
@@ -264,7 +274,10 @@ export function utilColor(u) {
 
 // --- smaa hjelpere ---------------------------------------------------------
 function boxMesh(w, d, h, mat, name) {
-  const m = new THREE.Mesh(new THREE.BoxGeometry(w, d, h), mat);
+  const geometry = name === 'forankringsplate'
+    ? new RoundedBoxGeometry(w, d, h, 2, Math.min(1, h / 8))
+    : new THREE.BoxGeometry(w, d, h);
+  const m = new THREE.Mesh(geometry, mat);
   m.name = name; return m;
 }
 
@@ -602,7 +615,8 @@ function loadTriad(m, zTop, hud) {
 export function buildScene(v, opts = {}) {
   const show = { concrete: true, cone: true, wedge: true, loads: true,
                  labels: true, rebar: true, plate: true, dims: true,
-                 colorMode: 'material', ...opts };
+                 colorMode: 'material', renderMode: 'cutaway', concreteOpacity: 0.28,
+                 sectionAxis: 'x', sectionPosition: 50, ...opts };
   const byUtil = show.colorMode === 'utilisation';
   const m = v.model, res = v.res;
   const hud = [];                     // HTML-påskrifter verten plasserer
@@ -617,7 +631,37 @@ export function buildScene(v, opts = {}) {
   // grop der plata staar, ligger grunnformens overkant over null - da flyttes
   // betongen, ikke stålet, saa alt det andre kan regne z = 0 som overflata.
   const dz = -surfaceZ(m);
-  if (show.concrete) root.add(concreteBody(m, dz));
+  if (show.concrete) {
+    let visualModel = m;
+    if (show.renderMode === 'cutaway') {
+      // Reuse the solid engine to cap the visual section, without changing input geometry.
+      const b = baseBox(m), slabs = solidSlabs(m);
+      const axis = show.sectionAxis === 'y' ? 'y' : 'x';
+      const lo = b[axis + '0'], hi = b[axis + '1'];
+      const at = lo + (hi - lo) * Math.max(0, Math.min(100, show.sectionPosition)) / 100;
+      const x0 = axis === 'x' ? at : b.x0 - 1;
+      const y0 = axis === 'y' ? at : b.y0 - 1;
+      const x1 = b.x1 + 1, y1 = b.y1 + 1;
+      const cut = newShape('__visual_section', 'rect', {
+        x: (x0 + x1) / 2 + (+m.concrete.ex || 0),
+        y: (y0 + y1) / 2 + (+m.concrete.ey || 0), bx: x1 - x0, by: y1 - y0,
+        z0: Math.min(-m.concrete.h, ...slabs.map(s => s.z0)) - 1,
+        z1: Math.max(0, ...slabs.map(s => s.z1)) + 1,
+      }, 'cut');
+      visualModel = { ...m, concrete: { ...m.concrete, plan: [...planShapes(m), cut] } };
+    }
+    const body = concreteBody(visualModel, dz);
+    body.traverse(o => {
+      if (!o.isMesh) return;
+      const transparent = show.renderMode === 'xray';
+      o.material.transparent = transparent;
+      o.material.opacity = transparent ? show.concreteOpacity : 1;
+      o.material.depthWrite = !transparent;
+      o.castShadow = !transparent;
+      o.receiveShadow = true;
+    });
+    root.add(body);
+  }
 
   // ---- undergyting ------------------------------------------------------
   const mnt = mounting(m);
@@ -663,7 +707,7 @@ export function buildScene(v, opts = {}) {
                    : welded ? mnt.offset
                             : zTop + washT + nutH + 0.3 * a.d;
     // Med fot starter skaftet på overkant fot; uten fot går det helt ned.
-    const zBot = foot.hasFoot ? -a.hef + foot.t : -a.hef;
+    const zBot = -a.hef;
     const shaftLen = shaftTop - zBot;
 
     const cyl = (r, h, seg = 24) => new THREE.CylinderGeometry(r, r, h, seg);
@@ -715,9 +759,9 @@ export function buildScene(v, opts = {}) {
       // Sekskantmutter: nøkkelvidden er avstanden mellom flatene, altså
       // 2 * innskrevet radius. Sylinderradiusen er den omskrevne.
       put(new THREE.Mesh(cyl(a.dh / Math.sqrt(3), foot.t, 6), mat),
-        -a.hef + foot.t / 2, 'endemutter');
+        -a.hef - foot.t / 2, 'endemutter');
     } else if (foot.kind === 'head') {
-      put(new THREE.Mesh(cyl(a.dh / 2, foot.t), mat), -a.hef + foot.t / 2, 'hode');
+      put(new THREE.Mesh(cyl(a.dh / 2, foot.t), mat), -a.hef - foot.t / 2, 'hode');
     } else if (foot.kind === 'hook') {
       const hook = rebarHook(a.d, zBot, an.x, an.y, mat);
       hook.name = `krok_${an.id}`;
@@ -764,7 +808,7 @@ export function buildScene(v, opts = {}) {
     const pl = foot.plate;
     const ep = new THREE.Mesh(
       new THREE.BoxGeometry(pl.bx, pl.by, foot.t), steelMat);
-    ep.position.set((pl.x0 + pl.x1) / 2, (pl.y0 + pl.y1) / 2, -a.hef + foot.t / 2);
+    ep.position.set((pl.x0 + pl.x1) / 2, (pl.y0 + pl.y1) / 2, -a.hef - foot.t / 2);
     ep.renderOrder = ORDER.steel;
     ep.name = 'endeplate';
     root.add(ep);
@@ -779,20 +823,11 @@ export function buildScene(v, opts = {}) {
   const cone = [...v.checks, ...(v.replacedConcreteChecks || [])]
     .find(k => k.id === 'N-cone' || (k.id === 'N-conc' && k.showCone));
   if (show.cone && res.tension.anchors.length && cone && Number.isFinite(cone.NRd)) {
-    const ccr = 1.5 * a.hef;
-    // Med felles endeplate river hele plata ut ett legeme, så kjegla starter
-    // ved platekanten - det samme arealet som A_c,N regnes av.
-    // Med felles endeplate river hele plata ut ett legeme - da er kilden
-    // platerektangelet. Ellers sprer kjegla seg fra hver bolt for seg, og
-    // nabokjeglene moetes i en rygg mellom boltene.
-    const srcs = foot.common
-      ? [{ x0: foot.plate.x0, x1: foot.plate.x1,
-           y0: foot.plate.y0, y1: foot.plate.y1 }]
-      // Spredninga regnes fra boltaksen, ikke fra fotkanten - det er slik
-      // A_c,N er lagt opp (clippedSquares om boltpunktene), og bildet skal
-      // vise akkurat den kjegla tallene er regnet av.
-      : res.tension.anchors.map(t => ({ x0: t.x, x1: t.x, y0: t.y, y1: t.y }));
-    const cm = coneMesh(m, srcs, ccr, a.hef);
+    const coneHef = cone.effectiveHef ?? a.hef;
+    const ccr = 1.5 * coneHef;
+    // Samme boltaksesentrerte projeksjon som i kapasitetsberegningen.
+    const srcs = res.tension.anchors.map(t => ({ x0: t.x, x1: t.x, y0: t.y, y1: t.y }));
+    const cm = coneMesh(m, srcs, ccr, coneHef);
     if (cm) {
       cm.renderOrder = 3;
       root.add(cm, outline(cm, 0xffa53d));

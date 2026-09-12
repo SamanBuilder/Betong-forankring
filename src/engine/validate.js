@@ -71,6 +71,9 @@ export function validate(m) {
 
   // --- forankringsende og stangtype -------------------------------------
   const sh = shaftProps(m), foot = anchorFoot(m);
+  if (foot.hasFoot && a.hef < hLoc && a.hef + foot.t >= hLoc)
+    err('Forankringsfoten går ned til eller gjennom betongens underkant. ' +
+        'h_ef måles til oversiden av foten; fottykkelsen kommer i tillegg.');
   if (!foot.hasFoot && !sh.bond)
     err('«Uten endemutter» krever heftforankring: velg kamstål eller ' +
         'gjengestang som stangtype, eller sett på endemutter/endeplate.');

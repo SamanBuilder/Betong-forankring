@@ -152,7 +152,7 @@ export const FIELDS = [
       l: m => m.anchors.endType === 'nut' || m.anchors.endType === 'plate'
         ? 'h_ef' : 'Innstøpt lengde',
       t: 'num', u: 'mm', step: 5,
-      hint: 'Med fot: dybden ned til underkant fot. Uten fot: hele den ' +
+      hint: 'Med fot: effektiv dybde til overkant fot (trykkflaten). Uten fot: hele den ' +
             'innstøpte lengda. Heftlengda l_b er den delen som faktisk ' +
             'utvikler heft – for gjengestang: den gjengede delen.' },
     // Bolter er sjelden gjenget helt opp: skaftet er glatt fra hodet, og

@@ -657,15 +657,26 @@ export function buildBendBars(m, r) {
       stations.set(key, st);
     }
 
+  // Stort nok mål til at fitInside finner den EKTE kantavstanden i denne
+  // retninga, ikke en verdi kunstig avkuttet ved lbd - ellers kan den
+  // oppnådde lengden aldri måle seg til mer enn det som kreves, og
+  // kontrollen kan aldri vise noen margin, bare akkurat 100 % eller verre.
+  const BIG = 1e6;
+
   const out = [];
   for (const st of stations.values()) {
     const at = v => ({ x: L.u.x * st.u + L.n.x * v, y: L.u.y * st.u + L.n.y * v });
     // Forankringa legges utenfor den ytterste bøylen stanga betjener, så langt
-    // betongen tillater.
-    const e0 = fitInside(m, t => at(st.vMin - t), lbd, ds);
-    const e1 = fitInside(m, t => at(st.vMax + t), lbd, ds);
+    // betongen tillater - trueE0/trueE1 er den faktiske kantavstanden, brukt
+    // til å VURDERE om det er nok. e0/e1 er det samme, avkuttet ved lbd, og
+    // brukes bare til å TEGNE stanga - den skal ikke detaljeres lenger enn
+    // nødvendig selv om betongen tillater mer.
+    const trueE0 = fitInside(m, t => at(st.vMin - t), BIG, ds);
+    const trueE1 = fitInside(m, t => at(st.vMax + t), BIG, ds);
+    const e0 = Math.min(trueE0, lbd), e1 = Math.min(trueE1, lbd);
     out.push({ ds, bendBar: true, u: st.u, lbd,
       anchorage: Math.min(e0, e1), anchorEnds: [e0, e1],
+      trueAnchorage: Math.min(trueE0, trueE1), trueAnchorEnds: [trueE0, trueE1],
       span: (st.vMax - st.vMin) + e0 + e1,
       paths: [{ points: [{ ...at(st.vMin - e0), z: -L.dBend },
                          { ...at(st.vMax + e1), z: -L.dBend }], closed: false }] });

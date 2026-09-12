@@ -84,18 +84,18 @@ export class ThreeDStage extends HTMLElement {
     // ACES trekker et lyst motiv mot grått.
     this.renderer.toneMapping = THREE.NeutralToneMapping;
     this.renderer.toneMappingExposure = 1.0;
-    // Ingen skyggelegging: modellen leses tydeligere uten, og skyggen av en
-    // flat betongkloss ga lite igjen for kostnaden.
-    this.renderer.shadowMap.enabled = false;
+    // Myke skygger gir dybde mellom betong, plate og forankringsdetaljer.
+    this.renderer.shadowMap.enabled = true;
+    this.renderer.shadowMap.type = THREE.PCFSoftShadowMap;
     root.appendChild(this.renderer.domElement);
 
     this.scene = new THREE.Scene();
-    this.scene.background = new THREE.Color(this.getAttribute('background') || '#efede8');
+    this.scene.background = new THREE.Color(this.getAttribute('background') || '#e9edef');
 
     // Miljøkart - uten dette blir metalliske materialer nesten svarte.
     const pmrem = new THREE.PMREMGenerator(this.renderer);
     this.scene.environment = pmrem.fromScene(new RoomEnvironment(), 0.04).texture;
-    this.scene.environmentIntensity = 0.35;
+    this.scene.environmentIntensity = 0.65;
     pmrem.dispose();
 
     // To kameraer som deler posisjon og retning. Perspektiv gir dybdefølelse;
@@ -116,6 +116,11 @@ export class ThreeDStage extends HTMLElement {
     this.scene.add(new THREE.HemisphereLight(0xffffff, 0xcfcabe, 0.95));
 
     this.key = new THREE.DirectionalLight(0xfff8ec, 1.55);
+    this.key.castShadow = true;
+    this.key.shadow.mapSize.set(2048, 2048);
+    this.key.shadow.normalBias = 0.8;
+    this.key.shadow.bias = -0.0001;
+    this.key.shadow.radius = 3;
     this.key.position.set(-1500, 2400, 1700);
     this.scene.add(this.key, this.key.target);
 
@@ -151,6 +156,7 @@ export class ThreeDStage extends HTMLElement {
 
     const tick = () => {
       this._raf = requestAnimationFrame(tick);
+      if (!this.getClientRects().length || document.hidden) return;
       this.controls.update();
       this.renderer.render(this.scene, this.camera);
       this._faceLabels();
@@ -409,21 +415,44 @@ export class ThreeDStage extends HTMLElement {
   }
 
   setContent(obj) {
+    const textures = new Set(), materials = new Set(), geometries = new Set();
     this.content.traverse(o => {
-      if (o.geometry) o.geometry.dispose();
-      if (o.material) [].concat(o.material).forEach(mm => mm.dispose());
+      if (o.geometry) geometries.add(o.geometry);
+      if (o.material) [].concat(o.material).forEach(mm => {
+        materials.add(mm);
+        for (const value of Object.values(mm)) if (value?.isTexture) textures.add(value);
+      });
     });
+    textures.forEach(t => t.dispose());
+    materials.forEach(m => m.dispose());
+    geometries.forEach(g => g.dispose());
     this.content.clear();
     this.content.add(obj);
     // Bare det oeverste leddet i hvert haandtak samles - resten av pila henger
     // under det og treffes likevel av straalen.
     this._handleObjs = [];
     obj.traverse(o => {
+      if (o.isMesh && o.material && !Array.isArray(o.material)) {
+        o.castShadow = !o.material.transparent && !o.userData.noExport;
+        o.receiveShadow = !o.material.transparent;
+      }
       if (!o.userData.handle) return;
       for (let q = o.parent; q; q = q.parent) if (q.userData.handle) return;
       this._handleObjs.push(o);
     });
+    this._updateLight();
     if (!this._framed) { this.frameAll(); this._framed = true; }
+  }
+
+  _updateLight() {
+    const box = this._bounds(), c = box.getCenter(new THREE.Vector3());
+    const r = Math.max(100, box.getSize(new THREE.Vector3()).length() / 2);
+    this.key.target.position.copy(c);
+    this.key.position.copy(c).add(new THREE.Vector3(-r * 1.8, r * 2, r * 1.4));
+    Object.assign(this.key.shadow.camera, {
+      left: -r, right: r, top: r, bottom: -r, near: 1, far: r * 6,
+    });
+    this.key.shadow.camera.updateProjectionMatrix();
   }
 
   _bounds() {
@@ -436,7 +465,9 @@ export class ThreeDStage extends HTMLElement {
     const box = this._bounds();
     const c = box.getCenter(new THREE.Vector3());
     const r = box.getSize(new THREE.Vector3()).length() / 2;
-    const dist = (r / Math.sin(THREE.MathUtils.degToRad(this.perspCam.fov) / 2)) * factor * 0.6;
+    const vertical = THREE.MathUtils.degToRad(this.perspCam.fov) / 2;
+    const halfFov = Math.min(vertical, Math.atan(Math.tan(vertical) * this.perspCam.aspect));
+    const dist = (r / Math.sin(halfFov)) * factor * 0.75;
     const dir = this._framed
       ? this.camera.position.clone().sub(this.controls.target).normalize()
       : new THREE.Vector3(1, 0.8, 1).normalize();   // fast startretning
@@ -449,7 +480,7 @@ export class ThreeDStage extends HTMLElement {
 
     // Parallellkameraet har ingen avstandsavhengighet, så «zoom» er høyden på
     // bildeutsnittet. Den settes av modellens størrelse, ikke av avstanden.
-    this._orthoSize = r * factor * 0.62;
+    this._orthoSize = r * factor * 0.72 / Math.min(1, this.perspCam.aspect);
     this.orthoCam.zoom = 1;
     this._resize();
 

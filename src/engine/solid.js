@@ -163,7 +163,7 @@ export function surfaceZ(m) {
   return sp.length ? rnd(Math.max(...sp.map(iv => iv[1]))) : 0;
 }
 
-// Dybdeintervallet en forankring staar i: fra underkant fot og opp til
+// Dybdeintervallet for kjegleberegningen: fra trykkflaten over foten og opp til
 // betongoverflata. Det er der betongen maa vaere hel for at kjegla skal ha noe
 // aa rive i.
 export function anchorDepth(m) {

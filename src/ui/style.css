@@ -3,25 +3,24 @@
    statuslinje nederst. Hver rute er avgrenset og har sin egen dokkede
    verktøylinje - ingenting flyter oppå 3D-visninga.
 
-   Lyst, varmt papir som grunn. Materialfargene i 3D er de virkelige; grønn,
-   gul og rød er reservert utnyttelse og brukes aldri som pynt.
+   Neutral surfaces and teal controls keep the model and results legible.
 --------------------------------------------------------------------------- */
 :root {
   color-scheme: light;
 
-  --bg:#efede8;
-  --panel:#faf9f6;
-  --panel2:#f3f1ec;
-  --panel3:#e8e5dd;
-  --line:#e2ded5;
-  --line2:#d2ccc0;
+  --bg:#f1f3f4;
+  --panel:#ffffff;
+  --panel2:#f6f7f8;
+  --panel3:#e8ebed;
+  --line:#e0e4e6;
+  --line2:#c6ced2;
 
-  --tx:#2b2924;
-  --tx2:#6a655b;
-  --tx3:#9a9488;
+  --tx:#22292d;
+  --tx2:#505c62;
+  --tx3:#68747a;
 
-  --acc:#8a7448;
-  --acc-soft:#efe7d4;
+  --acc:#087d78;
+  --acc-soft:#e4f3f1;
 
   --ok:#6e9e4f;
   --warn:#c79030;
@@ -30,16 +29,17 @@
   --sans:"IBM Plex Sans", ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
   --mono:"IBM Plex Mono", ui-monospace, SFMono-Regular, Menlo, monospace;
 
-  --h-top:42px;
+  --h-top:48px;
   --h-status:26px;
 
   /* Rutestørrelser. Endres av draghåndtakene, se initSplitters(). */
-  --w-left:300px;
-  --w-right:404px;
+  --w-left:270px;
+  --w-right:320px;
   --h-loads:206px;
 }
 
 * { box-sizing:border-box; }
+*, *::before, *::after { letter-spacing:0; }
 /* Ruter som skjules med `hidden` setter selv display (flex/grid), og da
    taper nettleserens egen [hidden]-regel. Denne holder den. */
 [hidden] { display:none !important; }
@@ -51,15 +51,14 @@ body { margin:0; height:100vh; overflow:hidden; background:var(--bg); color:var(
 @media (prefers-reduced-motion:reduce){ *,*::before,*::after{ transition:none!important; } }
 
 /* === rammeverk ========================================================== */
-.app { display:grid; grid-template-rows:var(--h-top) minmax(0,1fr) var(--h-status);
-       height:100vh; }
+.app { display:grid; grid-template-rows:auto minmax(0,1fr) auto;
+       height:100vh; height:100dvh; }
 
 .topbar {
-  display:flex; align-items:center; gap:14px; padding:0 14px;
+  display:flex; align-items:center; gap:10px; padding:7px 14px; min-height:var(--h-top); flex-wrap:wrap;
   background:var(--panel); border-bottom:1px solid var(--line);
 }
-.topbar .brand { font-size:12.5px; font-weight:600; letter-spacing:.11em;
-  text-transform:uppercase; margin-right:2px; }
+.topbar .brand { font-size:17px; font-weight:600; margin-right:8px; }
 .topbar .sep { width:1px; height:20px; background:var(--line); }
 .topbar .grow { flex:1 1 auto; }
 .topbar label { font-size:11px; color:var(--tx3); margin-right:5px; }
@@ -70,7 +69,7 @@ body { margin:0; height:100vh; overflow:hidden; background:var(--bg); color:var(
 .topbar .units { font:11px var(--mono); color:var(--tx3); }
 
 .body { display:grid;
-        grid-template-columns:var(--w-left) minmax(0,1fr) var(--w-right);
+        grid-template-columns:clamp(210px,var(--w-left),28%) minmax(0,1fr) clamp(260px,var(--w-right),30%);
         min-height:0; }
 
 .pane { position:relative; display:flex; flex-direction:column;
@@ -80,13 +79,13 @@ body { margin:0; height:100vh; overflow:hidden; background:var(--bg); color:var(
 
 .pane-head {
   flex:0 0 auto; display:flex; align-items:center; gap:8px;
-  padding:0 10px; height:34px;
+  padding:5px 10px; min-height:38px; flex-wrap:wrap;
   border-bottom:1px solid var(--line); background:var(--panel2);
 }
-.pane-head h2 { margin:0; font-size:10.5px; font-weight:600; letter-spacing:.11em;
+.pane-head h2 { margin:0; font-size:12px; font-weight:600; letter-spacing:0;
   text-transform:uppercase; color:var(--tx2); white-space:nowrap; }
 .pane-head .grow { flex:1 1 auto; }
-.pane-head .stat { font:11px var(--mono); color:var(--tx3); white-space:nowrap; }
+.pane-head .stat { font:11px var(--mono); color:var(--tx3); overflow-wrap:anywhere; }
 
 .pane-sub {
   flex:0 0 auto; display:flex; align-items:center; gap:12px; flex-wrap:wrap;
@@ -100,7 +99,7 @@ body { margin:0; height:100vh; overflow:hidden; background:var(--bg); color:var(
 .statusbar {
   display:flex; align-items:center; gap:0; padding:0 12px;
   background:var(--panel2); border-top:1px solid var(--line);
-  font:11px var(--mono); color:var(--tx2);
+  font:11px var(--mono); color:var(--tx2); min-height:var(--h-status); flex-wrap:wrap;
 }
 .statusbar span { padding:0 12px; border-right:1px solid var(--line); }
 .statusbar span:first-child { padding-left:0; }
@@ -109,7 +108,7 @@ body { margin:0; height:100vh; overflow:hidden; background:var(--bg); color:var(
 
 /* === knapper ============================================================ */
 .btn {
-  font:500 11px/1 var(--sans); padding:5px 9px; border-radius:5px; cursor:pointer;
+  font:500 12px/1.2 var(--sans); padding:5px 8px; min-height:28px; border-radius:4px; cursor:pointer;
   border:1px solid var(--line2); background:#fff; color:var(--tx2); white-space:nowrap;
   transition:color .12s, border-color .12s, background .12s;
 }
@@ -118,7 +117,50 @@ body { margin:0; height:100vh; overflow:hidden; background:var(--bg); color:var(
 .btn.ghost { border-color:transparent; background:none; }
 .btn.ghost:hover { border-color:var(--acc); }
 .btn.wide { width:100%; padding:9px; margin-top:20px; }
-.btn-row { display:flex; gap:4px; }
+.btn-row { display:flex; gap:4px; flex-wrap:wrap; min-width:0; }
+.btn:disabled { opacity:.45; cursor:default; }
+
+/* Disclosures stay anchored to the toolbar, including on narrow screens. */
+.menu { position:relative; min-width:0; }
+.menu summary { cursor:pointer; padding:5px 8px; min-height:28px;
+  font-size:12px; font-weight:500; color:var(--tx2); border:1px solid transparent;
+  border-radius:4px; white-space:nowrap; }
+.menu summary:hover, .menu[open] > summary {
+  color:var(--acc); background:var(--acc-soft); border-color:var(--line2); }
+.menu-content { position:absolute; top:calc(100% + 5px); left:0; z-index:20;
+  width:240px; max-width:calc(100vw - 24px); padding:12px;
+  background:var(--panel); border:1px solid var(--line2); border-radius:6px;
+  box-shadow:0 6px 20px #22292d1a; max-height:60dvh; overflow:auto; }
+.project-menu .menu-content, .camera-menu .menu-content,
+.export-menu .menu-content { left:auto; right:0; }
+.project-menu { margin-left:auto; }
+.actions { display:grid; gap:5px; }
+.actions .btn { text-align:left; white-space:normal; }
+.actions #reset { margin-top:5px; border-top-color:var(--line2); color:var(--bad); }
+.camera-menu .menu-content > .btn { margin-top:8px; }
+.view > .pane-head { position:relative; }
+.view > .pane-head .menu { position:static; }
+.view > .pane-head .menu-content { right:10px; }
+.export-menu .menu-content { width:160px; }
+#viewsub { position:relative; gap:4px; padding:4px 10px; }
+#viewsub .menu { position:static; }
+#viewsub .menu-content { top:100%; left:10px; }
+.render-control { display:flex; align-items:center; gap:6px; min-width:0; max-width:100%; }
+.render-control label { font-size:12px; color:var(--tx2); }
+.render-control select { width:124px; min-width:0; min-height:32px; padding:5px 6px;
+  border:1px solid var(--line2); border-radius:4px; background:var(--panel);
+  color:var(--tx); font:12px var(--sans); }
+.control-fields { display:grid; gap:8px; }
+.control-fields label { font-size:12px; color:var(--tx2); }
+.control-fields label:not(:first-child) { margin-top:5px; }
+.control-fields select { width:100%; min-height:32px; padding:5px 8px;
+  border:1px solid var(--line2); border-radius:4px; background:var(--panel);
+  color:var(--tx); font:12px var(--sans); }
+.control-fields input[type=range] { width:100%; min-width:0; margin:0;
+  min-height:28px; accent-color:var(--acc); }
+.layer-options { display:grid; gap:4px; }
+.layer-options .tog { min-height:28px; white-space:normal; font-size:12px; }
+.layer-options #legend { font:11px var(--mono); color:var(--tx2); }
 
 .tog { display:inline-flex; align-items:center; gap:5px; font-size:11px;
        color:var(--tx2); cursor:pointer; white-space:nowrap; }
@@ -142,13 +184,13 @@ body { margin:0; height:100vh; overflow:hidden; background:var(--bg); color:var(
 .groups button[aria-current="true"] i { color:var(--acc); }
 
 .form { padding:12px 14px 40px; }
-.form h3 { margin:0 0 11px; font-size:10px; font-weight:600; letter-spacing:.11em;
+.form h3 { margin:0 0 11px; font-size:11px; font-weight:600; letter-spacing:0;
   text-transform:uppercase; color:var(--tx3); padding-bottom:7px;
   border-bottom:1px solid var(--line); }
-.fld { display:grid; grid-template-columns:1fr 92px; align-items:center; gap:10px;
+.fld { display:grid; grid-template-columns:minmax(0,1fr) 92px; align-items:center; gap:10px;
        margin-bottom:7px; }
 .fld.bool { grid-template-columns:1fr auto; }
-.lbl { color:var(--tx2); font-size:12px; }
+.lbl { color:var(--tx2); font-size:12px; overflow-wrap:anywhere; }
 .lbl i { color:var(--tx3); font-style:normal; font-size:10.5px; }
 .fld input[type=number], .fld select {
   width:100%; background:#fff; color:var(--tx); border:1px solid var(--line2);
@@ -178,7 +220,7 @@ body { margin:0; height:100vh; overflow:hidden; background:var(--bg); color:var(
 .feat-head .kind { font:10.5px var(--mono); color:var(--tx3); margin-left:auto; }
 .feat-head .btn { padding:3px 7px; font-size:10.5px; }
 /* Flatenavnet er langt - snittfeltene får en bredere kolonne enn de vanlige. */
-.feat .fld { grid-template-columns:1fr 122px; }
+.feat .fld { grid-template-columns:minmax(0,1fr) minmax(80px,122px); }
 .feat .reinf-sum { padding:8px 0 0; margin-top:6px; border-top:1px solid var(--line); }
 .feat .reinf-sum .row { padding:3px 0; }
 
@@ -191,7 +233,7 @@ three-d-stage { position:absolute; inset:0; }
    innskrivingsfelt lagt oppå, slik at et mål kan skrives om rett i tegninga
    og holder samme skriftstørrelse uansett hvor du har zoomet. */
 .plan-wrap { flex:1 1 auto; position:relative; min-height:0; overflow:hidden;
-  background:#f6f4ef; }
+  background:var(--panel2); }
 .plan-canvas { position:absolute; inset:0; width:100%; height:100%;
   touch-action:none; outline:none; }
 .plan-dims { position:absolute; inset:0; overflow:hidden; pointer-events:none; }
@@ -200,7 +242,7 @@ three-d-stage { position:absolute; inset:0; }
   position:absolute; transform:translate(-50%, -50%); pointer-events:auto;
   display:inline-flex; align-items:center; gap:1px;
   font:400 11.5px/1.2 var(--mono); color:#14120f;
-  background:rgba(246,244,239,.9); border-radius:3px; padding:0 2px;
+  background:rgba(246,247,248,.9); border-radius:3px; padding:0 2px;
 }
 .plan-dim i { font-style:normal; color:var(--tx2); }
 .plan-dim input {
@@ -224,21 +266,44 @@ three-d-stage { position:absolute; inset:0; }
 .assump .k { color:var(--tx2); font-size:11.5px; }
 .assump .v { color:var(--tx); font:11px var(--mono); text-align:right; }
 
-.sect { margin:20px 14px 0; font-size:10px; font-weight:600; letter-spacing:.11em;
+.sect { margin:20px 14px 0; font-size:11px; font-weight:600; letter-spacing:0;
   text-transform:uppercase; color:var(--tx3); padding-bottom:6px;
   border-bottom:1px solid var(--line); }
 
-/* Strekk / skjær / samvirkning skal skille seg klart fra hverandre og fra de
-   øvrige overskriftene - tyngre skrift, litt større, og en fargeprikk som
-   går igjen på stolpene i utnyttelsessammendraget. */
-.sect.fam-tension, .sect.fam-shear, .sect.fam-combo { margin-top:24px; font-size:12px;
-  font-weight:700; letter-spacing:.04em; color:var(--tx); padding:0 0 8px 12px;
-  position:relative; border-bottom:1px solid var(--line2); }
-.sect.fam-tension::before, .sect.fam-shear::before, .sect.fam-combo::before {
-  content:''; position:absolute; left:0; top:1px; bottom:9px; width:3px; border-radius:2px; }
-.sect.fam-tension::before { background:#5b8def; }
-.sect.fam-shear::before { background:#e0a72f; }
-.sect.fam-combo::before { background:#8f6ae0; }
+/* Strekk / skjær / samvirkning: en rammet boks som HOLDER material-
+   gruppene sine, så det er synlig at betong/stål/armering hører til denne
+   familien - ikke bare en overskrift over dem. Ingen farge her: farge er
+   forbeholdt materialtypen (se .grp.cat-* under), så de to nivåene ikke
+   blandes sammen. Tydeligheten kommer av rammen og den tunge overskriften. */
+.fam-box { margin:18px 14px 0; padding:4px 10px 12px; border:1px solid var(--line2);
+  border-radius:10px; background:var(--panel2); }
+.fam-box + .fam-box { margin-top:16px; }
+.fam-head { margin:0; padding:12px 2px 10px; font-size:13px; font-weight:800;
+  letter-spacing:.3px; text-transform:uppercase; color:var(--tx);
+  border-bottom:1px solid var(--line2); }
+
+/* Undergruppe (betong/stål/armering) inni Strekk/Skjær: lukkbar boks med
+   tydelig fargekodet kant pr. type, så det er lett å se hva som hører til
+   hvor - også når gruppa er lukket, siden verste utnyttelse står i hodet. */
+.grp { margin:10px 0 0; border:1px solid var(--line2); border-left-width:4px;
+  border-radius:8px; overflow:hidden; background:var(--panel); }
+.grp.cat-conc  { border-left-color:#5b8def; }
+.grp.cat-steel { border-left-color:#e0a72f; }
+.grp.cat-reinf { border-left-color:#3fae7b; }
+.grp-head { display:flex; align-items:center; gap:8px; padding:9px 12px;
+  cursor:pointer; background:var(--panel2); list-style:none; user-select:none; }
+.grp-head::-webkit-details-marker { display:none; }
+.grp-head::marker { content:''; }
+.grp-head .name { font-size:11.5px; font-weight:700; text-transform:uppercase;
+  letter-spacing:.2px; color:var(--tx); }
+.grp-head .count { font:500 10.5px var(--mono); color:var(--tx3);
+  background:var(--panel3); border-radius:8px; padding:1px 6px; }
+.grp-head .pc { margin-left:auto; font:600 12px var(--mono); }
+.grp-head::after { content:'▸'; margin-left:2px; color:var(--tx3); font-size:10px;
+  transition:transform .15s; }
+.grp[open] > .grp-head::after { transform:rotate(90deg); }
+.grp .chk { border-bottom:1px solid var(--line); }
+.grp .chk:last-child { border-bottom:0; }
 
 /* Utnyttelsen skal kunne leses på avstand: tykk stolpe, tydelig prosent. */
 .chk { display:block; width:100%; text-align:left; border:0; background:none;
@@ -267,7 +332,7 @@ three-d-stage { position:absolute; inset:0; }
 
 table.anchors { width:100%; border-collapse:collapse; font-size:11.5px; }
 table.anchors th { text-align:right; color:var(--tx3); font-weight:500; font-size:9.5px;
-  letter-spacing:.08em; text-transform:uppercase; padding:7px 0 6px;
+  letter-spacing:0; text-transform:uppercase; padding:7px 0 6px;
   border-bottom:1px solid var(--line); }
 table.anchors th:first-child { text-align:left; }
 table.anchors td { padding:5px 0; border-bottom:1px solid var(--line);
@@ -280,18 +345,18 @@ table.anchors td:first-child { text-align:left; color:var(--tx2); }
 .sheet { padding:20px 26px 60px; max-width:900px; }
 .sheet .hdr { display:flex; justify-content:space-between; align-items:baseline;
   gap:16px; padding-bottom:14px; border-bottom:2px solid var(--line2); }
-.sheet .hdr h2 { margin:0; font-size:17px; font-weight:600; letter-spacing:-.01em; }
+.sheet .hdr h2 { margin:0; font-size:17px; font-weight:600; letter-spacing:0; }
 .sheet .hdr .ref { font:11px var(--mono); color:var(--tx2); text-align:right; }
 .sheet .verdict { display:flex; align-items:center; gap:14px; margin:16px 0 4px; }
 .sheet .verdict .track { flex:1 1 auto; height:14px; margin:0; }
 .sheet .verdict .pc { font:600 20px var(--mono); font-variant-numeric:tabular-nums; }
 
-.sheet h3 { margin:26px 0 10px; font-size:10px; font-weight:600; letter-spacing:.11em;
+.sheet h3 { margin:26px 0 10px; font-size:11px; font-weight:600; letter-spacing:0;
   text-transform:uppercase; color:var(--tx3); padding-bottom:6px;
   border-bottom:1px solid var(--line); }
 
 table.io { width:100%; border-collapse:collapse; }
-table.io th { font-size:9.5px; letter-spacing:.08em; text-transform:uppercase;
+table.io th { font-size:10px; letter-spacing:0; text-transform:uppercase;
   color:var(--tx3); font-weight:500; text-align:left; padding:0 10px 6px 0; }
 table.io td { padding:5px 10px 5px 0; border-top:1px solid var(--line);
   font-size:12px; vertical-align:baseline; }
@@ -406,17 +471,45 @@ body.rs-col, body.rs-col * { cursor:col-resize !important; }
 body.rs-row, body.rs-row * { cursor:row-resize !important; }
 body.rs-col, body.rs-row { user-select:none; }
 
-@media (max-width:1240px){ .body{ grid-template-columns:var(--w-left) minmax(0,1fr) var(--w-right); } }
 @media (max-width:1040px){
   body{ overflow:auto; }
-  .app{ grid-template-rows:var(--h-top) auto var(--h-status);
-        height:auto; min-height:100vh; }
-  .pane.view > .loads{ flex:0 0 auto; min-height:var(--h-loads); }
-  .body{ grid-template-columns:minmax(0,1fr); }
+  .app{ grid-template-rows:auto auto auto; height:auto; min-height:100dvh; }
+  .body{ grid-template-columns:minmax(0,1fr) minmax(0,1fr); align-items:start; }
+  .pane.view{ grid-column:1 / -1; grid-row:1; }
   .split{ display:none; }
-  .pane + .pane { border-left:0; border-top:1px solid var(--line); }
-  .pane.view .stage-wrap { height:56vh; }
-  .pane.inputs .pane-body, .pane.results .pane-body { overflow:visible; }
+  .pane { border-top:1px solid var(--line); }
+  .pane.view { border-left:0; }
+  .pane.view .stage-wrap, .pane.view .plan-wrap { flex:none; height:56vh; min-height:320px; }
+  .pane.view #wrap-calc { flex:none; max-height:65vh; }
+  .pane.view > .loads { flex:none; height:206px; }
+  .pane.inputs .pane-body, .pane.results .pane-body { overflow:auto; }
+  .statusbar { padding:8px 12px; row-gap:6px; }
+}
+@media (max-width:600px){
+  .body { grid-template-columns:minmax(0,1fr); }
+  .pane + .pane { border-left:0; }
+  .topbar { gap:6px; padding:8px 10px; }
+  .topbar .brand { flex:1; }
+  .topbar .sep, .topbar .units, .topbar > .grow { display:none; }
+  .topbar > label { order:2; margin:0; }
+  .topbar > select { order:3; flex:1; min-width:0; min-height:34px; }
+  .project-menu { margin-left:0; }
+  .topbar::after { content:''; flex-basis:100%; order:1; }
+  .btn, .menu summary { min-height:36px; }
+  .pane-head { gap:4px; padding:5px 8px; }
+  .pane.view > .pane-head > .grow { display:none; }
+  .camera-menu { margin-left:auto; }
+  .groups { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); }
+  .groups button { min-height:36px; min-width:0; flex-wrap:wrap; gap:3px 6px;
+    overflow-wrap:anywhere; white-space:normal; }
+  .groups button > * { min-width:0; max-width:100%; overflow-wrap:anywhere; }
+  .groups button i { flex:0 1 auto; white-space:normal; }
+  .menu summary { max-width:100%; white-space:normal; overflow-wrap:anywhere; }
+  .render-control select { min-height:36px; }
+  .fld input[type=number], .fld select { min-height:36px; }
+  .sheet { padding:16px 12px 30px; }
+  .sheet .hdr, .step .l1 { flex-wrap:wrap; }
+  .statusbar .grow { display:none; }
 }
 
 /* === påskrifter i modellen ===============================================
@@ -474,7 +567,7 @@ table.combos { width:100%; border-collapse:collapse; font-size:12px; }
 table.combos thead th {
   position:sticky; top:0; z-index:1; background:var(--panel);
   text-align:right; padding:8px 5px 6px; white-space:nowrap;
-  font:500 9.5px/1.4 var(--sans); letter-spacing:.08em; text-transform:uppercase;
+  font:500 10px/1.4 var(--sans); letter-spacing:0; text-transform:uppercase;
   color:var(--tx3); border-bottom:1px solid var(--line2);
 }
 table.combos thead th.l { text-align:left; }

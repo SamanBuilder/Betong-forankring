@@ -442,7 +442,7 @@ export function defaultModel() {
       k: 8,                 // hode-/mutterhøyde
       up: 40,               // felles endeplate: utstikk utenfor ytterste bolt
       tp: 10,               //                  tykkelse
-      hef: 150,             // forankringsdybde til underkant fot; uten fot er
+      hef: 150,             // effektiv dybde til overkant fot (trykkflaten); uten fot er
                             // dette den innstøpte lengda av stanga
       lSmooth: 0,           // glatt skaft ned fra betongoverflata før gjengene
                             // begynner (bare gjengestang/bolt)

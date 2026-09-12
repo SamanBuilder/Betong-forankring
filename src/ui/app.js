@@ -27,7 +27,7 @@ import '../viz/three-d-stage.js';
 const $ = s => document.querySelector(s);
 const el = (t, c, h) => { const e = document.createElement(t); if (c) e.className = c;
                           if (h != null) e.innerHTML = h; return e; };
-const pct = u => Number.isFinite(u) ? Math.round(u * 100) + ' %' : '–';
+const pct = u => u === Infinity ? '∞ %' : Number.isFinite(u) ? Math.round(u * 100) + ' %' : '–';
 const esc = s => String(s).replace(/[&<>]/g, ch => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' }[ch]));
 
 const MOUNT_TXT = { direct: 'direkte mot betong', grout: 'undergyting',
@@ -37,14 +37,19 @@ const END_TXT = { nut: 'endemutter', plate: 'felles endeplate',
                   hook: 'endekrok', none: 'uten endemutter (heft)' };
 
 let model = defaultModel();
-let showOpts = { cone: true, wedge: true, loads: true, labels: false, concrete: true,
-                 rebar: true, surfaceMesh: true, dims: true,
+let showOpts = { cone: false, wedge: false, loads: false, labels: false, concrete: true,
+                 rebar: true, surfaceMesh: true, dims: false,
+                 renderMode: 'cutaway', concreteOpacity: 0.28, sectionAxis: 'x', sectionPosition: 50,
                  colorMode: 'material', shape: null };
 let hudItems = [];        // {el, pos, quat, scale} – sendes til stage.setLabels
 let activeGroup = 'Betongdel';
 let activeCheck = null;
 let viewTab = '3d';
 let resultsTab = 'summary';
+// Åpen/lukket pr. undergruppe (fam:kategori) i utnyttelseslista - resultatet
+// bygges helt om ved hver kontrollrad-klikk, så tilstanden må holdes for seg
+// og gjenopprettes, ellers slår et klikk alle gruppene opp igjen.
+const groupOpen = {};
 
 // Kort sammendrag pr. gruppe, så velgeren viser tilstanden uten at du åpner den.
 const SUMMARY = {
@@ -363,17 +368,25 @@ function field(f) {
 }
 
 // === resultat =============================================================
-const utilCss = u => !Number.isFinite(u) ? 'var(--tx3)'
+const utilCss = u => u === Infinity ? 'var(--bad)' : !Number.isFinite(u) ? 'var(--tx3)'
   : u > 1 ? 'var(--bad)' : u > 0.7 ? 'var(--warn)' : 'var(--ok)';
 
 const family = c => c.id.startsWith('IA') ? 'Samvirkning'
   : c.id.startsWith('N') ? 'Strekk' : 'Skjær';
 
-const applicable = c => c.expr ? Number.isFinite(c.util)
-  : Number.isFinite(c.util) && Number.isFinite(c.NRd);
+// Undergruppering innad i Strekk/Skjær: betong, stål eller (tilleggs-)armering.
+// Rekkefølgen her er vist-rekkefølgen i lista.
+const CATEGORY_ORDER = ['Betong', 'Stål', 'Armering'];
+const category = c => /-sre-/.test(c.id) ? 'Armering'
+  : c.id === 'N-steel' || c.id === 'V-steel' || c.id === 'V-bend' ? 'Stål'
+  : 'Betong';
+const CAT_CLS = { 'Betong': 'conc', 'Stål': 'steel', 'Armering': 'reinf' };
+
+const applicable = c => c.expr ? !Number.isNaN(c.util)
+  : !Number.isNaN(c.util) && Number.isFinite(c.NRd);
 
 function bar(u, cls = '') {
-  const w = Number.isFinite(u) ? Math.min(100, u * 100) : 0;
+  const w = u === Infinity ? 100 : Number.isFinite(u) ? Math.min(100, u * 100) : 0;
   return `<div class="track ${u > 1 ? 'full' : ''} ${cls}">` +
          `<i style="width:${w}%;background:${utilCss(u)}"></i></div>`;
 }
@@ -407,7 +420,11 @@ function setResultsTab(t) {
 function renderResults(v) {
   const m = model, a = m.anchors, g = v.gamma;
   const foot = anchorFoot(m);
-  $('#verdict').innerHTML = Number.isFinite(v.maxUtil)
+  $('#verdict').innerHTML = !v.res.converged || v.issues.some(i => i.level === 'error')
+    ? '<span style="color:var(--bad)">Ugyldig beregning</span>'
+    : v.bearing && !v.bearing.ok
+    ? '<span style="color:var(--bad)">Kontakttrykk overskredet</span>'
+    : v.governing
     ? `<span style="color:${utilCss(v.maxUtil)}">maks ${pct(v.maxUtil)}</span> · ${esc(v.governing.mode)}`
     : 'ingen kontroller';
 
@@ -483,8 +500,46 @@ function renderResults(v) {
     const list = v.checks.filter(c => family(c) === fam)
       .sort((x, y) => (applicable(y) ? y.util : -1) - (applicable(x) ? x.util : -1));
     if (!list.length) continue;
-    util.appendChild(el('h3', `sect fam-${family2cls(fam)}`, fam));
-    for (const c of list) util.appendChild(checkRow(c));
+    // Betong/stål/armering-boksene ligger INNI denne boksen, så det er
+    // synlig at de hører til Strekk/Skjær - ikke bare en overskrift over dem.
+    // Fargen skal bare skille materialene fra hverandre, så denne boksen er
+    // med vilje fargeløs.
+    const famBox = el('section', `fam-box fam-${family2cls(fam)}`);
+    famBox.appendChild(el('h3', 'fam-head', fam));
+    // Samvirkning har bare ett par kontroller og skiller ikke betong/stål/
+    // armering fra hverandre - undergruppert blir den bare tre ett-linjers
+    // overskrifter for like mange rader.
+    if (fam === 'Samvirkning') {
+      for (const c of list) famBox.appendChild(checkRow(c));
+      util.appendChild(famBox);
+      continue;
+    }
+    for (const cat of CATEGORY_ORDER) {
+      const sub = list.filter(c => category(c) === cat);
+      if (!sub.length) continue;
+      // Åpne/lukkbar gruppe pr. kontrolltype - <details> gir det gratis.
+      // Resultatet bygges om ved hvert klikk på en kontrollrad et annet sted
+      // i lista, så tilstanden må huskes i groupOpen og settes tilbake her -
+      // ellers hopper alle gruppene opp igjen for hver rad brukeren åpner.
+      // Verste utnyttelse i gruppa vises i overskriften, så den er lesbar
+      // lukket også.
+      const worst = sub.reduce((a, b) =>
+        (applicable(b) && (!a || b.util > a.util) ? b : a), null);
+      const key = `${fam}:${cat}`;
+      const grp = el('details', `grp cat-${CAT_CLS[cat]}`);
+      grp.open = groupOpen[key] ?? true;
+      grp.addEventListener('toggle', () => { groupOpen[key] = grp.open; });
+      const worstTxt = worst
+        ? worst.binary ? (worst.util > 1 ? 'Ikke OK' : 'OK') : pct(worst.util) : '';
+      const head = el('summary', 'grp-head',
+        `<span class="name">${esc(cat)}</span>` +
+        `<span class="count">${sub.length}</span>` +
+        (worst ? `<span class="pc" style="color:${utilCss(worst.util)}">${worstTxt}</span>` : ''));
+      grp.appendChild(head);
+      for (const c of sub) grp.appendChild(checkRow(c));
+      famBox.appendChild(grp);
+    }
+    util.appendChild(famBox);
   }
 
   // Betongbrudd som tilleggsarmering har erstattet som dimensjonerende - vist
@@ -507,17 +562,24 @@ function renderResults(v) {
 const FAM_CLS = { 'Strekk': 'tension', 'Skjær': 'shear', 'Samvirkning': 'combo' };
 function family2cls(fam) { return FAM_CLS[fam] || ''; }
 
+// Noen kontroller er detaljeringssjekker - enten er det nok av noe (plass,
+// forankring) eller ikke, ikke en gradert utnyttelse med margin å vurdere.
+// De vises som OK/Ikke OK i stedet for prosent og stolpe, markert med
+// c.binary på kontrollobjektet.
 function checkRow(c) {
   const ok = applicable(c);
+  const bin = !!c.binary;
   const row = el('button', 'chk' + (ok ? (c.util > 1 ? ' over' : '') : ' na'));
   row.setAttribute('aria-current', String(activeCheck === c.id));
   const sub = !ok ? esc(c.note || 'Ikke aktuell for denne geometrien')
     : c.expr ? `<b>${n(c.util, 2)}</b> / 1,00 · ${esc(c.expr)}`
     : `<b>${kN(c.NEd)} kN</b> / ${kN(c.NRd)} kN · pkt. ${esc(c.clause)}`;
+  const pc = !ok ? '–' : bin ? (c.util > 1 ? 'Ikke OK' : 'OK') : pct(c.util);
+  const pcStyle = bin && ok ? ` style="color:${c.util > 1 ? 'var(--bad)' : 'var(--ok)'}"` : '';
   row.innerHTML =
     `<div class="top"><span class="name">${esc(c.mode)}</span>` +
-    `<span class="pc">${ok ? pct(c.util) : '–'}</span></div>` +
-    (ok ? bar(c.util) : '<div style="height:8px"></div>') +
+    `<span class="pc"${pcStyle}>${pc}</span></div>` +
+    (ok && !bin ? bar(c.util) : '<div style="height:8px"></div>') +
     `<div class="sub">${sub}</div>`;
   row.onclick = () => { activeCheck = c.id; setViewTab('calc'); refresh(false); };
   return row;
@@ -610,7 +672,7 @@ function utilForCombos() {
 function paintComboUtils(res) {
   let govId = null, govU = -1;
   for (const [id, v] of res)
-    if (v && Number.isFinite(v.maxUtil) && v.maxUtil > govU) { govU = v.maxUtil; govId = id; }
+    if (v && v.maxUtil > govU) { govU = v.maxUtil; govId = id; }
 
   for (const td of document.querySelectorAll('#combos td[data-combo]')) {
     const v = res.get(td.dataset.combo);
@@ -621,8 +683,9 @@ function paintComboUtils(res) {
       continue;
     }
     span.className = 'util';
-    span.style.color = utilCss(v.maxUtil);
-    span.textContent = pct(v.maxUtil);
+    const invalid = !v.res.converged || v.issues.some(i => i.level === 'error');
+    span.style.color = invalid || (v.bearing && !v.bearing.ok) ? 'var(--bad)' : utilCss(v.maxUtil);
+    span.textContent = invalid ? 'Ugyldig' : v.bearing && !v.bearing.ok ? 'Trykk > 100 %' : pct(v.maxUtil);
     span.title = v.governing?.mode ?? '';
   }
   const gov = model.combos.find(c => c.id === govId);
@@ -779,7 +842,6 @@ function setViewTab(t) {
   for (const b of document.querySelectorAll('#viewbtns .btn, #exportbtns .btn'))
     b.disabled = t !== '3d';
   $('#ortho').disabled = t !== '3d';
-  if (t === '3d') $('#stage').frameAll?.();
   // Lerretet har null størrelse mens ruta er skjult, så tegninga må tas om
   // igjen - og passes inn første gang den vises.
   if (t === 'plan' && planner) requestAnimationFrame(() => planner.draw());
@@ -859,6 +921,17 @@ function initSplitters() {
 
 // === oppdatering ==========================================================
 let t0;
+let sceneResult;
+function refreshScene() {
+  if (!sceneResult) return;
+  clearTimeout(t0);
+  t0 = setTimeout(() => {
+    const { root, hud, hudScale } = buildScene(sceneResult, showOpts);
+    $('#stage').setContent(root);
+    buildHud(hud, hudScale);
+  }, 30);
+}
+
 function refresh(rebuildForm, rebuildCombos) {
   sync(model);
   // Regelverket kan velges to steder - i verktøylinja og i skjemaet. Holder
@@ -867,6 +940,7 @@ function refresh(rebuildForm, rebuildCombos) {
   if (rebuildForm) { renderGroups(); renderForm(); } else { renderGroups(); }
   if (rebuildCombos) renderCombos();
   const v = verify(model);
+  sceneResult = v;
   window.__v = v;               // for feilsøking i konsollet
   window.__m = model;
   updateReinforcementStatus(v);
@@ -876,22 +950,52 @@ function refresh(rebuildForm, rebuildCombos) {
   $('#st-anchors').textContent = `${model.anchors.nx * model.anchors.ny} bolter`;
   $('#st-solver').textContent = v.res.converged
     ? `løst · ${v.res.iter} iterasjoner` : 'løseren konvergerte ikke';
-  $('#st-max').innerHTML = Number.isFinite(v.maxUtil)
+  $('#st-max').innerHTML = !v.res.converged || v.issues.some(i => i.level === 'error')
+    ? '<span style="color:var(--bad)">Ugyldig beregning</span>'
+    : v.bearing && !v.bearing.ok ? '<span style="color:var(--bad)">Kontakttrykk overskredet</span>'
+    : v.governing
     ? `maks utnyttelse <span style="color:${utilCss(v.maxUtil)}">${pct(v.maxUtil)}</span>` : '–';
   if (planner && viewTab === 'plan') planner.draw();
-  clearTimeout(t0);
-  t0 = setTimeout(() => {
-    const { root, hud, hudScale } = buildScene(v, showOpts);
-    $('#stage').setContent(root);
-    buildHud(hud, hudScale);
-  }, 30);
+  refreshScene();
 }
 
 export function boot() {
   for (const cb of document.querySelectorAll('[data-show]')) {
     cb.checked = showOpts[cb.dataset.show];
-    cb.onchange = () => { showOpts[cb.dataset.show] = cb.checked; refresh(false); };
+    cb.onchange = () => { showOpts[cb.dataset.show] = cb.checked; refreshScene(); };
   }
+  const syncViewControls = () => {
+    const mode = $('#render-mode');
+    mode.value = showOpts.renderMode;
+    $('#concrete-opacity').disabled = showOpts.renderMode !== 'xray';
+    $('#section-axis').disabled = showOpts.renderMode !== 'cutaway';
+    $('#section-position').disabled = showOpts.renderMode !== 'cutaway';
+  };
+  $('#render-mode').onchange = e => {
+    showOpts.renderMode = e.target.value;
+    syncViewControls(); refreshScene();
+  };
+  $('#concrete-opacity').value = showOpts.concreteOpacity * 100;
+  $('#concrete-opacity').oninput = e => {
+    showOpts.concreteOpacity = Number(e.target.value) / 100; refreshScene();
+  };
+  $('#section-axis').onchange = e => { showOpts.sectionAxis = e.target.value; refreshScene(); };
+  $('#section-position').oninput = e => {
+    showOpts.sectionPosition = Number(e.target.value); refreshScene();
+  };
+  syncViewControls();
+  // Bare verktøylinjas nedtrekksmenyer (.menu) skal lukkes av utenfor-klikk/
+  // Escape - de fungerer som popovere. Utnyttelsesgruppene (.grp) er faste
+  // seksjoner brukeren åpner/lukker selv, og skal stå slik til neste klikk
+  // på selve overskriften, uansett hva ellers på sida blir klikket.
+  document.addEventListener('keydown', e => {
+    if (e.key === 'Escape') document.querySelectorAll('details.menu[open]').forEach(d => d.open = false);
+  });
+  document.addEventListener('click', e => {
+    document.querySelectorAll('details.menu[open]').forEach(d => {
+      if (!d.contains(e.target)) d.open = false;
+    });
+  });
   const cm = $('#colormode');
   cm.checked = false;
   cm.onchange = () => {
@@ -899,7 +1003,7 @@ export function boot() {
     const l = $('#legend');
     l.hidden = !cm.checked;
     l.innerHTML = '&lt; 70 % · 70–100 % · &gt; 100 %';
-    refresh(false);
+    refreshScene();
   };
   for (const b of document.querySelectorAll('#viewbtns .btn'))
     b.onclick = () => b.dataset.view === 'fit'

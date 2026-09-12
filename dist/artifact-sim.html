@@ -21,25 +21,24 @@
    statuslinje nederst. Hver rute er avgrenset og har sin egen dokkede
    verktøylinje - ingenting flyter oppå 3D-visninga.
 
-   Lyst, varmt papir som grunn. Materialfargene i 3D er de virkelige; grønn,
-   gul og rød er reservert utnyttelse og brukes aldri som pynt.
+   Neutral surfaces and teal controls keep the model and results legible.
 --------------------------------------------------------------------------- */
 :root {
   color-scheme: light;
 
-  --bg:#efede8;
-  --panel:#faf9f6;
-  --panel2:#f3f1ec;
-  --panel3:#e8e5dd;
-  --line:#e2ded5;
-  --line2:#d2ccc0;
+  --bg:#f1f3f4;
+  --panel:#ffffff;
+  --panel2:#f6f7f8;
+  --panel3:#e8ebed;
+  --line:#e0e4e6;
+  --line2:#c6ced2;
 
-  --tx:#2b2924;
-  --tx2:#6a655b;
-  --tx3:#9a9488;
+  --tx:#22292d;
+  --tx2:#505c62;
+  --tx3:#68747a;
 
-  --acc:#8a7448;
-  --acc-soft:#efe7d4;
+  --acc:#087d78;
+  --acc-soft:#e4f3f1;
 
   --ok:#6e9e4f;
   --warn:#c79030;
@@ -48,16 +47,17 @@
   --sans:"IBM Plex Sans", ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
   --mono:"IBM Plex Mono", ui-monospace, SFMono-Regular, Menlo, monospace;
 
-  --h-top:42px;
+  --h-top:48px;
   --h-status:26px;
 
   /* Rutestørrelser. Endres av draghåndtakene, se initSplitters(). */
-  --w-left:300px;
-  --w-right:404px;
+  --w-left:270px;
+  --w-right:320px;
   --h-loads:206px;
 }
 
 * { box-sizing:border-box; }
+*, *::before, *::after { letter-spacing:0; }
 /* Ruter som skjules med `hidden` setter selv display (flex/grid), og da
    taper nettleserens egen [hidden]-regel. Denne holder den. */
 [hidden] { display:none !important; }
@@ -69,15 +69,14 @@ body { margin:0; height:100vh; overflow:hidden; background:var(--bg); color:var(
 @media (prefers-reduced-motion:reduce){ *,*::before,*::after{ transition:none!important; } }
 
 /* === rammeverk ========================================================== */
-.app { display:grid; grid-template-rows:var(--h-top) minmax(0,1fr) var(--h-status);
-       height:100vh; }
+.app { display:grid; grid-template-rows:auto minmax(0,1fr) auto;
+       height:100vh; height:100dvh; }
 
 .topbar {
-  display:flex; align-items:center; gap:14px; padding:0 14px;
+  display:flex; align-items:center; gap:10px; padding:7px 14px; min-height:var(--h-top); flex-wrap:wrap;
   background:var(--panel); border-bottom:1px solid var(--line);
 }
-.topbar .brand { font-size:12.5px; font-weight:600; letter-spacing:.11em;
-  text-transform:uppercase; margin-right:2px; }
+.topbar .brand { font-size:17px; font-weight:600; margin-right:8px; }
 .topbar .sep { width:1px; height:20px; background:var(--line); }
 .topbar .grow { flex:1 1 auto; }
 .topbar label { font-size:11px; color:var(--tx3); margin-right:5px; }
@@ -88,7 +87,7 @@ body { margin:0; height:100vh; overflow:hidden; background:var(--bg); color:var(
 .topbar .units { font:11px var(--mono); color:var(--tx3); }
 
 .body { display:grid;
-        grid-template-columns:var(--w-left) minmax(0,1fr) var(--w-right);
+        grid-template-columns:clamp(210px,var(--w-left),28%) minmax(0,1fr) clamp(260px,var(--w-right),30%);
         min-height:0; }
 
 .pane { position:relative; display:flex; flex-direction:column;
@@ -98,13 +97,13 @@ body { margin:0; height:100vh; overflow:hidden; background:var(--bg); color:var(
 
 .pane-head {
   flex:0 0 auto; display:flex; align-items:center; gap:8px;
-  padding:0 10px; height:34px;
+  padding:5px 10px; min-height:38px; flex-wrap:wrap;
   border-bottom:1px solid var(--line); background:var(--panel2);
 }
-.pane-head h2 { margin:0; font-size:10.5px; font-weight:600; letter-spacing:.11em;
+.pane-head h2 { margin:0; font-size:12px; font-weight:600; letter-spacing:0;
   text-transform:uppercase; color:var(--tx2); white-space:nowrap; }
 .pane-head .grow { flex:1 1 auto; }
-.pane-head .stat { font:11px var(--mono); color:var(--tx3); white-space:nowrap; }
+.pane-head .stat { font:11px var(--mono); color:var(--tx3); overflow-wrap:anywhere; }
 
 .pane-sub {
   flex:0 0 auto; display:flex; align-items:center; gap:12px; flex-wrap:wrap;
@@ -118,7 +117,7 @@ body { margin:0; height:100vh; overflow:hidden; background:var(--bg); color:var(
 .statusbar {
   display:flex; align-items:center; gap:0; padding:0 12px;
   background:var(--panel2); border-top:1px solid var(--line);
-  font:11px var(--mono); color:var(--tx2);
+  font:11px var(--mono); color:var(--tx2); min-height:var(--h-status); flex-wrap:wrap;
 }
 .statusbar span { padding:0 12px; border-right:1px solid var(--line); }
 .statusbar span:first-child { padding-left:0; }
@@ -127,7 +126,7 @@ body { margin:0; height:100vh; overflow:hidden; background:var(--bg); color:var(
 
 /* === knapper ============================================================ */
 .btn {
-  font:500 11px/1 var(--sans); padding:5px 9px; border-radius:5px; cursor:pointer;
+  font:500 12px/1.2 var(--sans); padding:5px 8px; min-height:28px; border-radius:4px; cursor:pointer;
   border:1px solid var(--line2); background:#fff; color:var(--tx2); white-space:nowrap;
   transition:color .12s, border-color .12s, background .12s;
 }
@@ -136,7 +135,50 @@ body { margin:0; height:100vh; overflow:hidden; background:var(--bg); color:var(
 .btn.ghost { border-color:transparent; background:none; }
 .btn.ghost:hover { border-color:var(--acc); }
 .btn.wide { width:100%; padding:9px; margin-top:20px; }
-.btn-row { display:flex; gap:4px; }
+.btn-row { display:flex; gap:4px; flex-wrap:wrap; min-width:0; }
+.btn:disabled { opacity:.45; cursor:default; }
+
+/* Disclosures stay anchored to the toolbar, including on narrow screens. */
+.menu { position:relative; min-width:0; }
+.menu summary { cursor:pointer; padding:5px 8px; min-height:28px;
+  font-size:12px; font-weight:500; color:var(--tx2); border:1px solid transparent;
+  border-radius:4px; white-space:nowrap; }
+.menu summary:hover, .menu[open] > summary {
+  color:var(--acc); background:var(--acc-soft); border-color:var(--line2); }
+.menu-content { position:absolute; top:calc(100% + 5px); left:0; z-index:20;
+  width:240px; max-width:calc(100vw - 24px); padding:12px;
+  background:var(--panel); border:1px solid var(--line2); border-radius:6px;
+  box-shadow:0 6px 20px #22292d1a; max-height:60dvh; overflow:auto; }
+.project-menu .menu-content, .camera-menu .menu-content,
+.export-menu .menu-content { left:auto; right:0; }
+.project-menu { margin-left:auto; }
+.actions { display:grid; gap:5px; }
+.actions .btn { text-align:left; white-space:normal; }
+.actions #reset { margin-top:5px; border-top-color:var(--line2); color:var(--bad); }
+.camera-menu .menu-content > .btn { margin-top:8px; }
+.view > .pane-head { position:relative; }
+.view > .pane-head .menu { position:static; }
+.view > .pane-head .menu-content { right:10px; }
+.export-menu .menu-content { width:160px; }
+#viewsub { position:relative; gap:4px; padding:4px 10px; }
+#viewsub .menu { position:static; }
+#viewsub .menu-content { top:100%; left:10px; }
+.render-control { display:flex; align-items:center; gap:6px; min-width:0; max-width:100%; }
+.render-control label { font-size:12px; color:var(--tx2); }
+.render-control select { width:124px; min-width:0; min-height:32px; padding:5px 6px;
+  border:1px solid var(--line2); border-radius:4px; background:var(--panel);
+  color:var(--tx); font:12px var(--sans); }
+.control-fields { display:grid; gap:8px; }
+.control-fields label { font-size:12px; color:var(--tx2); }
+.control-fields label:not(:first-child) { margin-top:5px; }
+.control-fields select { width:100%; min-height:32px; padding:5px 8px;
+  border:1px solid var(--line2); border-radius:4px; background:var(--panel);
+  color:var(--tx); font:12px var(--sans); }
+.control-fields input[type=range] { width:100%; min-width:0; margin:0;
+  min-height:28px; accent-color:var(--acc); }
+.layer-options { display:grid; gap:4px; }
+.layer-options .tog { min-height:28px; white-space:normal; font-size:12px; }
+.layer-options #legend { font:11px var(--mono); color:var(--tx2); }
 
 .tog { display:inline-flex; align-items:center; gap:5px; font-size:11px;
        color:var(--tx2); cursor:pointer; white-space:nowrap; }
@@ -160,13 +202,13 @@ body { margin:0; height:100vh; overflow:hidden; background:var(--bg); color:var(
 .groups button[aria-current="true"] i { color:var(--acc); }
 
 .form { padding:12px 14px 40px; }
-.form h3 { margin:0 0 11px; font-size:10px; font-weight:600; letter-spacing:.11em;
+.form h3 { margin:0 0 11px; font-size:11px; font-weight:600; letter-spacing:0;
   text-transform:uppercase; color:var(--tx3); padding-bottom:7px;
   border-bottom:1px solid var(--line); }
-.fld { display:grid; grid-template-columns:1fr 92px; align-items:center; gap:10px;
+.fld { display:grid; grid-template-columns:minmax(0,1fr) 92px; align-items:center; gap:10px;
        margin-bottom:7px; }
 .fld.bool { grid-template-columns:1fr auto; }
-.lbl { color:var(--tx2); font-size:12px; }
+.lbl { color:var(--tx2); font-size:12px; overflow-wrap:anywhere; }
 .lbl i { color:var(--tx3); font-style:normal; font-size:10.5px; }
 .fld input[type=number], .fld select {
   width:100%; background:#fff; color:var(--tx); border:1px solid var(--line2);
@@ -196,7 +238,7 @@ body { margin:0; height:100vh; overflow:hidden; background:var(--bg); color:var(
 .feat-head .kind { font:10.5px var(--mono); color:var(--tx3); margin-left:auto; }
 .feat-head .btn { padding:3px 7px; font-size:10.5px; }
 /* Flatenavnet er langt - snittfeltene får en bredere kolonne enn de vanlige. */
-.feat .fld { grid-template-columns:1fr 122px; }
+.feat .fld { grid-template-columns:minmax(0,1fr) minmax(80px,122px); }
 .feat .reinf-sum { padding:8px 0 0; margin-top:6px; border-top:1px solid var(--line); }
 .feat .reinf-sum .row { padding:3px 0; }
 
@@ -209,7 +251,7 @@ three-d-stage { position:absolute; inset:0; }
    innskrivingsfelt lagt oppå, slik at et mål kan skrives om rett i tegninga
    og holder samme skriftstørrelse uansett hvor du har zoomet. */
 .plan-wrap { flex:1 1 auto; position:relative; min-height:0; overflow:hidden;
-  background:#f6f4ef; }
+  background:var(--panel2); }
 .plan-canvas { position:absolute; inset:0; width:100%; height:100%;
   touch-action:none; outline:none; }
 .plan-dims { position:absolute; inset:0; overflow:hidden; pointer-events:none; }
@@ -218,7 +260,7 @@ three-d-stage { position:absolute; inset:0; }
   position:absolute; transform:translate(-50%, -50%); pointer-events:auto;
   display:inline-flex; align-items:center; gap:1px;
   font:400 11.5px/1.2 var(--mono); color:#14120f;
-  background:rgba(246,244,239,.9); border-radius:3px; padding:0 2px;
+  background:rgba(246,247,248,.9); border-radius:3px; padding:0 2px;
 }
 .plan-dim i { font-style:normal; color:var(--tx2); }
 .plan-dim input {
@@ -242,21 +284,44 @@ three-d-stage { position:absolute; inset:0; }
 .assump .k { color:var(--tx2); font-size:11.5px; }
 .assump .v { color:var(--tx); font:11px var(--mono); text-align:right; }
 
-.sect { margin:20px 14px 0; font-size:10px; font-weight:600; letter-spacing:.11em;
+.sect { margin:20px 14px 0; font-size:11px; font-weight:600; letter-spacing:0;
   text-transform:uppercase; color:var(--tx3); padding-bottom:6px;
   border-bottom:1px solid var(--line); }
 
-/* Strekk / skjær / samvirkning skal skille seg klart fra hverandre og fra de
-   øvrige overskriftene - tyngre skrift, litt større, og en fargeprikk som
-   går igjen på stolpene i utnyttelsessammendraget. */
-.sect.fam-tension, .sect.fam-shear, .sect.fam-combo { margin-top:24px; font-size:12px;
-  font-weight:700; letter-spacing:.04em; color:var(--tx); padding:0 0 8px 12px;
-  position:relative; border-bottom:1px solid var(--line2); }
-.sect.fam-tension::before, .sect.fam-shear::before, .sect.fam-combo::before {
-  content:''; position:absolute; left:0; top:1px; bottom:9px; width:3px; border-radius:2px; }
-.sect.fam-tension::before { background:#5b8def; }
-.sect.fam-shear::before { background:#e0a72f; }
-.sect.fam-combo::before { background:#8f6ae0; }
+/* Strekk / skjær / samvirkning: en rammet boks som HOLDER material-
+   gruppene sine, så det er synlig at betong/stål/armering hører til denne
+   familien - ikke bare en overskrift over dem. Ingen farge her: farge er
+   forbeholdt materialtypen (se .grp.cat-* under), så de to nivåene ikke
+   blandes sammen. Tydeligheten kommer av rammen og den tunge overskriften. */
+.fam-box { margin:18px 14px 0; padding:4px 10px 12px; border:1px solid var(--line2);
+  border-radius:10px; background:var(--panel2); }
+.fam-box + .fam-box { margin-top:16px; }
+.fam-head { margin:0; padding:12px 2px 10px; font-size:13px; font-weight:800;
+  letter-spacing:.3px; text-transform:uppercase; color:var(--tx);
+  border-bottom:1px solid var(--line2); }
+
+/* Undergruppe (betong/stål/armering) inni Strekk/Skjær: lukkbar boks med
+   tydelig fargekodet kant pr. type, så det er lett å se hva som hører til
+   hvor - også når gruppa er lukket, siden verste utnyttelse står i hodet. */
+.grp { margin:10px 0 0; border:1px solid var(--line2); border-left-width:4px;
+  border-radius:8px; overflow:hidden; background:var(--panel); }
+.grp.cat-conc  { border-left-color:#5b8def; }
+.grp.cat-steel { border-left-color:#e0a72f; }
+.grp.cat-reinf { border-left-color:#3fae7b; }
+.grp-head { display:flex; align-items:center; gap:8px; padding:9px 12px;
+  cursor:pointer; background:var(--panel2); list-style:none; user-select:none; }
+.grp-head::-webkit-details-marker { display:none; }
+.grp-head::marker { content:''; }
+.grp-head .name { font-size:11.5px; font-weight:700; text-transform:uppercase;
+  letter-spacing:.2px; color:var(--tx); }
+.grp-head .count { font:500 10.5px var(--mono); color:var(--tx3);
+  background:var(--panel3); border-radius:8px; padding:1px 6px; }
+.grp-head .pc { margin-left:auto; font:600 12px var(--mono); }
+.grp-head::after { content:'▸'; margin-left:2px; color:var(--tx3); font-size:10px;
+  transition:transform .15s; }
+.grp[open] > .grp-head::after { transform:rotate(90deg); }
+.grp .chk { border-bottom:1px solid var(--line); }
+.grp .chk:last-child { border-bottom:0; }
 
 /* Utnyttelsen skal kunne leses på avstand: tykk stolpe, tydelig prosent. */
 .chk { display:block; width:100%; text-align:left; border:0; background:none;
@@ -285,7 +350,7 @@ three-d-stage { position:absolute; inset:0; }
 
 table.anchors { width:100%; border-collapse:collapse; font-size:11.5px; }
 table.anchors th { text-align:right; color:var(--tx3); font-weight:500; font-size:9.5px;
-  letter-spacing:.08em; text-transform:uppercase; padding:7px 0 6px;
+  letter-spacing:0; text-transform:uppercase; padding:7px 0 6px;
   border-bottom:1px solid var(--line); }
 table.anchors th:first-child { text-align:left; }
 table.anchors td { padding:5px 0; border-bottom:1px solid var(--line);
@@ -298,18 +363,18 @@ table.anchors td:first-child { text-align:left; color:var(--tx2); }
 .sheet { padding:20px 26px 60px; max-width:900px; }
 .sheet .hdr { display:flex; justify-content:space-between; align-items:baseline;
   gap:16px; padding-bottom:14px; border-bottom:2px solid var(--line2); }
-.sheet .hdr h2 { margin:0; font-size:17px; font-weight:600; letter-spacing:-.01em; }
+.sheet .hdr h2 { margin:0; font-size:17px; font-weight:600; letter-spacing:0; }
 .sheet .hdr .ref { font:11px var(--mono); color:var(--tx2); text-align:right; }
 .sheet .verdict { display:flex; align-items:center; gap:14px; margin:16px 0 4px; }
 .sheet .verdict .track { flex:1 1 auto; height:14px; margin:0; }
 .sheet .verdict .pc { font:600 20px var(--mono); font-variant-numeric:tabular-nums; }
 
-.sheet h3 { margin:26px 0 10px; font-size:10px; font-weight:600; letter-spacing:.11em;
+.sheet h3 { margin:26px 0 10px; font-size:11px; font-weight:600; letter-spacing:0;
   text-transform:uppercase; color:var(--tx3); padding-bottom:6px;
   border-bottom:1px solid var(--line); }
 
 table.io { width:100%; border-collapse:collapse; }
-table.io th { font-size:9.5px; letter-spacing:.08em; text-transform:uppercase;
+table.io th { font-size:10px; letter-spacing:0; text-transform:uppercase;
   color:var(--tx3); font-weight:500; text-align:left; padding:0 10px 6px 0; }
 table.io td { padding:5px 10px 5px 0; border-top:1px solid var(--line);
   font-size:12px; vertical-align:baseline; }
@@ -424,17 +489,45 @@ body.rs-col, body.rs-col * { cursor:col-resize !important; }
 body.rs-row, body.rs-row * { cursor:row-resize !important; }
 body.rs-col, body.rs-row { user-select:none; }
 
-@media (max-width:1240px){ .body{ grid-template-columns:var(--w-left) minmax(0,1fr) var(--w-right); } }
 @media (max-width:1040px){
   body{ overflow:auto; }
-  .app{ grid-template-rows:var(--h-top) auto var(--h-status);
-        height:auto; min-height:100vh; }
-  .pane.view > .loads{ flex:0 0 auto; min-height:var(--h-loads); }
-  .body{ grid-template-columns:minmax(0,1fr); }
+  .app{ grid-template-rows:auto auto auto; height:auto; min-height:100dvh; }
+  .body{ grid-template-columns:minmax(0,1fr) minmax(0,1fr); align-items:start; }
+  .pane.view{ grid-column:1 / -1; grid-row:1; }
   .split{ display:none; }
-  .pane + .pane { border-left:0; border-top:1px solid var(--line); }
-  .pane.view .stage-wrap { height:56vh; }
-  .pane.inputs .pane-body, .pane.results .pane-body { overflow:visible; }
+  .pane { border-top:1px solid var(--line); }
+  .pane.view { border-left:0; }
+  .pane.view .stage-wrap, .pane.view .plan-wrap { flex:none; height:56vh; min-height:320px; }
+  .pane.view #wrap-calc { flex:none; max-height:65vh; }
+  .pane.view > .loads { flex:none; height:206px; }
+  .pane.inputs .pane-body, .pane.results .pane-body { overflow:auto; }
+  .statusbar { padding:8px 12px; row-gap:6px; }
+}
+@media (max-width:600px){
+  .body { grid-template-columns:minmax(0,1fr); }
+  .pane + .pane { border-left:0; }
+  .topbar { gap:6px; padding:8px 10px; }
+  .topbar .brand { flex:1; }
+  .topbar .sep, .topbar .units, .topbar > .grow { display:none; }
+  .topbar > label { order:2; margin:0; }
+  .topbar > select { order:3; flex:1; min-width:0; min-height:34px; }
+  .project-menu { margin-left:0; }
+  .topbar::after { content:''; flex-basis:100%; order:1; }
+  .btn, .menu summary { min-height:36px; }
+  .pane-head { gap:4px; padding:5px 8px; }
+  .pane.view > .pane-head > .grow { display:none; }
+  .camera-menu { margin-left:auto; }
+  .groups { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); }
+  .groups button { min-height:36px; min-width:0; flex-wrap:wrap; gap:3px 6px;
+    overflow-wrap:anywhere; white-space:normal; }
+  .groups button > * { min-width:0; max-width:100%; overflow-wrap:anywhere; }
+  .groups button i { flex:0 1 auto; white-space:normal; }
+  .menu summary { max-width:100%; white-space:normal; overflow-wrap:anywhere; }
+  .render-control select { min-height:36px; }
+  .fld input[type=number], .fld select { min-height:36px; }
+  .sheet { padding:16px 12px 30px; }
+  .sheet .hdr, .step .l1 { flex-wrap:wrap; }
+  .statusbar .grow { display:none; }
 }
 
 /* === påskrifter i modellen ===============================================
@@ -492,7 +585,7 @@ table.combos { width:100%; border-collapse:collapse; font-size:12px; }
 table.combos thead th {
   position:sticky; top:0; z-index:1; background:var(--panel);
   text-align:right; padding:8px 5px 6px; white-space:nowrap;
-  font:500 9.5px/1.4 var(--sans); letter-spacing:.08em; text-transform:uppercase;
+  font:500 10px/1.4 var(--sans); letter-spacing:0; text-transform:uppercase;
   color:var(--tx3); border-bottom:1px solid var(--line2);
 }
 table.combos thead th.l { text-align:left; }
@@ -542,11 +635,16 @@ table.combos input[type=number] { -moz-appearance:textfield; appearance:textfiel
     </select>
     <span class="units">mm · kN · N/mm²</span>
     <span class="grow"></span>
-    <button class="btn" id="save-project">Lagre prosjekt</button>
-    <button class="btn" id="open-project">Åpne prosjekt</button>
-    <input type="file" id="open-project-file" accept="application/json,.json" hidden>
-    <button class="btn" id="reset">Nullstill</button>
-    <button class="btn" id="report">Beregningsrapport</button>
+    <details class="menu project-menu" name="workspace-menu">
+      <summary>Prosjekt</summary>
+      <div class="menu-content actions">
+        <button class="btn" id="save-project">Lagre prosjekt</button>
+        <button class="btn" id="open-project">Åpne prosjekt</button>
+        <input type="file" id="open-project-file" accept="application/json,.json" hidden>
+        <button class="btn" id="report">Beregningsrapport</button>
+        <button class="btn" id="reset">Nullstill</button>
+      </div>
+    </details>
   </div>
 
   <div class="body">
@@ -570,6 +668,9 @@ table.combos input[type=number] { -moz-appearance:textfield; appearance:textfiel
           <button class="btn" id="tab-calc" aria-pressed="false">Utregning</button>
         </div>
         <span class="grow"></span>
+        <details class="menu camera-menu" name="workspace-menu">
+          <summary>Kamera</summary>
+          <div class="menu-content">
         <div class="btn-row" id="viewbtns">
           <button class="btn ghost" data-view="iso">ISO</button>
           <button class="btn ghost" data-view="top">Plan</button>
@@ -577,16 +678,51 @@ table.combos input[type=number] { -moz-appearance:textfield; appearance:textfiel
           <button class="btn ghost" data-view="side">Side</button>
           <button class="btn ghost" data-view="fit">Tilpass</button>
         </div>
-        <span class="sep"></span>
         <button class="btn ghost" id="ortho" aria-pressed="false"
           title="Parallellprojeksjon: like store ting tegnes like store uansett avstand">Parallell</button>
-        <span class="sep"></span>
+          </div>
+        </details>
+        <details class="menu export-menu" name="workspace-menu">
+          <summary>Eksport</summary>
+          <div class="menu-content">
         <div class="btn-row" id="exportbtns">
           <button class="btn ghost" data-exp="obj">OBJ</button>
           <button class="btn ghost" data-exp="glb">GLB</button>
         </div>
+          </div>
+        </details>
       </div>
       <div class="pane-sub" id="viewsub">
+        <div class="render-control">
+          <label for="render-mode">Visning</label>
+          <select id="render-mode">
+            <option value="cutaway">Snitt</option>
+            <option value="solid">Materialer</option>
+            <option value="xray">Transparent</option>
+          </select>
+        </div>
+        <details class="menu" name="workspace-menu">
+          <summary>Opasitet</summary>
+          <div class="menu-content control-fields">
+            <label for="concrete-opacity">Betongopasitet (%)</label>
+            <input type="range" id="concrete-opacity" min="10" max="100" value="28">
+          </div>
+        </details>
+        <details class="menu" name="workspace-menu">
+          <summary>Snitt</summary>
+          <div class="menu-content control-fields">
+            <label for="section-axis">Snittakse</label>
+            <select id="section-axis">
+              <option value="x">X</option>
+              <option value="y">Y</option>
+            </select>
+            <label for="section-position">Snittposisjon (%)</label>
+            <input type="range" id="section-position" min="0" max="100" value="50">
+          </div>
+        </details>
+        <details class="menu" name="workspace-menu">
+          <summary>Lag</summary>
+          <div class="menu-content layer-options">
         <label class="tog"><input type="checkbox" data-show="concrete"> Betong</label>
         <label class="tog"><input type="checkbox" data-show="cone"> Bruddkjegle</label>
         <label class="tog"><input type="checkbox" data-show="wedge"> Kantbrudd</label>
@@ -597,6 +733,8 @@ table.combos input[type=number] { -moz-appearance:textfield; appearance:textfiel
         <label class="tog"><input type="checkbox" data-show="dims"> Mål</label>
         <label class="tog"><input type="checkbox" id="colormode"> Fargelegg utnyttelse</label>
         <span class="stat" id="legend" hidden></span>
+          </div>
+        </details>
       </div>
       <div class="pane-sub" id="plansub" hidden>
         <div class="btn-row" id="plantools"></div>
@@ -610,7 +748,7 @@ table.combos input[type=number] { -moz-appearance:textfield; appearance:textfiel
       </div>
       <div class="plan-wrap" id="wrap-plan" hidden></div>
       <div class="stage-wrap" id="wrap-3d">
-        <three-d-stage id="stage" background="#efede8" controls="none"></three-d-stage>
+        <three-d-stage id="stage" background="#f1f3f4" controls="none"></three-d-stage>
         <div class="hud" id="hud"></div>
       </div>
       <div class="pane-body" id="wrap-calc" hidden><div class="sheet" id="sheet"></div></div>
@@ -665,6 +803,7 @@ import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 import { GLTFExporter } from 'three/addons/exporters/GLTFExporter.js';
 import { CSS3DRenderer, CSS3DObject } from 'three/addons/renderers/CSS3DRenderer.js';
 import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
+import { RoundedBoxGeometry } from 'three/addons/geometries/RoundedBoxGeometry.js';
 
 // ===== src/core/download.js ========================================
 // ---------------------------------------------------------------------------
@@ -1517,7 +1656,7 @@ function surfaceZ(m) {
   return sp.length ? rnd(Math.max(...sp.map(iv => iv[1]))) : 0;
 }
 
-// Dybdeintervallet en forankring staar i: fra underkant fot og opp til
+// Dybdeintervallet for kjegleberegningen: fra trykkflaten over foten og opp til
 // betongoverflata. Det er der betongen maa vaere hel for at kjegla skal ha noe
 // aa rive i.
 function anchorDepth(m) {
@@ -1648,11 +1787,8 @@ function clippedSquares(m, pts, r) {
   })));
 }
 
-// Prosjektert bruddareal for strekkbrudd.
-//
-// Henger boltene i en felles endeplate, er forankringen ett stivt legeme:
-// kjegla sprer seg fra platekanten, ikke fra hver bolt for seg. Uten slik
-// plate er arealet unionen av de enkelte boltenes kjegler.
+// Geometrisk plateprojeksjon for spesialmodeller. EN/B19-kjeglekapasiteten
+// bruker clippedSquares direkte; en felles plate gir ikke automatisk tillegg.
 function coneProjection(m, foot, pts, r) {
   if (foot && foot.common) {
     const pl = foot.plate;
@@ -1806,27 +1942,21 @@ const clamp = (v, lo, hi) => Math.min(hi, Math.max(lo, v));
 //
 //  Spredninga regnes med Chebyshev-avstand (den største av |dx| og |dy|), ikke
 //  radiell - da faller flata sammen med A_c,N, som legges opp av KVADRATER med
-//  halvbredde c_cr,N (clippedSquares/coneProjection). Med felles endeplate
-//  sprer kjegla seg fra platekanten, ellers fra hver bolt.
+//  halvbredde c_cr,N (clippedSquares), sentrert rundt bolteaksene.
 //
 //  Returnerer dybden (positiv nedover) der flata krysser den loddrette linja
 //  gjennom (x, y), eller null når det ikke er noen kjegle å krysse.
 // ---------------------------------------------------------------------------
 function coneSurfaceDepth(m, foot, pts, hef, x, y) {
   if (!foot?.hasFoot) return null;
-  const zTop = Math.max(0, hef - (foot.t || 0));   // trykkflate = overkant fot
+  const zTop = Math.max(0, hef); // h_ef ends at the top bearing face.
   const ccr = 1.5 * hef;
   if (!(ccr > 0)) return null;
 
   // Avstanden ut fra kilden, i Chebyshev-metrikk. 0 inne i kilden.
   let s = Infinity;
-  if (foot.common && foot.plate) {
-    const pl = foot.plate;
-    s = Math.max(0, pl.x0 - x, x - pl.x1, pl.y0 - y, y - pl.y1);
-  } else {
-    for (const p of pts)
-      s = Math.min(s, Math.max(Math.abs(x - p.x), Math.abs(y - p.y)));
-  }
+  for (const p of pts)
+    s = Math.min(s, Math.max(Math.abs(x - p.x), Math.abs(y - p.y)));
   if (!Number.isFinite(s)) return null;
   return clamp(zTop * (1 - s / ccr), 0, zTop);
 }
@@ -2273,7 +2403,7 @@ function defaultModel() {
       k: 8,                 // hode-/mutterhøyde
       up: 40,               // felles endeplate: utstikk utenfor ytterste bolt
       tp: 10,               //                  tykkelse
-      hef: 150,             // forankringsdybde til underkant fot; uten fot er
+      hef: 150,             // effektiv dybde til overkant fot (trykkflaten); uten fot er
                             // dette den innstøpte lengda av stanga
       lSmooth: 0,           // glatt skaft ned fra betongoverflata før gjengene
                             // begynner (bare gjengestang/bolt)
@@ -3452,15 +3582,26 @@ function buildBendBars(m, r) {
       stations.set(key, st);
     }
 
+  // Stort nok mål til at fitInside finner den EKTE kantavstanden i denne
+  // retninga, ikke en verdi kunstig avkuttet ved lbd - ellers kan den
+  // oppnådde lengden aldri måle seg til mer enn det som kreves, og
+  // kontrollen kan aldri vise noen margin, bare akkurat 100 % eller verre.
+  const BIG = 1e6;
+
   const out = [];
   for (const st of stations.values()) {
     const at = v => ({ x: L.u.x * st.u + L.n.x * v, y: L.u.y * st.u + L.n.y * v });
     // Forankringa legges utenfor den ytterste bøylen stanga betjener, så langt
-    // betongen tillater.
-    const e0 = fitInside(m, t => at(st.vMin - t), lbd, ds);
-    const e1 = fitInside(m, t => at(st.vMax + t), lbd, ds);
+    // betongen tillater - trueE0/trueE1 er den faktiske kantavstanden, brukt
+    // til å VURDERE om det er nok. e0/e1 er det samme, avkuttet ved lbd, og
+    // brukes bare til å TEGNE stanga - den skal ikke detaljeres lenger enn
+    // nødvendig selv om betongen tillater mer.
+    const trueE0 = fitInside(m, t => at(st.vMin - t), BIG, ds);
+    const trueE1 = fitInside(m, t => at(st.vMax + t), BIG, ds);
+    const e0 = Math.min(trueE0, lbd), e1 = Math.min(trueE1, lbd);
     out.push({ ds, bendBar: true, u: st.u, lbd,
       anchorage: Math.min(e0, e1), anchorEnds: [e0, e1],
+      trueAnchorage: Math.min(trueE0, trueE1), trueAnchorEnds: [trueE0, trueE1],
       span: (st.vMax - st.vMin) + e0 + e1,
       paths: [{ points: [{ ...at(st.vMin - e0), z: -L.dBend },
                          { ...at(st.vMax + e1), z: -L.dBend }], closed: false }] });
@@ -3924,7 +4065,9 @@ function partialFactors(m) {
 // Prosjektert areal for betongkjegle, 7.2.1.4 - union av rektangler klippet
 // mot betongdelens frie kanter.
 function coneArea(m, pts, ccr) {
-  return coneProjection(m, anchorFoot(m), pts, ccr);
+  // EN 1992-4 7.2.1.4(3): projection is centred on the fastener axes.
+  // A common end plate does not automatically earn additional cone area.
+  return clippedSquares(m, pts, ccr);
 }
 
 function minEdge(m, pts) {
@@ -4030,7 +4173,7 @@ function tensionConcreteCone(m, res, g) {
   const NEd = c.in('N_Ed,g', res.tension.Ntot, 'N', 'Sum strekk i boltegruppa');
 
   const scr = c.step({ sym: 's_cr,N', desc: 'Karakteristisk senteravstand',
-    formula: '3 · h_ef', subst: `3 · ${n(hef, 0)}`, value: 3 * hef, unit: 'mm', ref: '(7.4)' });
+    formula: '3 · h_ef', subst: `3 · ${n(hef, 0)}`, value: 3 * hef, unit: 'mm', ref: '7.2.1.4(3)' });
   const ccr = c.step({ sym: 'c_cr,N', desc: 'Karakteristisk kantavstand',
     formula: 's_cr,N / 2 = 1,5 · h_ef', subst: `1,5 · ${n(hef, 0)}`,
     value: 1.5 * hef, unit: 'mm' });
@@ -4043,17 +4186,11 @@ function tensionConcreteCone(m, res, g) {
   });
   const A0 = c.step({ sym: 'A⁰_c,N', desc: 'Referanseareal for én bolt',
     formula: 's_cr,N²', subst: `${n(scr, 0)}²`, value: scr * scr, unit: 'mm²' });
-  const cfoot = anchorFoot(m);
   const Ac = c.step({
     sym: 'A_c,N', desc: 'Faktisk utbruddsareal for gruppa',
-    formula: cfoot.common
-      ? 'endeplata ± c_cr,N, klippet mot frie kanter'
-      : 'union av (⌀ ± c_cr,N) for strekkboltene, klippet mot frie kanter',
-    subst: cfoot.common
-      ? `felles endeplate ${n(cfoot.plate.bx, 0)} × ${n(cfoot.plate.by, 0)} mm, ` +
-        `c_cr,N = ${n(ccr, 0)} mm`
-      : `${nt} bolter, c_cr,N = ${n(ccr, 0)} mm`,
-    value: coneArea(m, pts, 1.5 * hef), unit: 'mm²', ref: '(7.3)',
+    formula: 'union av kvadrater rundt boltakser (± c_cr,N), klippet mot frie kanter',
+    subst: `${nt} strekkbolter, c_cr,N = ${n(ccr, 0)} mm`,
+    value: coneArea(m, pts, ccr), unit: 'mm²', ref: '7.2.1.4(3)',
   });
 
   const cmin = minEdge(m, pts);
@@ -4078,13 +4215,18 @@ function tensionConcreteCone(m, res, g) {
     formula: '1 / (1 + 2·e_N/s_cr,N) ≤ 1,0   (x-retning · y-retning)',
     subst: `e_N,x = ${n(res.tension.eNx, 1)} mm → ${n(psi_ecx)} · ` +
            `e_N,y = ${n(res.tension.eNy, 1)} mm → ${n(psi_ecy)}`,
-    value: psi_ecx * psi_ecy, unit: '–', ref: '(7.3)',
+    value: psi_ecx * psi_ecy, unit: '–', ref: '(7.6)',
+  });
+  const psi_M = c.step({
+    sym: 'ψ_M,N', desc: 'Konservativt uten gunstig virkning av kontakttrykk',
+    formula: '1,0', subst: 'Ingen kapasitetsøkning fra moment og kontakttrykk',
+    value: 1, unit: '–', ref: '7.2.1.4(7), (7.7)',
   });
 
   const NRk = c.res({
-    sym: 'N_Rk,c', formula: 'N⁰_Rk,c · (A_c,N / A⁰_c,N) · ψ_s,N · ψ_re,N · ψ_ec,N',
-    subst: `${n(N0)} · (${n(Ac, 0)}/${n(A0, 0)}) · ${n(psi_s)} · ${n(psi_re)} · ${n(psi_ec)}`,
-    value: N0 * (Ac / A0) * psi_s * psi_re * psi_ec, unit: 'N', ref: '(7.1)',
+    sym: 'N_Rk,c', formula: 'N⁰_Rk,c · (A_c,N / A⁰_c,N) · ψ_s,N · ψ_re,N · ψ_ec,N · ψ_M,N',
+    subst: `${n(N0)} · (${n(Ac, 0)}/${n(A0, 0)}) · ${n(psi_s)} · ${n(psi_re)} · ${n(psi_ec)} · ${n(psi_M)}`,
+    value: N0 * (Ac / A0) * psi_s * psi_re * psi_ec * psi_M, unit: 'N', ref: '(7.1)',
   });
   const NRd = NRk / gM;
   c.step({ sym: 'N_Rd,c', desc: 'Dimensjonerende kapasitet',
@@ -4092,7 +4234,12 @@ function tensionConcreteCone(m, res, g) {
   c.util({ formula: 'N_Ed,g / N_Rd,c', subst: `${n(NEd)} / ${n(NRd)}`, value: NEd / NRd });
 
   return { id: 'N-cone', mode: 'Betongkjegle', clause: '7.2.1.4', scope: 'gruppe',
-           NRk, NRd, NEd, util: NEd / NRd, calc: c };
+           NRk, NRd, NEd, util: NRd > 0 ? NEd / NRd : Infinity, calc: c,
+           tensionAnchorIds: pts.map(p => p.id),
+           note: 'ψ_M,N = 1,0: gunstig kontakttrykk er ikke utnyttet. ' +
+             'Redusert h\u2032_ef ved tre eller flere nære kanter er ikke utnyttet.' +
+             (anchorFoot(m).common ? ' Felles endeplate gir ikke ekstra projisert areal; ' +
+               'kjeglen beregnes fra boltakser.' : '') };
 }
 
 // 7.2.1.9 Utblåsing ved kant - kun når c <= 0,5·h_ef
@@ -4856,22 +5003,39 @@ function tensionSupplementary(m, res, r) {
       : minLenTxt });
 
   // --- d) forankringslengde UTENFOR kjegla, EN 1992-1-1 8.4 ---------------
+  //  l_b,rqd skal regnes med den FAKTISKE spenninga i stanga ved dette
+  //  tverrsnittet (8.4.3(2), σ_sd i (8.3)), ikke fullt utnyttet f_yd - ellers
+  //  blir kravet det samme uansett hvor mye eller hvor tjukk armering som er
+  //  lagt inn, og flere/tjukkere bein gir aldri kortere forankring igjen.
+  //  L.fits/qualifies (gruppa sin egnethet til å erstatte kjegla) er en
+  //  geometrisk detaljeringssjekk og skal fortsatt være konservativ mot full
+  //  utnyttelse - det er bare DENNE utnyttelsen som skal følge lasten.
   if (L) {
     const cl = new Calc('EN 1992-1-1 8.4');
+    const fyd = r.fyk / GAMMA_S;
+    const As = Math.PI * r.ds * r.ds / 4;
+    const sigmaSd = nLegs > 0 ? Math.min(fyd, NEd / (nLegs * As)) : 0;
+    const alOut = anchorageLength(m.concrete.fck, r.ds, sigmaSd, bent);
     cl.in('⌀_s', r.ds, 'mm', 'Tilleggsarmering');
-    cl.in('f_yd', r.fyk / GAMMA_S, 'N/mm²', 'f_yk / γ_Ms,re – full utnyttelse forutsatt');
+    cl.in('N_Ed,bolt', NEd, 'N', 'Strekk i den styrende bolten, se stålkontrollen');
+    cl.in('n_eff', nLegs, 'stk', 'Bein pr. bolt, se stålkontrollen');
+    const sSd = cl.step({ sym: 'σ_sd', desc:
+        'Faktisk spenning i armeringa - ikke fullt utnyttet f_yd, se (8.3)',
+      formula: 'min(f_yd; N_Ed,bolt / (n_eff · A_s))',
+      subst: `min(${n(fyd)}; ${n(NEd)} / (${n(nLegs)} · ${n(As, 0)}))`,
+      value: sigmaSd, unit: 'N/mm²' });
     cl.in('f_bd', f, 'N/mm²', 'Heftfasthet, se forankringskontrollen');
     const lbr = cl.step({ sym: 'l_b,rqd', desc: 'Grunnleggende forankringslengde',
-      formula: '(⌀_s / 4) · (f_yd / f_bd)',
-      subst: `(${n(r.ds, 0)} / 4) · (${n(r.fyk / GAMMA_S)} / ${n(f)})`,
-      value: L.lbRqd, unit: 'mm', ref: '(8.3)' });
+      formula: '(⌀_s / 4) · (σ_sd / f_bd)',
+      subst: `(${n(r.ds, 0)} / 4) · (${n(sSd)} / ${n(f)})`,
+      value: alOut.lbRqd, unit: 'mm', ref: '(8.3)' });
     const a1 = cl.in('α_1', alpha1, '–', bent ? 'Krok/bøy i enden – tab. 8.2' : 'Rett stang');
     cl.step({ sym: 'l_b,min', desc: 'Nedre grense for strekkforankring',
       formula: 'maks(0,3·l_b,rqd; 10·⌀_s; 100 mm)',
-      subst: `maks(${n(0.3 * L.lbRqd, 0)}; ${n(10 * r.ds, 0)}; 100)`,
-      value: L.lbmin, unit: 'mm', ref: '(8.6)' });
+      subst: `maks(${n(0.3 * alOut.lbRqd, 0)}; ${n(10 * r.ds, 0)}; 100)`,
+      value: alOut.lbmin, unit: 'mm', ref: '(8.6)' });
     const lbd = cl.res({ sym: 'l_bd', formula: 'maks(α_1 · l_b,rqd; l_b,min)',
-      subst: `maks(${n(a1)} · ${n(lbr, 0)}; ${n(L.lbmin, 0)})`, value: L.lbd, unit: 'mm',
+      subst: `maks(${n(a1)} · ${n(lbr, 0)}; ${n(alOut.lbmin, 0)})`, value: alOut.lbd, unit: 'mm',
       ref: '(8.4)' });
     const avail = cl.step({ sym: 'l_bd,tilgj.', desc:
         'Forankring tilgjengelig UTENFOR bruddkjegla, langs stanga fra h_ef og nedover',
@@ -4881,16 +5045,17 @@ function tensionSupplementary(m, res, r) {
         : `${n(L.outsideLen, 0)}`,
       value: L.anchorageAvail, unit: 'mm' });
     cl.util({ formula: 'l_bd / l_bd,tilgj.', subst: `${n(lbd, 0)} / ${n(avail, 0)}`,
-      value: L.lbd / Math.max(avail, 1e-6) });
+      value: alOut.lbd / Math.max(avail, 1e-6) });
+    const fitsOut = L.anchorageAvail + 1e-6 >= alOut.lbd;
     checks.push({ id: `N-sre-lbd-${r.id}`,
       mode: `Tilleggsarmering ${r.id} – forankringslengde utenfor kjegla`,
       clause: 'EN 1992-1-1 8.4', scope: 'gruppe', NRk: NaN, NRd: NaN, NEd: NaN,
-      util: L.lbd / Math.max(avail, 1e-6), calc: cl, group: r.id,
+      util: alOut.lbd / Math.max(avail, 1e-6), calc: cl, group: r.id,
       expr: 'l_bd / l_bd,tilgj. ≤ 1,0',
-      note: L.fits
+      note: fitsOut
         ? undefined
         : `Bare ${n(L.anchorageAvail, 0)} mm forankring utenfor kjegla mot l_bd = ` +
-          `${n(L.lbd, 0)} mm.` + (bent && !L.endBend
+          `${n(alOut.lbd, 0)} mm.` + (bent && !L.endBend
             ? ' En bøy ut i enden av beina gir bøyen pluss foten som forankring, ' +
               'og hjelper i en tynn plate.'
             : ' Øk tykkelsen, reduser ⌀, eller legg inn endebøy.') });
@@ -4902,8 +5067,10 @@ function tensionSupplementary(m, res, r) {
   //  konstruksjonen, og da må den forankres for seg.
   if (L && bent && L.bendBarMode === 'own') {
     const bars = buildBendBars(m, r);
+    // Styrende er den med minst EKTE kantavstand, ikke den avkuttede
+    // tegneverdien - se merknaden i buildBendBars.
     const worst = bars.length
-      ? bars.reduce((a, b) => (b.anchorage < a.anchorage ? b : a)) : null;
+      ? bars.reduce((a, b) => (b.trueAnchorage < a.trueAnchorage ? b : a)) : null;
     const cbb = new Calc('EN 1992-1-1 8.4');
     cbb.in('⌀_b', L.dtBend, 'mm',
       `Stang i bøyen – minst like tjukk som bøylen (⌀_s = ${n(r.ds, 0)} mm)`);
@@ -4918,23 +5085,26 @@ function tensionSupplementary(m, res, r) {
     const lreq = cbb.res({ sym: 'l_bd', desc: 'Nødvendig forankring utenfor ytterste bøyle',
       formula: 'maks(α_1 · l_b,rqd; l_b,min)', subst: '–', value: L.bendBarLbd,
       unit: 'mm', ref: '(8.4)' });
-    const lprov = cbb.in('l_bd,tilgj.', worst ? worst.anchorage : 0, 'mm',
-      'Oppnådd forankring – begrenset av betongdelen');
+    const lprov = cbb.in('l_bd,tilgj.', worst ? worst.trueAnchorage : 0, 'mm',
+      'Faktisk avstand til fri kant utenfor ytterste bøyle - IKKE avkuttet ved l_bd');
     cbb.util({ formula: 'l_bd / l_bd,tilgj.', subst: `${n(lreq, 0)} / ${n(lprov, 0)}`,
       value: lreq / Math.max(lprov, 1e-6) });
+    // Detaljeringskontroll, ikke en gradert utnyttelse: enten får stanga nok
+    // forankring i betongen som er der, eller så gjør den ikke. Prosent-
+    // visning ville antydet en marginvurdering som ikke gir mening her.
     checks.push({ id: `N-sre-bendbar-${r.id}`,
       mode: `Tilleggsarmering ${r.id} – stang i bøyen`,
       clause: 'EN 1992-1-1 8.4', scope: 'gruppe', NRk: NaN, NRd: NaN, NEd: NaN,
-      util: lreq / Math.max(lprov, 1e-6), calc: cbb, group: r.id,
+      util: lreq / Math.max(lprov, 1e-6), binary: true, calc: cbb, group: r.id,
       expr: 'l_bd / l_bd,tilgj. ≤ 1,0',
       note: 'Bøyen krøller seg rundt denne stanga, så bøylen ligger over den. ' +
-        (worst && worst.anchorage + 1e-6 < L.bendBarLbd
-          ? `Betongdelen gir bare ${n(worst.anchorage, 0)} mm forankring utenfor ` +
+        (worst && worst.trueAnchorage + 1e-6 < L.bendBarLbd
+          ? `Betongdelen gir bare ${n(worst.trueAnchorage, 0)} mm forankring utenfor ` +
             `ytterste bøyle mot l_bd = ${n(L.bendBarLbd, 0)} mm – forleng stanga, ` +
             'reduser ⌀_b, eller bruk overflatearmeringa i bøyen i stedet.'
           : `Stanga er ${n(worst ? worst.span : 0, 0)} mm lang, med ` +
-            `${n(worst ? worst.anchorage : 0, 0)} mm forankring utenfor ytterste bøyle ` +
-            'i hver ende.') });
+            `${n(worst ? worst.trueAnchorage : 0, 0)} mm tilgjengelig forankring utenfor ` +
+            'ytterste bøyle i hver ende.') });
   }
 
   // --- e) kjeglebrudd på nytt, fra enden av armeringa ---------------------
@@ -5164,7 +5334,10 @@ function b19EffectiveHef(m, pts) {
   const near = [];
   for (const dir of ['xNeg', 'xPos', 'yNeg', 'yPos']) {
     const ds = pts.map(p => edgeDistances(m, p.x, p.y)[dir]).filter(Number.isFinite);
-    if (ds.length && Math.min(...ds) < 1.5 * hef) near.push(Math.max(...ds));
+    // Fig. B 19.13: each edge distance starts at the nearest outer bolt row;
+    // the distance between rows is accounted for separately by s_maks.
+    const edge = Math.min(...ds);
+    if (edge < 1.5 * hef) near.push(edge);
   }
   if (near.length < 3) return { hef, reduced: false, nEdges: near.length };
 
@@ -5220,7 +5393,7 @@ function b19ConeBranch(m, res, c) {
       subst: `maks(${n(he.aMax, 0)}/1,5 ; ${n(he.sMax, 0)}/3)`,
       value: hef, unit: 'mm', ref: '19.3.2.2' });
 
-  const plain = m.code.cracked && m.code.edgeReinf === 'none';
+  const plain = m.code.cracked && m.code.edgeReinf !== 'bars+stirrups';
   const k1 = c.step({ sym: 'k_1', desc: plain
       ? 'Risset uarmert betong (uten kantarmering eller bøyler): 0,7 · k_1'
       : 'Urisset betong, eller risset med kantarmering og bøyler',
@@ -5237,14 +5410,9 @@ function b19ConeBranch(m, res, c) {
     formula: '9 · h_ef²', subst: `9 · ${n(hef, 0)}²`,
     value: 9 * hef * hef, unit: 'mm²', ref: '19.3.2.2' });
   const Ac = c.step({ sym: 'A_c,N', desc: 'Bruddareal for gruppa',
-    formula: foot.common
-      ? 'endeplata ± 1,5·h_ef, klippet mot frie kanter'
-      : 'union av (⌀ ± 1,5·h_ef), klippet mot frie kanter',
-    subst: foot.common
-      ? `felles endeplate ${n(foot.plate.bx, 0)} × ${n(foot.plate.by, 0)} mm, ` +
-        `1,5·h_ef = ${n(1.5 * hef, 0)} mm`
-      : `${pts.length} bolter i strekk, 1,5·h_ef = ${n(1.5 * hef, 0)} mm`,
-    value: coneProjection(m, foot, pts, 1.5 * hef), unit: 'mm²',
+    formula: 'union av kvadrater rundt boltakser (± 1,5·h_ef), klippet mot frie kanter',
+    subst: `${pts.length} bolter i strekk, 1,5·h_ef = ${n(1.5 * hef, 0)} mm`,
+    value: clippedSquares(m, pts, 1.5 * hef), unit: 'mm²',
     ref: 'fig. B 19.11' });
 
   const cmin = minEdgeDist(m, pts);
@@ -5367,7 +5535,7 @@ function b19TensionConcrete(m, res) {
   const cd = b19Concrete(m);
   c.in('⌀', sh.d, 'mm', 'Bolter');
   c.in('h_ef', m.anchors.hef, 'mm',
-    foot.hasFoot ? 'Bolter · dybde til underkant fot' : 'Bolter · innstøpt lengde');
+    foot.hasFoot ? 'Bolter · dybde til overkant fot (trykkflaten)' : 'Bolter · innstøpt lengde');
   c.in('f_ck,cube', cd.fckCube, 'N/mm²', `Betongdel · ${cd.grade} · terningfasthet`);
   c.in('f_ctk,0,05', cd.fctk, 'N/mm²', `Betongdel · ${cd.grade}`);
   c.in('γ_c', cd.gc, '–', 'Regelverk');
@@ -5398,11 +5566,16 @@ function b19TensionConcrete(m, res) {
     subst: `${n(win.NEd)} / ${n(win.NRd)}`, value: win.util });
 
   const notes = [`Styrende modell: ${win.name.toLowerCase()} (pkt. ${win.clause}).`];
+  if (anchorFoot(m).common)
+    notes.push('Kjeglearealet beregnes konservativt fra boltakser uten tillegg for ' +
+      'felles endeplate. Stor fot etter fig. B 19.17 krever separat dokumentasjon ' +
+      'av medvirkende utstikk og stivhet.');
   if (!cd.inRange)
     notes.push(`B19 dekker selv B25–B55; ${cd.grade} er ekstrapolert.`);
 
   return { id: 'N-conc', mode: `Utrivning – ${win.name.toLowerCase()}`,
            clause: win.clause, scope: win.scope, showCone: win === cone,
+           effectiveHef: win === cone ? cone.hef : undefined,
            NRk: win.NRd, NRd: win.NRd, NEd: win.NEd, util: win.util,
            calc: c, note: notes.join(' ') };
 }
@@ -5419,7 +5592,7 @@ function b19FootPressure(m, res) {
   }
   const cd = b19Concrete(m), sh = shaftProps(m);
   const c = new Calc('19.3.2.4');
-  const plain = m.code.cracked && m.code.edgeReinf === 'none';
+  const plain = m.code.cracked && m.code.edgeReinf !== 'bars+stirrups';
   const FOOT = { head: 'bolthode', nut: 'endemutter',
                  plate: 'felles innstøpt endeplate' };
 
@@ -5883,6 +6056,9 @@ function validate(m) {
 
   // --- forankringsende og stangtype -------------------------------------
   const sh = shaftProps(m), foot = anchorFoot(m);
+  if (foot.hasFoot && a.hef < hLoc && a.hef + foot.t >= hLoc)
+    err('Forankringsfoten går ned til eller gjennom betongens underkant. ' +
+        'h_ef måles til oversiden av foten; fottykkelsen kommer i tillegg.');
   if (!foot.hasFoot && !sh.bond)
     err('«Uten endemutter» krever heftforankring: velg kamstål eller ' +
         'gjengestang som stangtype, eller sett på endemutter/endeplate.');
@@ -6131,9 +6307,14 @@ function verify(m) {
       })()
     : gEN;
 
-  const valid = checks.filter(c => Number.isFinite(c.util));
+  // Infinite utilization is a failed check, not a reason to omit it.
+  const invalid = checks.filter(c => !Number.isFinite(c.util) && c.util !== Infinity);
+  if (invalid.length)
+    issues.push({ level: 'error', text: `Ugyldig beregningsresultat: ${invalid.map(c => c.mode).join(', ')}.` });
+  const valid = checks.filter(c => Number.isFinite(c.util) || c.util === Infinity);
   const governing = valid.length
     ? valid.reduce((a, b) => (b.util > a.util ? b : a)) : null;
+  const bearing = bearingCheck(m, res);
 
   return {
     model: m, res, standard: STD_LABEL[general],
@@ -6144,10 +6325,11 @@ function verify(m) {
       scLabel: STD_LABEL[scStd],
     },
     gamma,
-    issues, bearing: bearingCheck(m, res),
+    issues, bearing,
     checks, replacedConcreteChecks, governing,
     maxUtil: governing ? governing.util : NaN,
-    ok: governing ? governing.util <= 1.0 : false,
+    ok: !!governing && governing.util <= 1.0 && res.converged &&
+      !issues.some(i => i.level === 'error') && (!bearing || bearing.ok),
   };
 }
 
@@ -6231,18 +6413,18 @@ class ThreeDStage extends HTMLElement {
     // ACES trekker et lyst motiv mot grått.
     this.renderer.toneMapping = THREE.NeutralToneMapping;
     this.renderer.toneMappingExposure = 1.0;
-    // Ingen skyggelegging: modellen leses tydeligere uten, og skyggen av en
-    // flat betongkloss ga lite igjen for kostnaden.
-    this.renderer.shadowMap.enabled = false;
+    // Myke skygger gir dybde mellom betong, plate og forankringsdetaljer.
+    this.renderer.shadowMap.enabled = true;
+    this.renderer.shadowMap.type = THREE.PCFSoftShadowMap;
     root.appendChild(this.renderer.domElement);
 
     this.scene = new THREE.Scene();
-    this.scene.background = new THREE.Color(this.getAttribute('background') || '#efede8');
+    this.scene.background = new THREE.Color(this.getAttribute('background') || '#e9edef');
 
     // Miljøkart - uten dette blir metalliske materialer nesten svarte.
     const pmrem = new THREE.PMREMGenerator(this.renderer);
     this.scene.environment = pmrem.fromScene(new RoomEnvironment(), 0.04).texture;
-    this.scene.environmentIntensity = 0.35;
+    this.scene.environmentIntensity = 0.65;
     pmrem.dispose();
 
     // To kameraer som deler posisjon og retning. Perspektiv gir dybdefølelse;
@@ -6263,6 +6445,11 @@ class ThreeDStage extends HTMLElement {
     this.scene.add(new THREE.HemisphereLight(0xffffff, 0xcfcabe, 0.95));
 
     this.key = new THREE.DirectionalLight(0xfff8ec, 1.55);
+    this.key.castShadow = true;
+    this.key.shadow.mapSize.set(2048, 2048);
+    this.key.shadow.normalBias = 0.8;
+    this.key.shadow.bias = -0.0001;
+    this.key.shadow.radius = 3;
     this.key.position.set(-1500, 2400, 1700);
     this.scene.add(this.key, this.key.target);
 
@@ -6297,6 +6484,7 @@ class ThreeDStage extends HTMLElement {
 
     const tick = () => {
       this._raf = requestAnimationFrame(tick);
+      if (!this.getClientRects().length || document.hidden) return;
       this.controls.update();
       this.renderer.render(this.scene, this.camera);
       this._faceLabels();
@@ -6555,21 +6743,44 @@ class ThreeDStage extends HTMLElement {
   }
 
   setContent(obj) {
+    const textures = new Set(), materials = new Set(), geometries = new Set();
     this.content.traverse(o => {
-      if (o.geometry) o.geometry.dispose();
-      if (o.material) [].concat(o.material).forEach(mm => mm.dispose());
+      if (o.geometry) geometries.add(o.geometry);
+      if (o.material) [].concat(o.material).forEach(mm => {
+        materials.add(mm);
+        for (const value of Object.values(mm)) if (value?.isTexture) textures.add(value);
+      });
     });
+    textures.forEach(t => t.dispose());
+    materials.forEach(m => m.dispose());
+    geometries.forEach(g => g.dispose());
     this.content.clear();
     this.content.add(obj);
     // Bare det oeverste leddet i hvert haandtak samles - resten av pila henger
     // under det og treffes likevel av straalen.
     this._handleObjs = [];
     obj.traverse(o => {
+      if (o.isMesh && o.material && !Array.isArray(o.material)) {
+        o.castShadow = !o.material.transparent && !o.userData.noExport;
+        o.receiveShadow = !o.material.transparent;
+      }
       if (!o.userData.handle) return;
       for (let q = o.parent; q; q = q.parent) if (q.userData.handle) return;
       this._handleObjs.push(o);
     });
+    this._updateLight();
     if (!this._framed) { this.frameAll(); this._framed = true; }
+  }
+
+  _updateLight() {
+    const box = this._bounds(), c = box.getCenter(new THREE.Vector3());
+    const r = Math.max(100, box.getSize(new THREE.Vector3()).length() / 2);
+    this.key.target.position.copy(c);
+    this.key.position.copy(c).add(new THREE.Vector3(-r * 1.8, r * 2, r * 1.4));
+    Object.assign(this.key.shadow.camera, {
+      left: -r, right: r, top: r, bottom: -r, near: 1, far: r * 6,
+    });
+    this.key.shadow.camera.updateProjectionMatrix();
   }
 
   _bounds() {
@@ -6582,7 +6793,9 @@ class ThreeDStage extends HTMLElement {
     const box = this._bounds();
     const c = box.getCenter(new THREE.Vector3());
     const r = box.getSize(new THREE.Vector3()).length() / 2;
-    const dist = (r / Math.sin(THREE.MathUtils.degToRad(this.perspCam.fov) / 2)) * factor * 0.6;
+    const vertical = THREE.MathUtils.degToRad(this.perspCam.fov) / 2;
+    const halfFov = Math.min(vertical, Math.atan(Math.tan(vertical) * this.perspCam.aspect));
+    const dist = (r / Math.sin(halfFov)) * factor * 0.75;
     const dir = this._framed
       ? this.camera.position.clone().sub(this.controls.target).normalize()
       : new THREE.Vector3(1, 0.8, 1).normalize();   // fast startretning
@@ -6595,7 +6808,7 @@ class ThreeDStage extends HTMLElement {
 
     // Parallellkameraet har ingen avstandsavhengighet, så «zoom» er høyden på
     // bildeutsnittet. Den settes av modellens størrelse, ikke av avstanden.
-    this._orthoSize = r * factor * 0.62;
+    this._orthoSize = r * factor * 0.72 / Math.min(1, this.perspCam.aspect);
     this.orthoCam.zoom = 1;
     this._resize();
 
@@ -6873,19 +7086,23 @@ function barMesh(bar, mat, split = null, matIn = null) {
 // støpt karakter i stedet for jevn plastgrå.
 // Fullt dekkende, men malt i den gjennomskinnelige passeringa så stålet
 // legger seg over betongen i stedet for å bli tonet ned av den.
-const OVER_CONCRETE = { transparent: true, opacity: 1, depthWrite: true };
+const OVER_CONCRETE = { transparent: false, opacity: 1, depthWrite: true };
 const ORDER = { body: 0, outline: 2, load: 3, steel: 4, tag: 10 };
 
 let GRAIN = null;
 function grainTexture() {
   if (GRAIN) return GRAIN;
-  const S = 256, c = document.createElement('canvas');
+  const S = 512, c = document.createElement('canvas');
   c.width = c.height = S;
   const g = c.getContext('2d');
   const img = g.createImageData(S, S);
+  let seed = 7341;
+  const random = () => ((seed = (1664525 * seed + 1013904223) >>> 0) / 4294967296);
   for (let i = 0; i < S * S; i++) {
-    let v = 224 + (Math.random() - 0.5) * 30;
-    if (Math.random() < 0.0045) v -= 45 + Math.random() * 45;   // luftporer
+    const x = i % S, y = Math.floor(i / S);
+    let v = 210 + (random() - 0.5) * 19
+      + 5 * Math.sin(x * Math.PI * 8 / S) * Math.sin(y * Math.PI * 6 / S);
+    if (random() < 0.003) v -= 30 + random() * 35;
     const k = i * 4;
     img.data[k] = img.data[k + 1] = img.data[k + 2] = Math.max(0, Math.min(255, v));
     img.data[k + 3] = 255;
@@ -6896,6 +7113,11 @@ function grainTexture() {
   g.filter = 'blur(1px)';
   g.drawImage(c, 0, 0);
   g.filter = 'none'; g.globalAlpha = 1;
+  for (let i = 0; i < 160; i++) {
+    const x = random() * S, y = random() * S, r = 0.4 + random() * 2;
+    g.fillStyle = 'rgba(85,89,87,0.16)';
+    g.beginPath(); g.ellipse(x, y, r, r * 0.65, random() * Math.PI, 0, Math.PI * 2); g.fill();
+  }
 
   GRAIN = new THREE.CanvasTexture(c);
   GRAIN.wrapS = GRAIN.wrapT = THREE.RepeatWrapping;
@@ -6904,7 +7126,7 @@ function grainTexture() {
   return GRAIN;
 }
 
-// Ekte materialfarger: grå betong, blåaktig konstruksjonsstål, rustrød armering.
+// Materialfarger: grå betong, metallisk konstruksjonsstål og grå armering.
 // De semantiske fargene (grønn/gul/rød) brukes bare når visningen settes til
 // utnyttelse - ellers holder modellen seg til materialene.
 const MAT = {
@@ -6913,20 +7135,20 @@ const MAT = {
     t.needsUpdate = true;
     t.repeat.set(Math.max(1, Lx / 350), Math.max(1, Ly / 350));  // ~1 flis pr. 350 mm
     return new THREE.MeshStandardMaterial({
-      name: 'betong', color: 0xc3c0b8, map: t, bumpMap: t, bumpScale: 0.5,
+      name: 'betong', color: 0xd5d7d4, map: t, bumpMap: t, bumpScale: 0.35,
       roughness: 1.0, metalness: 0.0,
-      transparent: true, opacity: 0.5, side: THREE.DoubleSide,
-      depthWrite: false,
+      transparent: false, opacity: 1, side: THREE.DoubleSide,
+      depthWrite: true,
     });
   },
   // Valset konstruksjonsstål er matt, ikke forkrommet: lav metalness og høy
   // ruhet, ellers får plata speilglans som ikke finnes i virkeligheten.
   plate: () => new THREE.MeshStandardMaterial({
-    name: 'staalplate', color: 0x54606e, roughness: 0.72, metalness: 0.3,
+    name: 'staalplate', color: 0x626d75, roughness: 0.43, metalness: 0.75,
     ...OVER_CONCRETE,
   }),
   steel: () => new THREE.MeshStandardMaterial({
-    name: 'bolt', color: 0xaeb6bd, roughness: 0.55, metalness: 0.45,
+    name: 'bolt', color: 0xbac1c5, roughness: 0.3, metalness: 0.85,
     ...OVER_CONCRETE,
   }),
   cone: () => new THREE.MeshStandardMaterial({
@@ -6941,13 +7163,13 @@ const MAT = {
     name: 'gytemasse', color: 0xc2baa8, roughness: 0.96, metalness: 0.0,
   }),
   rebar: () => new THREE.MeshStandardMaterial({
-    name: 'armering', color: 0x9e5232, roughness: 0.82, metalness: 0.15,
+    name: 'armering', color: 0x666967, roughness: 0.68, metalness: 0.55,
     ...OVER_CONCRETE,
   }),
   // Kamstål som forankringsstang: lysbrun valsehud, skilt fra den rustrøde
   // forankringsarmeringa (reinf) så de to kamstål-elementene ikke blandes.
   rebarAnchor: () => new THREE.MeshStandardMaterial({
-    name: 'kamstaal', color: 0xc19a6b, roughness: 0.85, metalness: 0.1,
+    name: 'kamstaal', color: 0x747975, roughness: 0.7, metalness: 0.5,
     ...OVER_CONCRETE,
   }),
   // Den delen av tilleggsarmeringa som ligger INNE i bruddkjegla - l_1, den
@@ -6974,7 +7196,10 @@ function utilColor(u) {
 
 // --- smaa hjelpere ---------------------------------------------------------
 function boxMesh(w, d, h, mat, name) {
-  const m = new THREE.Mesh(new THREE.BoxGeometry(w, d, h), mat);
+  const geometry = name === 'forankringsplate'
+    ? new RoundedBoxGeometry(w, d, h, 2, Math.min(1, h / 8))
+    : new THREE.BoxGeometry(w, d, h);
+  const m = new THREE.Mesh(geometry, mat);
   m.name = name; return m;
 }
 
@@ -7312,7 +7537,8 @@ function loadTriad(m, zTop, hud) {
 function buildScene(v, opts = {}) {
   const show = { concrete: true, cone: true, wedge: true, loads: true,
                  labels: true, rebar: true, plate: true, dims: true,
-                 colorMode: 'material', ...opts };
+                 colorMode: 'material', renderMode: 'cutaway', concreteOpacity: 0.28,
+                 sectionAxis: 'x', sectionPosition: 50, ...opts };
   const byUtil = show.colorMode === 'utilisation';
   const m = v.model, res = v.res;
   const hud = [];                     // HTML-påskrifter verten plasserer
@@ -7327,7 +7553,37 @@ function buildScene(v, opts = {}) {
   // grop der plata staar, ligger grunnformens overkant over null - da flyttes
   // betongen, ikke stålet, saa alt det andre kan regne z = 0 som overflata.
   const dz = -surfaceZ(m);
-  if (show.concrete) root.add(concreteBody(m, dz));
+  if (show.concrete) {
+    let visualModel = m;
+    if (show.renderMode === 'cutaway') {
+      // Reuse the solid engine to cap the visual section, without changing input geometry.
+      const b = baseBox(m), slabs = solidSlabs(m);
+      const axis = show.sectionAxis === 'y' ? 'y' : 'x';
+      const lo = b[axis + '0'], hi = b[axis + '1'];
+      const at = lo + (hi - lo) * Math.max(0, Math.min(100, show.sectionPosition)) / 100;
+      const x0 = axis === 'x' ? at : b.x0 - 1;
+      const y0 = axis === 'y' ? at : b.y0 - 1;
+      const x1 = b.x1 + 1, y1 = b.y1 + 1;
+      const cut = newShape('__visual_section', 'rect', {
+        x: (x0 + x1) / 2 + (+m.concrete.ex || 0),
+        y: (y0 + y1) / 2 + (+m.concrete.ey || 0), bx: x1 - x0, by: y1 - y0,
+        z0: Math.min(-m.concrete.h, ...slabs.map(s => s.z0)) - 1,
+        z1: Math.max(0, ...slabs.map(s => s.z1)) + 1,
+      }, 'cut');
+      visualModel = { ...m, concrete: { ...m.concrete, plan: [...planShapes(m), cut] } };
+    }
+    const body = concreteBody(visualModel, dz);
+    body.traverse(o => {
+      if (!o.isMesh) return;
+      const transparent = show.renderMode === 'xray';
+      o.material.transparent = transparent;
+      o.material.opacity = transparent ? show.concreteOpacity : 1;
+      o.material.depthWrite = !transparent;
+      o.castShadow = !transparent;
+      o.receiveShadow = true;
+    });
+    root.add(body);
+  }
 
   // ---- undergyting ------------------------------------------------------
   const mnt = mounting(m);
@@ -7373,7 +7629,7 @@ function buildScene(v, opts = {}) {
                    : welded ? mnt.offset
                             : zTop + washT + nutH + 0.3 * a.d;
     // Med fot starter skaftet på overkant fot; uten fot går det helt ned.
-    const zBot = foot.hasFoot ? -a.hef + foot.t : -a.hef;
+    const zBot = -a.hef;
     const shaftLen = shaftTop - zBot;
 
     const cyl = (r, h, seg = 24) => new THREE.CylinderGeometry(r, r, h, seg);
@@ -7425,9 +7681,9 @@ function buildScene(v, opts = {}) {
       // Sekskantmutter: nøkkelvidden er avstanden mellom flatene, altså
       // 2 * innskrevet radius. Sylinderradiusen er den omskrevne.
       put(new THREE.Mesh(cyl(a.dh / Math.sqrt(3), foot.t, 6), mat),
-        -a.hef + foot.t / 2, 'endemutter');
+        -a.hef - foot.t / 2, 'endemutter');
     } else if (foot.kind === 'head') {
-      put(new THREE.Mesh(cyl(a.dh / 2, foot.t), mat), -a.hef + foot.t / 2, 'hode');
+      put(new THREE.Mesh(cyl(a.dh / 2, foot.t), mat), -a.hef - foot.t / 2, 'hode');
     } else if (foot.kind === 'hook') {
       const hook = rebarHook(a.d, zBot, an.x, an.y, mat);
       hook.name = `krok_${an.id}`;
@@ -7474,7 +7730,7 @@ function buildScene(v, opts = {}) {
     const pl = foot.plate;
     const ep = new THREE.Mesh(
       new THREE.BoxGeometry(pl.bx, pl.by, foot.t), steelMat);
-    ep.position.set((pl.x0 + pl.x1) / 2, (pl.y0 + pl.y1) / 2, -a.hef + foot.t / 2);
+    ep.position.set((pl.x0 + pl.x1) / 2, (pl.y0 + pl.y1) / 2, -a.hef - foot.t / 2);
     ep.renderOrder = ORDER.steel;
     ep.name = 'endeplate';
     root.add(ep);
@@ -7489,20 +7745,11 @@ function buildScene(v, opts = {}) {
   const cone = [...v.checks, ...(v.replacedConcreteChecks || [])]
     .find(k => k.id === 'N-cone' || (k.id === 'N-conc' && k.showCone));
   if (show.cone && res.tension.anchors.length && cone && Number.isFinite(cone.NRd)) {
-    const ccr = 1.5 * a.hef;
-    // Med felles endeplate river hele plata ut ett legeme, så kjegla starter
-    // ved platekanten - det samme arealet som A_c,N regnes av.
-    // Med felles endeplate river hele plata ut ett legeme - da er kilden
-    // platerektangelet. Ellers sprer kjegla seg fra hver bolt for seg, og
-    // nabokjeglene moetes i en rygg mellom boltene.
-    const srcs = foot.common
-      ? [{ x0: foot.plate.x0, x1: foot.plate.x1,
-           y0: foot.plate.y0, y1: foot.plate.y1 }]
-      // Spredninga regnes fra boltaksen, ikke fra fotkanten - det er slik
-      // A_c,N er lagt opp (clippedSquares om boltpunktene), og bildet skal
-      // vise akkurat den kjegla tallene er regnet av.
-      : res.tension.anchors.map(t => ({ x0: t.x, x1: t.x, y0: t.y, y1: t.y }));
-    const cm = coneMesh(m, srcs, ccr, a.hef);
+    const coneHef = cone.effectiveHef ?? a.hef;
+    const ccr = 1.5 * coneHef;
+    // Samme boltaksesentrerte projeksjon som i kapasitetsberegningen.
+    const srcs = res.tension.anchors.map(t => ({ x0: t.x, x1: t.x, y0: t.y, y1: t.y }));
+    const cm = coneMesh(m, srcs, ccr, coneHef);
     if (cm) {
       cm.renderOrder = 3;
       root.add(cm, outline(cm, 0xffa53d));
@@ -7997,7 +8244,7 @@ const FIELDS = [
       l: m => m.anchors.endType === 'nut' || m.anchors.endType === 'plate'
         ? 'h_ef' : 'Innstøpt lengde',
       t: 'num', u: 'mm', step: 5,
-      hint: 'Med fot: dybden ned til underkant fot. Uten fot: hele den ' +
+      hint: 'Med fot: effektiv dybde til overkant fot (trykkflaten). Uten fot: hele den ' +
             'innstøpte lengda. Heftlengda l_b er den delen som faktisk ' +
             'utvikler heft – for gjengestang: den gjengede delen.' },
     // Bolter er sjelden gjenget helt opp: skaftet er glatt fra hodet, og
@@ -9024,19 +9271,15 @@ function clusters(vals, gap) {
 // ===========================================================================
 //
 //  Kjegla starter i trykkflata - overkant fot - og sprer seg opp og ut til
-//  betongoverflata, c_cr,N = 1,5*h_ef til hver side. Henger boltene i en felles
-//  endeplate, sprer den seg fra platekanten og ikke fra hver bolt for seg,
-//  nøyaktig slik A_c,N regnes i coneProjection().
+//  betongoverflata, c_cr,N = 1,5*h_ef fra hver boltakse, som i clippedSquares().
 //
 function coneGeo(m) {
   const hef = m.anchors.hef;
   const foot = anchorFoot(m);
-  // Trykkflata: overkant fot. h_ef går til underkant fot, så kjeglespissen
-  // ligger fothøgda over det. Uten fot er det ingen trykkflate å spre fra.
-  const zTop = Math.max(0, hef - (foot.hasFoot ? foot.t : 0));
+  const zTop = hef; // h_ef ends at the bearing face on top of the head.
   const pl = foot.common ? endPlate(m) : null;
   return {
-    hef, foot, pl, zTop,
+    hef, foot, pl, zTop, plateProjection: false,
     ccr: 1.5 * hef, scr: 3 * hef,
     pts: anchorPositions(m),
     box: baseBox(m),
@@ -9044,8 +9287,11 @@ function coneGeo(m) {
   };
 }
 
-function coneFigure(m) {
+function coneFigure(m, check) {
   const geo = coneGeo(m);
+  if (check?.tensionAnchorIds)
+    geo.pts = geo.pts.filter(p => check.tensionAnchorIds.includes(p.id));
+  if (!geo.pts.length) return '';
   return tabsAndPanels('cone', [
     ['x', 'Snitt x', sectionPanel(m, geo, 'x')],
     ['y', 'Snitt y', sectionPanel(m, geo, 'y')],
@@ -9087,9 +9333,8 @@ function sectionPanel(m, geo, ax) {
   const a = axisData(m, geo, ax);
   const uL = a.us[0], uR = a.us[a.us.length - 1];
 
-  // Kjeglene: én felles når boltene henger i endeplate, ellers én pr. bolt -
-  // slått sammen der de flyter over i hverandre.
-  const cones = geo.pl ? [[a.foot0, a.foot1]] : clusters(a.us, 2 * ccr);
+  // Kjeglene grupperes der projeksjonene overlapper.
+  const cones = geo.plateProjection ? [[a.foot0, a.foot1]] : clusters(a.us, 2 * ccr);
   const coneL = cones[0][0] - ccr;
   const coneR = cones[cones.length - 1][1] + ccr;
 
@@ -9194,7 +9439,7 @@ function sectionPanel(m, geo, ax) {
     ? `Snitt i ${ax}-retning gjennom boltegruppa, sett mot ${a.other}-aksen.
        Kjegla starter i trykkflata på overkant ${geo.pl ? 'endeplate' : 'fot'} og
        sprer seg opp mot overflata med c<sub>cr,N</sub> = 1,5·h<sub>ef</sub> til
-       side.${geo.pl ? ' Boltene henger i en felles endeplate, så kjegla sprer seg fra platekanten og ikke fra hver bolt.' : ''}${
+       side.${geo.plateProjection ? ' Kjegla sprer seg fra endeplata.' : ' Beregningsarealet projiseres fra boltakser.'}${
          tensionGroups(m).length ? ' Tilleggsarmeringa er tegnet med i snittet: den krysser kjegleflata og fører lasta ned under bruddlegemet.' : ''}`
     : `Snitt i ${ax}-retning. Uten forankringsfot er det ingen trykkflate å
        spre en kjegle fra - forankringen regnes som heftforankring.`;
@@ -9207,7 +9452,7 @@ function sectionPanel(m, geo, ax) {
 // omhyllende trapes. Sløyfa klippes der betongen slutter.
 function conePath(geo, a, u0, u1, limL, limR, X, Z) {
   const { ccr, zTop } = geo;
-  const us = geo.pl ? [[u0, u1]] : a.us.filter(u => u >= u0 && u <= u1).map(u => [u, u]);
+  const us = geo.plateProjection ? [[u0, u1]] : a.us.filter(u => u >= u0 && u <= u1).map(u => [u, u]);
   const p = [];
 
   // venstre skråflate opp fra overflata
@@ -9241,15 +9486,9 @@ function planPanel(m, geo) {
   const { ccr, scr, pts, foot, pl, box } = geo;
   const A = m.anchors;
 
-  // Grunnflata A_c,N: ett rektangel om endeplata, ellers ett om hver bolt.
-  // Boltene står i et rutenett, så unionen av kvadratene er nøyaktig
-  // klyngene i x krysset med klyngene i y - ingen indre kanter å tegne.
-  const xs0 = [...new Set(pts.map(p => p.x))];
-  const ys0 = [...new Set(pts.map(p => p.y))];
-  const rects = pl
-    ? [{ x0: pl.x0 - ccr, x1: pl.x1 + ccr, y0: pl.y0 - ccr, y1: pl.y1 + ccr }]
-    : clusters(xs0, 2 * ccr).flatMap(cx => clusters(ys0, 2 * ccr).map(cy => ({
-        x0: cx[0] - ccr, x1: cx[1] + ccr, y0: cy[0] - ccr, y1: cy[1] + ccr })));
+  // Ett kvadrat per strekkbolt; ikke fyll inn eventuelle manglende ruter.
+  const rects = pts.map(p => ({ x0: p.x - ccr, x1: p.x + ccr,
+    y0: p.y - ccr, y1: p.y + ccr }));
 
   const rx0 = Math.min(...rects.map(r => r.x0)), rx1 = Math.max(...rects.map(r => r.x1));
   const ry0 = Math.min(...rects.map(r => r.y0)), ry1 = Math.max(...rects.map(r => r.y1));
@@ -9489,8 +9728,7 @@ function sreFigure(m, check) {
 //  treffer nabokjegla på midten. Det er nettopp den ryggen som avgjør hvor
 //  djupt et bøylebein står inne i bruddlegemet.
 //
-//  Med felles endeplate river hele plata ut ett legeme, og da ER taket flatt
-//  under plata - derfor tas kilden som et intervall og ikke som punkter.
+//  Kilder angis som intervaller; boltaksene har lik start- og sluttkoordinat.
 // ---------------------------------------------------------------------------
 function coneProfile(geo, sources, ccr) {
   const zTop = geo.zTop;
@@ -9515,12 +9753,7 @@ function srePanelView(m, r, L, geo, axis) {
   const bent = L.bent;
 
   // Kildene kjegla sprer seg fra, projisert på visningsaksen.
-  const sources = foot.common && geo.pl
-    ? [[Math.min(T({ x: geo.pl.x0, y: geo.pl.y0 }), T({ x: geo.pl.x1, y: geo.pl.y1 }),
-                 T({ x: geo.pl.x0, y: geo.pl.y1 }), T({ x: geo.pl.x1, y: geo.pl.y0 })),
-        Math.max(T({ x: geo.pl.x0, y: geo.pl.y0 }), T({ x: geo.pl.x1, y: geo.pl.y1 }),
-                 T({ x: geo.pl.x0, y: geo.pl.y1 }), T({ x: geo.pl.x1, y: geo.pl.y0 }))]]
-    : pts.map(p => [T(p), T(p)]);
+  const sources = pts.map(p => [T(p), T(p)]);
   const prof = coneProfile(geo, sources, geo.ccr);
 
   // Utsnitt: hele kjegla, all armering og hele boltegruppa.
@@ -9537,7 +9770,7 @@ function srePanelView(m, r, L, geo, axis) {
 
   const W = 760, padL = 82, padR = 108, padB = 56;
   const sc = Math.min((W - padL - padR) / (t1 - t0), 430 / zBot);
-  const ARR = 40, padT = 34 + ARR;
+  const ARR = 40, ROW = 24, padT = 34 + ARR + ROW;
   const H = padT + padB + zBot * sc;
   const X = t => padL + (t - t0) * sc;
   const Z = z => padT + z * sc;
@@ -9590,19 +9823,41 @@ function srePanelView(m, r, L, geo, axis) {
     `x2="${f1(X(t1))}" y2="${f1(Z(0))}"/>`);
 
   // --- stanga i bøyen ---
+  // Sett langs armeringa (axis 'u') ligger stanga inn/ut av papiret - vi ser
+  // enden av henne, som en sirkel. Sett på tvers (axis 'n') ligger hun derimot
+  // I papirplanet, på tvers av beina - da skal hun tegnes som ei linje mellom
+  // de bøylene hun går gjennom, ikke som gjentatte sirkler oppå hverandre.
   if (bent && L.dtBend > 0) {
     const rb = Math.max(2.2, L.dtBend * sc / 2);
-    const seen = new Set();
-    for (const b of L.bars)
-      for (const uu of [b.uStart + L.rm, b.uEnd - L.rm]) {
-        const q = { x: L.u.x * uu + L.n.x * b.v, y: L.u.y * uu + L.n.y * b.v };
-        const k = Math.round(T(q));
-        if (seen.has(k)) continue;
-        seen.add(k);
-        g.push(`<circle class="mesh" cx="${f1(X(T(q)))}" cy="${f1(Z(L.dBend))}" ` +
-          `r="${f1(rb)}"/>`);
-      }
-    g.push(txt('ann', X(t1) - 6, Z(L.dBend) + 4, L.bendBarMode === 'own'
+    if (axis === 'n') {
+      // Ekte lengde, samme strek som selve bøylen: stanga er rett og ligger i
+      // tegningsplanet her, med endene ute i sin egen forankring - ikke bare
+      // strekt mellom beina. Klippes mot betongdelen, så den ikke stikker inn
+      // i påskriftene utenfor snittet - forankringa kan gå langt utover det
+      // som er tegnet her.
+      const projectBend = p => [X(T(p)), Z(-p.z)];
+      for (const bb of bendBarsFor(m, r))
+        for (const path of bb.paths) {
+          const pts = path.points.map(projectBend)
+            .map(([x, y]) => [Math.max(X(t0), Math.min(X(t1), x)), y]);
+          const d = 'M' + pts.map(q => `${f1(q[0])} ${f1(q[1])}`).join(' L');
+          g.push(`<path class="reinf" d="${d}"/>`);
+        }
+    } else {
+      const seen = new Set();
+      for (const b of L.bars)
+        for (const uu of [b.uStart + L.rm, b.uEnd - L.rm]) {
+          const q = { x: L.u.x * uu + L.n.x * b.v, y: L.u.y * uu + L.n.y * b.v };
+          const k = Math.round(T(q));
+          if (seen.has(k)) continue;
+          seen.add(k);
+          g.push(`<circle class="mesh" cx="${f1(X(T(q)))}" cy="${f1(Z(L.dBend))}" ` +
+            `r="${f1(rb)}"/>`);
+        }
+    }
+    // I 'n'-visninga går streken helt ut til kanten der påskrifta står -
+    // den må derfor heves over streken, ikke ligge midt i den.
+    g.push(txt('ann', X(t1) - 6, Z(L.dBend) + (axis === 'n' ? -10 : 4), L.bendBarMode === 'own'
       ? `egen stang ⌀${num(L.dtBend)} i bøyen` : `overflatearmering i bøyen`, 'end'));
   }
 
@@ -9618,8 +9873,12 @@ function srePanelView(m, r, L, geo, axis) {
   }
 
   // --- mål ---
+  // To rader over figuren: den ytterste (yTop) tar kjeglebredda og
+  // senteravstanden, den innerste (yTop2) tar avstanden bolt -> styrende bein
+  // - ellers legger den seg oppå l_1/l_bd-kolonnen midt i figuren.
   const tMin = Math.min(...ts), tMax = Math.max(...ts);
-  const yTop = Z(-tp) - ARR - 4;
+  const yTop = Z(-tp) - ARR - 4 - ROW;
+  const yTop2 = yTop + ROW;
   g.push(dimH(X(tMax), X(tMax + geo.ccr), yTop, `1,5·h_ef = ${num(geo.ccr)}`));
   if (tMax > tMin + 1) g.push(dimH(X(tMin), X(tMax), yTop, `${num(tMax - tMin)}`));
 
@@ -9635,7 +9894,7 @@ function srePanelView(m, r, L, geo, axis) {
     g.push(txt('ann', X(t0) + 10, Z(gov.zCone) + 15,
       'her krysser kjegla armeringa – slutt på l₁', 'start'));
     const xd = X(tg) + Math.max(26, L.ds * sc + 20);
-    g.push(dimV(xd, Z(L.dLegTop), Z(Math.min(L.legBottom, gov.zCone)),
+    g.push(dimV(xd, Z(L.bent ? L.dCrown : L.dLegTop), Z(Math.min(L.legBottom, gov.zCone)),
       `l_1 = ${num(L.insideLen)}`));
     if (L.legBottom > gov.zCone + 0.5)
       g.push(dimV(xd, Z(gov.zCone), Z(L.legBottom), `l_bd = ${num(L.outsideLen)}`));
@@ -9646,7 +9905,7 @@ function srePanelView(m, r, L, geo, axis) {
       (Math.hypot(gov.x - b.x, gov.y - b.y) < Math.hypot(gov.x - a.x, gov.y - a.y) ? b : a));
     const off = Math.abs(tg - T(near));
     if (off > 1)
-      g.push(dimH(X(T(near)), X(tg), Z(hef) + 52,
+      g.push(dimH(X(T(near)), X(tg), yTop2,
         `${axis === 'u' ? 'a' : 'd'} = ${num(off)} < 0,75·h_ef = ${num(L.dMax)}`));
   }
 
@@ -9963,7 +10222,7 @@ const symText = (cls, x, y, str, anchor = 'middle') =>
 const $ = s => document.querySelector(s);
 const el = (t, c, h) => { const e = document.createElement(t); if (c) e.className = c;
                           if (h != null) e.innerHTML = h; return e; };
-const pct = u => Number.isFinite(u) ? Math.round(u * 100) + ' %' : '–';
+const pct = u => u === Infinity ? '∞ %' : Number.isFinite(u) ? Math.round(u * 100) + ' %' : '–';
 const esc = s => String(s).replace(/[&<>]/g, ch => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' }[ch]));
 
 const MOUNT_TXT = { direct: 'direkte mot betong', grout: 'undergyting',
@@ -9973,14 +10232,19 @@ const END_TXT = { nut: 'endemutter', plate: 'felles endeplate',
                   hook: 'endekrok', none: 'uten endemutter (heft)' };
 
 let model = defaultModel();
-let showOpts = { cone: true, wedge: true, loads: true, labels: false, concrete: true,
-                 rebar: true, surfaceMesh: true, dims: true,
+let showOpts = { cone: false, wedge: false, loads: false, labels: false, concrete: true,
+                 rebar: true, surfaceMesh: true, dims: false,
+                 renderMode: 'cutaway', concreteOpacity: 0.28, sectionAxis: 'x', sectionPosition: 50,
                  colorMode: 'material', shape: null };
 let hudItems = [];        // {el, pos, quat, scale} – sendes til stage.setLabels
 let activeGroup = 'Betongdel';
 let activeCheck = null;
 let viewTab = '3d';
 let resultsTab = 'summary';
+// Åpen/lukket pr. undergruppe (fam:kategori) i utnyttelseslista - resultatet
+// bygges helt om ved hver kontrollrad-klikk, så tilstanden må holdes for seg
+// og gjenopprettes, ellers slår et klikk alle gruppene opp igjen.
+const groupOpen = {};
 
 // Kort sammendrag pr. gruppe, så velgeren viser tilstanden uten at du åpner den.
 const SUMMARY = {
@@ -10299,17 +10563,25 @@ function field(f) {
 }
 
 // === resultat =============================================================
-const utilCss = u => !Number.isFinite(u) ? 'var(--tx3)'
+const utilCss = u => u === Infinity ? 'var(--bad)' : !Number.isFinite(u) ? 'var(--tx3)'
   : u > 1 ? 'var(--bad)' : u > 0.7 ? 'var(--warn)' : 'var(--ok)';
 
 const family = c => c.id.startsWith('IA') ? 'Samvirkning'
   : c.id.startsWith('N') ? 'Strekk' : 'Skjær';
 
-const applicable = c => c.expr ? Number.isFinite(c.util)
-  : Number.isFinite(c.util) && Number.isFinite(c.NRd);
+// Undergruppering innad i Strekk/Skjær: betong, stål eller (tilleggs-)armering.
+// Rekkefølgen her er vist-rekkefølgen i lista.
+const CATEGORY_ORDER = ['Betong', 'Stål', 'Armering'];
+const category = c => /-sre-/.test(c.id) ? 'Armering'
+  : c.id === 'N-steel' || c.id === 'V-steel' || c.id === 'V-bend' ? 'Stål'
+  : 'Betong';
+const CAT_CLS = { 'Betong': 'conc', 'Stål': 'steel', 'Armering': 'reinf' };
+
+const applicable = c => c.expr ? !Number.isNaN(c.util)
+  : !Number.isNaN(c.util) && Number.isFinite(c.NRd);
 
 function bar(u, cls = '') {
-  const w = Number.isFinite(u) ? Math.min(100, u * 100) : 0;
+  const w = u === Infinity ? 100 : Number.isFinite(u) ? Math.min(100, u * 100) : 0;
   return `<div class="track ${u > 1 ? 'full' : ''} ${cls}">` +
          `<i style="width:${w}%;background:${utilCss(u)}"></i></div>`;
 }
@@ -10343,7 +10615,11 @@ function setResultsTab(t) {
 function renderResults(v) {
   const m = model, a = m.anchors, g = v.gamma;
   const foot = anchorFoot(m);
-  $('#verdict').innerHTML = Number.isFinite(v.maxUtil)
+  $('#verdict').innerHTML = !v.res.converged || v.issues.some(i => i.level === 'error')
+    ? '<span style="color:var(--bad)">Ugyldig beregning</span>'
+    : v.bearing && !v.bearing.ok
+    ? '<span style="color:var(--bad)">Kontakttrykk overskredet</span>'
+    : v.governing
     ? `<span style="color:${utilCss(v.maxUtil)}">maks ${pct(v.maxUtil)}</span> · ${esc(v.governing.mode)}`
     : 'ingen kontroller';
 
@@ -10419,8 +10695,46 @@ function renderResults(v) {
     const list = v.checks.filter(c => family(c) === fam)
       .sort((x, y) => (applicable(y) ? y.util : -1) - (applicable(x) ? x.util : -1));
     if (!list.length) continue;
-    util.appendChild(el('h3', `sect fam-${family2cls(fam)}`, fam));
-    for (const c of list) util.appendChild(checkRow(c));
+    // Betong/stål/armering-boksene ligger INNI denne boksen, så det er
+    // synlig at de hører til Strekk/Skjær - ikke bare en overskrift over dem.
+    // Fargen skal bare skille materialene fra hverandre, så denne boksen er
+    // med vilje fargeløs.
+    const famBox = el('section', `fam-box fam-${family2cls(fam)}`);
+    famBox.appendChild(el('h3', 'fam-head', fam));
+    // Samvirkning har bare ett par kontroller og skiller ikke betong/stål/
+    // armering fra hverandre - undergruppert blir den bare tre ett-linjers
+    // overskrifter for like mange rader.
+    if (fam === 'Samvirkning') {
+      for (const c of list) famBox.appendChild(checkRow(c));
+      util.appendChild(famBox);
+      continue;
+    }
+    for (const cat of CATEGORY_ORDER) {
+      const sub = list.filter(c => category(c) === cat);
+      if (!sub.length) continue;
+      // Åpne/lukkbar gruppe pr. kontrolltype - <details> gir det gratis.
+      // Resultatet bygges om ved hvert klikk på en kontrollrad et annet sted
+      // i lista, så tilstanden må huskes i groupOpen og settes tilbake her -
+      // ellers hopper alle gruppene opp igjen for hver rad brukeren åpner.
+      // Verste utnyttelse i gruppa vises i overskriften, så den er lesbar
+      // lukket også.
+      const worst = sub.reduce((a, b) =>
+        (applicable(b) && (!a || b.util > a.util) ? b : a), null);
+      const key = `${fam}:${cat}`;
+      const grp = el('details', `grp cat-${CAT_CLS[cat]}`);
+      grp.open = groupOpen[key] ?? true;
+      grp.addEventListener('toggle', () => { groupOpen[key] = grp.open; });
+      const worstTxt = worst
+        ? worst.binary ? (worst.util > 1 ? 'Ikke OK' : 'OK') : pct(worst.util) : '';
+      const head = el('summary', 'grp-head',
+        `<span class="name">${esc(cat)}</span>` +
+        `<span class="count">${sub.length}</span>` +
+        (worst ? `<span class="pc" style="color:${utilCss(worst.util)}">${worstTxt}</span>` : ''));
+      grp.appendChild(head);
+      for (const c of sub) grp.appendChild(checkRow(c));
+      famBox.appendChild(grp);
+    }
+    util.appendChild(famBox);
   }
 
   // Betongbrudd som tilleggsarmering har erstattet som dimensjonerende - vist
@@ -10443,17 +10757,24 @@ function renderResults(v) {
 const FAM_CLS = { 'Strekk': 'tension', 'Skjær': 'shear', 'Samvirkning': 'combo' };
 function family2cls(fam) { return FAM_CLS[fam] || ''; }
 
+// Noen kontroller er detaljeringssjekker - enten er det nok av noe (plass,
+// forankring) eller ikke, ikke en gradert utnyttelse med margin å vurdere.
+// De vises som OK/Ikke OK i stedet for prosent og stolpe, markert med
+// c.binary på kontrollobjektet.
 function checkRow(c) {
   const ok = applicable(c);
+  const bin = !!c.binary;
   const row = el('button', 'chk' + (ok ? (c.util > 1 ? ' over' : '') : ' na'));
   row.setAttribute('aria-current', String(activeCheck === c.id));
   const sub = !ok ? esc(c.note || 'Ikke aktuell for denne geometrien')
     : c.expr ? `<b>${n(c.util, 2)}</b> / 1,00 · ${esc(c.expr)}`
     : `<b>${kN(c.NEd)} kN</b> / ${kN(c.NRd)} kN · pkt. ${esc(c.clause)}`;
+  const pc = !ok ? '–' : bin ? (c.util > 1 ? 'Ikke OK' : 'OK') : pct(c.util);
+  const pcStyle = bin && ok ? ` style="color:${c.util > 1 ? 'var(--bad)' : 'var(--ok)'}"` : '';
   row.innerHTML =
     `<div class="top"><span class="name">${esc(c.mode)}</span>` +
-    `<span class="pc">${ok ? pct(c.util) : '–'}</span></div>` +
-    (ok ? bar(c.util) : '<div style="height:8px"></div>') +
+    `<span class="pc"${pcStyle}>${pc}</span></div>` +
+    (ok && !bin ? bar(c.util) : '<div style="height:8px"></div>') +
     `<div class="sub">${sub}</div>`;
   row.onclick = () => { activeCheck = c.id; setViewTab('calc'); refresh(false); };
   return row;
@@ -10546,7 +10867,7 @@ function utilForCombos() {
 function paintComboUtils(res) {
   let govId = null, govU = -1;
   for (const [id, v] of res)
-    if (v && Number.isFinite(v.maxUtil) && v.maxUtil > govU) { govU = v.maxUtil; govId = id; }
+    if (v && v.maxUtil > govU) { govU = v.maxUtil; govId = id; }
 
   for (const td of document.querySelectorAll('#combos td[data-combo]')) {
     const v = res.get(td.dataset.combo);
@@ -10557,8 +10878,9 @@ function paintComboUtils(res) {
       continue;
     }
     span.className = 'util';
-    span.style.color = utilCss(v.maxUtil);
-    span.textContent = pct(v.maxUtil);
+    const invalid = !v.res.converged || v.issues.some(i => i.level === 'error');
+    span.style.color = invalid || (v.bearing && !v.bearing.ok) ? 'var(--bad)' : utilCss(v.maxUtil);
+    span.textContent = invalid ? 'Ugyldig' : v.bearing && !v.bearing.ok ? 'Trykk > 100 %' : pct(v.maxUtil);
     span.title = v.governing?.mode ?? '';
   }
   const gov = model.combos.find(c => c.id === govId);
@@ -10715,7 +11037,6 @@ function setViewTab(t) {
   for (const b of document.querySelectorAll('#viewbtns .btn, #exportbtns .btn'))
     b.disabled = t !== '3d';
   $('#ortho').disabled = t !== '3d';
-  if (t === '3d') $('#stage').frameAll?.();
   // Lerretet har null størrelse mens ruta er skjult, så tegninga må tas om
   // igjen - og passes inn første gang den vises.
   if (t === 'plan' && planner) requestAnimationFrame(() => planner.draw());
@@ -10795,6 +11116,17 @@ function initSplitters() {
 
 // === oppdatering ==========================================================
 let t0;
+let sceneResult;
+function refreshScene() {
+  if (!sceneResult) return;
+  clearTimeout(t0);
+  t0 = setTimeout(() => {
+    const { root, hud, hudScale } = buildScene(sceneResult, showOpts);
+    $('#stage').setContent(root);
+    buildHud(hud, hudScale);
+  }, 30);
+}
+
 function refresh(rebuildForm, rebuildCombos) {
   sync(model);
   // Regelverket kan velges to steder - i verktøylinja og i skjemaet. Holder
@@ -10803,6 +11135,7 @@ function refresh(rebuildForm, rebuildCombos) {
   if (rebuildForm) { renderGroups(); renderForm(); } else { renderGroups(); }
   if (rebuildCombos) renderCombos();
   const v = verify(model);
+  sceneResult = v;
   window.__v = v;               // for feilsøking i konsollet
   window.__m = model;
   updateReinforcementStatus(v);
@@ -10812,22 +11145,52 @@ function refresh(rebuildForm, rebuildCombos) {
   $('#st-anchors').textContent = `${model.anchors.nx * model.anchors.ny} bolter`;
   $('#st-solver').textContent = v.res.converged
     ? `løst · ${v.res.iter} iterasjoner` : 'løseren konvergerte ikke';
-  $('#st-max').innerHTML = Number.isFinite(v.maxUtil)
+  $('#st-max').innerHTML = !v.res.converged || v.issues.some(i => i.level === 'error')
+    ? '<span style="color:var(--bad)">Ugyldig beregning</span>'
+    : v.bearing && !v.bearing.ok ? '<span style="color:var(--bad)">Kontakttrykk overskredet</span>'
+    : v.governing
     ? `maks utnyttelse <span style="color:${utilCss(v.maxUtil)}">${pct(v.maxUtil)}</span>` : '–';
   if (planner && viewTab === 'plan') planner.draw();
-  clearTimeout(t0);
-  t0 = setTimeout(() => {
-    const { root, hud, hudScale } = buildScene(v, showOpts);
-    $('#stage').setContent(root);
-    buildHud(hud, hudScale);
-  }, 30);
+  refreshScene();
 }
 
 function boot() {
   for (const cb of document.querySelectorAll('[data-show]')) {
     cb.checked = showOpts[cb.dataset.show];
-    cb.onchange = () => { showOpts[cb.dataset.show] = cb.checked; refresh(false); };
+    cb.onchange = () => { showOpts[cb.dataset.show] = cb.checked; refreshScene(); };
   }
+  const syncViewControls = () => {
+    const mode = $('#render-mode');
+    mode.value = showOpts.renderMode;
+    $('#concrete-opacity').disabled = showOpts.renderMode !== 'xray';
+    $('#section-axis').disabled = showOpts.renderMode !== 'cutaway';
+    $('#section-position').disabled = showOpts.renderMode !== 'cutaway';
+  };
+  $('#render-mode').onchange = e => {
+    showOpts.renderMode = e.target.value;
+    syncViewControls(); refreshScene();
+  };
+  $('#concrete-opacity').value = showOpts.concreteOpacity * 100;
+  $('#concrete-opacity').oninput = e => {
+    showOpts.concreteOpacity = Number(e.target.value) / 100; refreshScene();
+  };
+  $('#section-axis').onchange = e => { showOpts.sectionAxis = e.target.value; refreshScene(); };
+  $('#section-position').oninput = e => {
+    showOpts.sectionPosition = Number(e.target.value); refreshScene();
+  };
+  syncViewControls();
+  // Bare verktøylinjas nedtrekksmenyer (.menu) skal lukkes av utenfor-klikk/
+  // Escape - de fungerer som popovere. Utnyttelsesgruppene (.grp) er faste
+  // seksjoner brukeren åpner/lukker selv, og skal stå slik til neste klikk
+  // på selve overskriften, uansett hva ellers på sida blir klikket.
+  document.addEventListener('keydown', e => {
+    if (e.key === 'Escape') document.querySelectorAll('details.menu[open]').forEach(d => d.open = false);
+  });
+  document.addEventListener('click', e => {
+    document.querySelectorAll('details.menu[open]').forEach(d => {
+      if (!d.contains(e.target)) d.open = false;
+    });
+  });
   const cm = $('#colormode');
   cm.checked = false;
   cm.onchange = () => {
@@ -10835,7 +11198,7 @@ function boot() {
     const l = $('#legend');
     l.hidden = !cm.checked;
     l.innerHTML = '&lt; 70 % · 70–100 % · &gt; 100 %';
-    refresh(false);
+    refreshScene();
   };
   for (const b of document.querySelectorAll('#viewbtns .btn'))
     b.onclick = () => b.dataset.view === 'fit'

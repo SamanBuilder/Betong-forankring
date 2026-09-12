@@ -334,22 +334,39 @@ export function tensionSupplementary(m, res, r) {
       : minLenTxt });
 
   // --- d) forankringslengde UTENFOR kjegla, EN 1992-1-1 8.4 ---------------
+  //  l_b,rqd skal regnes med den FAKTISKE spenninga i stanga ved dette
+  //  tverrsnittet (8.4.3(2), σ_sd i (8.3)), ikke fullt utnyttet f_yd - ellers
+  //  blir kravet det samme uansett hvor mye eller hvor tjukk armering som er
+  //  lagt inn, og flere/tjukkere bein gir aldri kortere forankring igjen.
+  //  L.fits/qualifies (gruppa sin egnethet til å erstatte kjegla) er en
+  //  geometrisk detaljeringssjekk og skal fortsatt være konservativ mot full
+  //  utnyttelse - det er bare DENNE utnyttelsen som skal følge lasten.
   if (L) {
     const cl = new Calc('EN 1992-1-1 8.4');
+    const fyd = r.fyk / GAMMA_S;
+    const As = Math.PI * r.ds * r.ds / 4;
+    const sigmaSd = nLegs > 0 ? Math.min(fyd, NEd / (nLegs * As)) : 0;
+    const alOut = anchorageLength(m.concrete.fck, r.ds, sigmaSd, bent);
     cl.in('⌀_s', r.ds, 'mm', 'Tilleggsarmering');
-    cl.in('f_yd', r.fyk / GAMMA_S, 'N/mm²', 'f_yk / γ_Ms,re – full utnyttelse forutsatt');
+    cl.in('N_Ed,bolt', NEd, 'N', 'Strekk i den styrende bolten, se stålkontrollen');
+    cl.in('n_eff', nLegs, 'stk', 'Bein pr. bolt, se stålkontrollen');
+    const sSd = cl.step({ sym: 'σ_sd', desc:
+        'Faktisk spenning i armeringa - ikke fullt utnyttet f_yd, se (8.3)',
+      formula: 'min(f_yd; N_Ed,bolt / (n_eff · A_s))',
+      subst: `min(${n(fyd)}; ${n(NEd)} / (${n(nLegs)} · ${n(As, 0)}))`,
+      value: sigmaSd, unit: 'N/mm²' });
     cl.in('f_bd', f, 'N/mm²', 'Heftfasthet, se forankringskontrollen');
     const lbr = cl.step({ sym: 'l_b,rqd', desc: 'Grunnleggende forankringslengde',
-      formula: '(⌀_s / 4) · (f_yd / f_bd)',
-      subst: `(${n(r.ds, 0)} / 4) · (${n(r.fyk / GAMMA_S)} / ${n(f)})`,
-      value: L.lbRqd, unit: 'mm', ref: '(8.3)' });
+      formula: '(⌀_s / 4) · (σ_sd / f_bd)',
+      subst: `(${n(r.ds, 0)} / 4) · (${n(sSd)} / ${n(f)})`,
+      value: alOut.lbRqd, unit: 'mm', ref: '(8.3)' });
     const a1 = cl.in('α_1', alpha1, '–', bent ? 'Krok/bøy i enden – tab. 8.2' : 'Rett stang');
     cl.step({ sym: 'l_b,min', desc: 'Nedre grense for strekkforankring',
       formula: 'maks(0,3·l_b,rqd; 10·⌀_s; 100 mm)',
-      subst: `maks(${n(0.3 * L.lbRqd, 0)}; ${n(10 * r.ds, 0)}; 100)`,
-      value: L.lbmin, unit: 'mm', ref: '(8.6)' });
+      subst: `maks(${n(0.3 * alOut.lbRqd, 0)}; ${n(10 * r.ds, 0)}; 100)`,
+      value: alOut.lbmin, unit: 'mm', ref: '(8.6)' });
     const lbd = cl.res({ sym: 'l_bd', formula: 'maks(α_1 · l_b,rqd; l_b,min)',
-      subst: `maks(${n(a1)} · ${n(lbr, 0)}; ${n(L.lbmin, 0)})`, value: L.lbd, unit: 'mm',
+      subst: `maks(${n(a1)} · ${n(lbr, 0)}; ${n(alOut.lbmin, 0)})`, value: alOut.lbd, unit: 'mm',
       ref: '(8.4)' });
     const avail = cl.step({ sym: 'l_bd,tilgj.', desc:
         'Forankring tilgjengelig UTENFOR bruddkjegla, langs stanga fra h_ef og nedover',
@@ -359,16 +376,17 @@ export function tensionSupplementary(m, res, r) {
         : `${n(L.outsideLen, 0)}`,
       value: L.anchorageAvail, unit: 'mm' });
     cl.util({ formula: 'l_bd / l_bd,tilgj.', subst: `${n(lbd, 0)} / ${n(avail, 0)}`,
-      value: L.lbd / Math.max(avail, 1e-6) });
+      value: alOut.lbd / Math.max(avail, 1e-6) });
+    const fitsOut = L.anchorageAvail + 1e-6 >= alOut.lbd;
     checks.push({ id: `N-sre-lbd-${r.id}`,
       mode: `Tilleggsarmering ${r.id} – forankringslengde utenfor kjegla`,
       clause: 'EN 1992-1-1 8.4', scope: 'gruppe', NRk: NaN, NRd: NaN, NEd: NaN,
-      util: L.lbd / Math.max(avail, 1e-6), calc: cl, group: r.id,
+      util: alOut.lbd / Math.max(avail, 1e-6), calc: cl, group: r.id,
       expr: 'l_bd / l_bd,tilgj. ≤ 1,0',
-      note: L.fits
+      note: fitsOut
         ? undefined
         : `Bare ${n(L.anchorageAvail, 0)} mm forankring utenfor kjegla mot l_bd = ` +
-          `${n(L.lbd, 0)} mm.` + (bent && !L.endBend
+          `${n(alOut.lbd, 0)} mm.` + (bent && !L.endBend
             ? ' En bøy ut i enden av beina gir bøyen pluss foten som forankring, ' +
               'og hjelper i en tynn plate.'
             : ' Øk tykkelsen, reduser ⌀, eller legg inn endebøy.') });
@@ -380,8 +398,10 @@ export function tensionSupplementary(m, res, r) {
   //  konstruksjonen, og da må den forankres for seg.
   if (L && bent && L.bendBarMode === 'own') {
     const bars = buildBendBars(m, r);
+    // Styrende er den med minst EKTE kantavstand, ikke den avkuttede
+    // tegneverdien - se merknaden i buildBendBars.
     const worst = bars.length
-      ? bars.reduce((a, b) => (b.anchorage < a.anchorage ? b : a)) : null;
+      ? bars.reduce((a, b) => (b.trueAnchorage < a.trueAnchorage ? b : a)) : null;
     const cbb = new Calc('EN 1992-1-1 8.4');
     cbb.in('⌀_b', L.dtBend, 'mm',
       `Stang i bøyen – minst like tjukk som bøylen (⌀_s = ${n(r.ds, 0)} mm)`);
@@ -396,23 +416,26 @@ export function tensionSupplementary(m, res, r) {
     const lreq = cbb.res({ sym: 'l_bd', desc: 'Nødvendig forankring utenfor ytterste bøyle',
       formula: 'maks(α_1 · l_b,rqd; l_b,min)', subst: '–', value: L.bendBarLbd,
       unit: 'mm', ref: '(8.4)' });
-    const lprov = cbb.in('l_bd,tilgj.', worst ? worst.anchorage : 0, 'mm',
-      'Oppnådd forankring – begrenset av betongdelen');
+    const lprov = cbb.in('l_bd,tilgj.', worst ? worst.trueAnchorage : 0, 'mm',
+      'Faktisk avstand til fri kant utenfor ytterste bøyle - IKKE avkuttet ved l_bd');
     cbb.util({ formula: 'l_bd / l_bd,tilgj.', subst: `${n(lreq, 0)} / ${n(lprov, 0)}`,
       value: lreq / Math.max(lprov, 1e-6) });
+    // Detaljeringskontroll, ikke en gradert utnyttelse: enten får stanga nok
+    // forankring i betongen som er der, eller så gjør den ikke. Prosent-
+    // visning ville antydet en marginvurdering som ikke gir mening her.
     checks.push({ id: `N-sre-bendbar-${r.id}`,
       mode: `Tilleggsarmering ${r.id} – stang i bøyen`,
       clause: 'EN 1992-1-1 8.4', scope: 'gruppe', NRk: NaN, NRd: NaN, NEd: NaN,
-      util: lreq / Math.max(lprov, 1e-6), calc: cbb, group: r.id,
+      util: lreq / Math.max(lprov, 1e-6), binary: true, calc: cbb, group: r.id,
       expr: 'l_bd / l_bd,tilgj. ≤ 1,0',
       note: 'Bøyen krøller seg rundt denne stanga, så bøylen ligger over den. ' +
-        (worst && worst.anchorage + 1e-6 < L.bendBarLbd
-          ? `Betongdelen gir bare ${n(worst.anchorage, 0)} mm forankring utenfor ` +
+        (worst && worst.trueAnchorage + 1e-6 < L.bendBarLbd
+          ? `Betongdelen gir bare ${n(worst.trueAnchorage, 0)} mm forankring utenfor ` +
             `ytterste bøyle mot l_bd = ${n(L.bendBarLbd, 0)} mm – forleng stanga, ` +
             'reduser ⌀_b, eller bruk overflatearmeringa i bøyen i stedet.'
           : `Stanga er ${n(worst ? worst.span : 0, 0)} mm lang, med ` +
-            `${n(worst ? worst.anchorage : 0, 0)} mm forankring utenfor ytterste bøyle ` +
-            'i hver ende.') });
+            `${n(worst ? worst.trueAnchorage : 0, 0)} mm tilgjengelig forankring utenfor ` +
+            'ytterste bøyle i hver ende.') });
   }
 
   // --- e) kjeglebrudd på nytt, fra enden av armeringa ---------------------

@@ -109,6 +109,7 @@ Testene:
 node test/b19-examples.mjs             # regner om bokas egne eksempler og tabeller
 node test/solid-shapes.mjs             # betongforma: volum, bruddareal, kantavstand
 node test/reinforcement-examples.mjs   # tilleggsarmering: interne konsistenskontroller
+node --test test/*cone-regression.mjs  # kjeglebrudd: referanseverdier og regresjoner
 ```
 
 ## Filstruktur
@@ -201,8 +202,9 @@ kilde, hvert mellomledd symbolsk og med tall satt inn, punkthenvisning til
 standarden, kapasitet og utnyttelse. Resultatlista blir stående ved siden av.
 
 3D-visningen bruker ekte materialfarger: grå betong med prosedyregenerert
-korn og luftporer, matt konstruksjonsstål i plate og bolter, rustrød armering,
-med myk kontaktskygge mot underlaget. Bruddlegemene er gjennomskinnelige.
+korn og luftporer, metallisk konstruksjonsstål i plate og bolter, grå armering
+og skygger mellom delene. Bruddlegemene er gjennomskinnelige.
+Visningsmodusen velger snitt, solide materialer eller transparent betong.
 Bryteren **Fargelegg utnyttelse** bytter boltene over til grønn/gul/rød.
 
 Lastene vises som en aksetriade: én stiplet linje pr. akse ut fra platesenteret,
@@ -422,16 +424,36 @@ sidekanten er avledet; plata kan da aldri bli mindre enn gruppa den binder.
 
 Det har to konsekvenser for beregningen:
 
-* **Bruddkjegla** går fra platekanten og ikke fra hver bolt for seg – hele
-  gruppa river ut ett sammenhengende legeme. `A_c,N` regnes derfor av
-  plateomrisset utvidet med 1,5·h_ef (`coneProjection()` i
-  `src/engine/geometry.js`, brukt av både EN 1992-4 og B19). Det gir større
-  kapasitet enn løse bolter, og er hele poenget med detaljen.
+* **Bruddkjegla** regnes konservativt fra bolteaksene i både EN 1992-4 og B19:
+  `A_c,N` er unionen av kvadrater med side 3·h_ef rundt strekkboltene,
+  klippet mot betongen. Felles endeplate gir ikke automatisk større areal.
+  B19 figur B 19.17 omtaler stor forankringsfot; en gunstig virkning krever
+  særskilt dokumentasjon av fot og stivhet og er ikke implementert her.
 * **Trykkflata** krever at plata er stiv: utstikket kan ikke være større enn
   tykkelsen, så bare et felt `⌀ + 2·t_p` rundt hver bolt regnes med
   (B19 fig. B 19.18). Ligger boltene tett, flyter feltene sammen, og unionen
   telles én gang og deles på antall bolter. Er plata ikke fullt medvirkende,
   sier inndatakontrollen fra med hvor mye av den som regnes.
+
+### Kontrollgrunnlag for kjeglebrudd
+
+Regresjonstestene for kjeglebrudd dekker blant annet bokas eksempler B 19.3.1
+og B 19.3.2, overlapp, kanter, eksentrisitet og felles endeplate.
+For B19 bestemmes redusert h'_ef fra kantavstanden til ytterste bolterad
+ved hver kant, ikke fra bolten lengst unna kanten. Full koeffisient i risset
+betong krever både kantarmering og bøyler; samme vilkår brukes for fottrykk.
+
+`h_ef` måles til oversiden av forankringsfoten. Fottykkelsen kommer i tillegg
+nedover. Lagrede tallverdier er uendret; eldre modeller må kontrolleres dersom
+dybden tidligere ble valgt ut fra tegningens feilaktige plassering av foten.
+
+Kilder: [Betongelementboka B19, 19.3.2](https://betongelementboka.betong.no/betongapp/BindB/Del_3/B19/19_3_2.pdf)
+og [IDEA StatiCas metodebeskrivelse for EN 1992-4](https://preview.ideastatica.com/support-center/steel-connection-design-according-to-eurocode).
+EN-grenen beholder konservativt psi_M = 1 og krediterer ikke redusert
+effektiv dybde ved tre eller flere kanter. Gjennomgangen er ikke en fullstendig
+verifikasjon mot standardtekst, norsk nasjonalt tillegg eller produktdata.
+Tester av kjeglebrudd dokumenterer ikke at øvrige bruddformer og
+tilleggsarmering er ferdig validert for prosjektering.
 
 ### Glatt skaft og gjenget del
 
@@ -557,7 +579,7 @@ karakteristiske verdier som deles på γ_M etterpå.
 | Valg | Strekkmodell | Fotens geometri |
 |---|---|---|
 | Endemutter / bolthode | kjeglebrudd, 19.3.2 | rundt hode `π·⌀_h²/4`, eller sekskantmutter `0,866·NV²` |
-| Felles endeplate over gruppa | kjeglebrudd fra platekanten, 19.3.2 | union av `(⌀ + 2·t_p)` innenfor plata, delt på antall bolter |
+| Felles endeplate over gruppa | kjeglebrudd fra boltakser, uten automatisk platetillegg | union av `(⌀ + 2·t_p)` innenfor plata, delt på antall bolter |
 | Uten endemutter | heftforankring, 19.3.3 / 19.3.4 | ingen |
 
 Endeplata er altså samme virkemåte som endemutteren, bare med annen geometri

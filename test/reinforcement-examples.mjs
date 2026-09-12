@@ -284,7 +284,7 @@ console.log('\nl_1 måles fra der KJEGLA krysser beinet, ikke fra h_ef');
   syncLoad(m); syncPlan(m);
   const foot = anchorFoot(m);
   const pts = anchorPositions(m);
-  const zTop = m.anchors.hef - foot.t;
+  const zTop = m.anchors.hef;
 
   // Kjegleflata: dyp ved bolten, grunn langt ute. Rett over bolten er den i
   // trykkflata; c_cr,N unna er den oppe i overflata.

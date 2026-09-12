@@ -117,19 +117,15 @@ function clusters(vals, gap) {
 // ===========================================================================
 //
 //  Kjegla starter i trykkflata - overkant fot - og sprer seg opp og ut til
-//  betongoverflata, c_cr,N = 1,5*h_ef til hver side. Henger boltene i en felles
-//  endeplate, sprer den seg fra platekanten og ikke fra hver bolt for seg,
-//  nøyaktig slik A_c,N regnes i coneProjection().
+//  betongoverflata, c_cr,N = 1,5*h_ef fra hver boltakse, som i clippedSquares().
 //
 function coneGeo(m) {
   const hef = m.anchors.hef;
   const foot = anchorFoot(m);
-  // Trykkflata: overkant fot. h_ef går til underkant fot, så kjeglespissen
-  // ligger fothøgda over det. Uten fot er det ingen trykkflate å spre fra.
-  const zTop = Math.max(0, hef - (foot.hasFoot ? foot.t : 0));
+  const zTop = hef; // h_ef ends at the bearing face on top of the head.
   const pl = foot.common ? endPlate(m) : null;
   return {
-    hef, foot, pl, zTop,
+    hef, foot, pl, zTop, plateProjection: false,
     ccr: 1.5 * hef, scr: 3 * hef,
     pts: anchorPositions(m),
     box: baseBox(m),
@@ -137,8 +133,11 @@ function coneGeo(m) {
   };
 }
 
-function coneFigure(m) {
+function coneFigure(m, check) {
   const geo = coneGeo(m);
+  if (check?.tensionAnchorIds)
+    geo.pts = geo.pts.filter(p => check.tensionAnchorIds.includes(p.id));
+  if (!geo.pts.length) return '';
   return tabsAndPanels('cone', [
     ['x', 'Snitt x', sectionPanel(m, geo, 'x')],
     ['y', 'Snitt y', sectionPanel(m, geo, 'y')],
@@ -180,9 +179,8 @@ function sectionPanel(m, geo, ax) {
   const a = axisData(m, geo, ax);
   const uL = a.us[0], uR = a.us[a.us.length - 1];
 
-  // Kjeglene: én felles når boltene henger i endeplate, ellers én pr. bolt -
-  // slått sammen der de flyter over i hverandre.
-  const cones = geo.pl ? [[a.foot0, a.foot1]] : clusters(a.us, 2 * ccr);
+  // Kjeglene grupperes der projeksjonene overlapper.
+  const cones = geo.plateProjection ? [[a.foot0, a.foot1]] : clusters(a.us, 2 * ccr);
   const coneL = cones[0][0] - ccr;
   const coneR = cones[cones.length - 1][1] + ccr;
 
@@ -287,7 +285,7 @@ function sectionPanel(m, geo, ax) {
     ? `Snitt i ${ax}-retning gjennom boltegruppa, sett mot ${a.other}-aksen.
        Kjegla starter i trykkflata på overkant ${geo.pl ? 'endeplate' : 'fot'} og
        sprer seg opp mot overflata med c<sub>cr,N</sub> = 1,5·h<sub>ef</sub> til
-       side.${geo.pl ? ' Boltene henger i en felles endeplate, så kjegla sprer seg fra platekanten og ikke fra hver bolt.' : ''}${
+       side.${geo.plateProjection ? ' Kjegla sprer seg fra endeplata.' : ' Beregningsarealet projiseres fra boltakser.'}${
          tensionGroups(m).length ? ' Tilleggsarmeringa er tegnet med i snittet: den krysser kjegleflata og fører lasta ned under bruddlegemet.' : ''}`
     : `Snitt i ${ax}-retning. Uten forankringsfot er det ingen trykkflate å
        spre en kjegle fra - forankringen regnes som heftforankring.`;
@@ -300,7 +298,7 @@ function sectionPanel(m, geo, ax) {
 // omhyllende trapes. Sløyfa klippes der betongen slutter.
 function conePath(geo, a, u0, u1, limL, limR, X, Z) {
   const { ccr, zTop } = geo;
-  const us = geo.pl ? [[u0, u1]] : a.us.filter(u => u >= u0 && u <= u1).map(u => [u, u]);
+  const us = geo.plateProjection ? [[u0, u1]] : a.us.filter(u => u >= u0 && u <= u1).map(u => [u, u]);
   const p = [];
 
   // venstre skråflate opp fra overflata
@@ -334,15 +332,9 @@ function planPanel(m, geo) {
   const { ccr, scr, pts, foot, pl, box } = geo;
   const A = m.anchors;
 
-  // Grunnflata A_c,N: ett rektangel om endeplata, ellers ett om hver bolt.
-  // Boltene står i et rutenett, så unionen av kvadratene er nøyaktig
-  // klyngene i x krysset med klyngene i y - ingen indre kanter å tegne.
-  const xs0 = [...new Set(pts.map(p => p.x))];
-  const ys0 = [...new Set(pts.map(p => p.y))];
-  const rects = pl
-    ? [{ x0: pl.x0 - ccr, x1: pl.x1 + ccr, y0: pl.y0 - ccr, y1: pl.y1 + ccr }]
-    : clusters(xs0, 2 * ccr).flatMap(cx => clusters(ys0, 2 * ccr).map(cy => ({
-        x0: cx[0] - ccr, x1: cx[1] + ccr, y0: cy[0] - ccr, y1: cy[1] + ccr })));
+  // Ett kvadrat per strekkbolt; ikke fyll inn eventuelle manglende ruter.
+  const rects = pts.map(p => ({ x0: p.x - ccr, x1: p.x + ccr,
+    y0: p.y - ccr, y1: p.y + ccr }));
 
   const rx0 = Math.min(...rects.map(r => r.x0)), rx1 = Math.max(...rects.map(r => r.x1));
   const ry0 = Math.min(...rects.map(r => r.y0)), ry1 = Math.max(...rects.map(r => r.y1));
@@ -582,8 +574,7 @@ function sreFigure(m, check) {
 //  treffer nabokjegla på midten. Det er nettopp den ryggen som avgjør hvor
 //  djupt et bøylebein står inne i bruddlegemet.
 //
-//  Med felles endeplate river hele plata ut ett legeme, og da ER taket flatt
-//  under plata - derfor tas kilden som et intervall og ikke som punkter.
+//  Kilder angis som intervaller; boltaksene har lik start- og sluttkoordinat.
 // ---------------------------------------------------------------------------
 function coneProfile(geo, sources, ccr) {
   const zTop = geo.zTop;
@@ -608,12 +599,7 @@ function srePanelView(m, r, L, geo, axis) {
   const bent = L.bent;
 
   // Kildene kjegla sprer seg fra, projisert på visningsaksen.
-  const sources = foot.common && geo.pl
-    ? [[Math.min(T({ x: geo.pl.x0, y: geo.pl.y0 }), T({ x: geo.pl.x1, y: geo.pl.y1 }),
-                 T({ x: geo.pl.x0, y: geo.pl.y1 }), T({ x: geo.pl.x1, y: geo.pl.y0 })),
-        Math.max(T({ x: geo.pl.x0, y: geo.pl.y0 }), T({ x: geo.pl.x1, y: geo.pl.y1 }),
-                 T({ x: geo.pl.x0, y: geo.pl.y1 }), T({ x: geo.pl.x1, y: geo.pl.y0 }))]]
-    : pts.map(p => [T(p), T(p)]);
+  const sources = pts.map(p => [T(p), T(p)]);
   const prof = coneProfile(geo, sources, geo.ccr);
 
   // Utsnitt: hele kjegla, all armering og hele boltegruppa.
@@ -630,7 +616,7 @@ function srePanelView(m, r, L, geo, axis) {
 
   const W = 760, padL = 82, padR = 108, padB = 56;
   const sc = Math.min((W - padL - padR) / (t1 - t0), 430 / zBot);
-  const ARR = 40, padT = 34 + ARR;
+  const ARR = 40, ROW = 24, padT = 34 + ARR + ROW;
   const H = padT + padB + zBot * sc;
   const X = t => padL + (t - t0) * sc;
   const Z = z => padT + z * sc;
@@ -683,19 +669,41 @@ function srePanelView(m, r, L, geo, axis) {
     `x2="${f1(X(t1))}" y2="${f1(Z(0))}"/>`);
 
   // --- stanga i bøyen ---
+  // Sett langs armeringa (axis 'u') ligger stanga inn/ut av papiret - vi ser
+  // enden av henne, som en sirkel. Sett på tvers (axis 'n') ligger hun derimot
+  // I papirplanet, på tvers av beina - da skal hun tegnes som ei linje mellom
+  // de bøylene hun går gjennom, ikke som gjentatte sirkler oppå hverandre.
   if (bent && L.dtBend > 0) {
     const rb = Math.max(2.2, L.dtBend * sc / 2);
-    const seen = new Set();
-    for (const b of L.bars)
-      for (const uu of [b.uStart + L.rm, b.uEnd - L.rm]) {
-        const q = { x: L.u.x * uu + L.n.x * b.v, y: L.u.y * uu + L.n.y * b.v };
-        const k = Math.round(T(q));
-        if (seen.has(k)) continue;
-        seen.add(k);
-        g.push(`<circle class="mesh" cx="${f1(X(T(q)))}" cy="${f1(Z(L.dBend))}" ` +
-          `r="${f1(rb)}"/>`);
-      }
-    g.push(txt('ann', X(t1) - 6, Z(L.dBend) + 4, L.bendBarMode === 'own'
+    if (axis === 'n') {
+      // Ekte lengde, samme strek som selve bøylen: stanga er rett og ligger i
+      // tegningsplanet her, med endene ute i sin egen forankring - ikke bare
+      // strekt mellom beina. Klippes mot betongdelen, så den ikke stikker inn
+      // i påskriftene utenfor snittet - forankringa kan gå langt utover det
+      // som er tegnet her.
+      const projectBend = p => [X(T(p)), Z(-p.z)];
+      for (const bb of bendBarsFor(m, r))
+        for (const path of bb.paths) {
+          const pts = path.points.map(projectBend)
+            .map(([x, y]) => [Math.max(X(t0), Math.min(X(t1), x)), y]);
+          const d = 'M' + pts.map(q => `${f1(q[0])} ${f1(q[1])}`).join(' L');
+          g.push(`<path class="reinf" d="${d}"/>`);
+        }
+    } else {
+      const seen = new Set();
+      for (const b of L.bars)
+        for (const uu of [b.uStart + L.rm, b.uEnd - L.rm]) {
+          const q = { x: L.u.x * uu + L.n.x * b.v, y: L.u.y * uu + L.n.y * b.v };
+          const k = Math.round(T(q));
+          if (seen.has(k)) continue;
+          seen.add(k);
+          g.push(`<circle class="mesh" cx="${f1(X(T(q)))}" cy="${f1(Z(L.dBend))}" ` +
+            `r="${f1(rb)}"/>`);
+        }
+    }
+    // I 'n'-visninga går streken helt ut til kanten der påskrifta står -
+    // den må derfor heves over streken, ikke ligge midt i den.
+    g.push(txt('ann', X(t1) - 6, Z(L.dBend) + (axis === 'n' ? -10 : 4), L.bendBarMode === 'own'
       ? `egen stang ⌀${num(L.dtBend)} i bøyen` : `overflatearmering i bøyen`, 'end'));
   }
 
@@ -711,8 +719,12 @@ function srePanelView(m, r, L, geo, axis) {
   }
 
   // --- mål ---
+  // To rader over figuren: den ytterste (yTop) tar kjeglebredda og
+  // senteravstanden, den innerste (yTop2) tar avstanden bolt -> styrende bein
+  // - ellers legger den seg oppå l_1/l_bd-kolonnen midt i figuren.
   const tMin = Math.min(...ts), tMax = Math.max(...ts);
-  const yTop = Z(-tp) - ARR - 4;
+  const yTop = Z(-tp) - ARR - 4 - ROW;
+  const yTop2 = yTop + ROW;
   g.push(dimH(X(tMax), X(tMax + geo.ccr), yTop, `1,5·h_ef = ${num(geo.ccr)}`));
   if (tMax > tMin + 1) g.push(dimH(X(tMin), X(tMax), yTop, `${num(tMax - tMin)}`));
 
@@ -728,7 +740,7 @@ function srePanelView(m, r, L, geo, axis) {
     g.push(txt('ann', X(t0) + 10, Z(gov.zCone) + 15,
       'her krysser kjegla armeringa – slutt på l₁', 'start'));
     const xd = X(tg) + Math.max(26, L.ds * sc + 20);
-    g.push(dimV(xd, Z(L.dLegTop), Z(Math.min(L.legBottom, gov.zCone)),
+    g.push(dimV(xd, Z(L.bent ? L.dCrown : L.dLegTop), Z(Math.min(L.legBottom, gov.zCone)),
       `l_1 = ${num(L.insideLen)}`));
     if (L.legBottom > gov.zCone + 0.5)
       g.push(dimV(xd, Z(gov.zCone), Z(L.legBottom), `l_bd = ${num(L.outsideLen)}`));
@@ -739,7 +751,7 @@ function srePanelView(m, r, L, geo, axis) {
       (Math.hypot(gov.x - b.x, gov.y - b.y) < Math.hypot(gov.x - a.x, gov.y - a.y) ? b : a));
     const off = Math.abs(tg - T(near));
     if (off > 1)
-      g.push(dimH(X(T(near)), X(tg), Z(hef) + 52,
+      g.push(dimH(X(T(near)), X(tg), yTop2,
         `${axis === 'u' ? 'a' : 'd'} = ${num(off)} < 0,75·h_ef = ${num(L.dMax)}`));
   }
 
