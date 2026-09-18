@@ -221,8 +221,85 @@ body { margin:0; height:100vh; overflow:hidden; background:var(--bg); color:var(
 .feat-head .btn { padding:3px 7px; font-size:10.5px; }
 /* Flatenavnet er langt - snittfeltene får en bredere kolonne enn de vanlige. */
 .feat .fld { grid-template-columns:minmax(0,1fr) minmax(80px,122px); }
-.feat .reinf-sum { padding:8px 0 0; margin-top:6px; border-top:1px solid var(--line); }
-.feat .reinf-sum .row { padding:3px 0; }
+
+/* --- tilleggsarmering ----------------------------------------------------
+   Kortet er en oversikt: hodet sier hva gruppa er og om den holder, rett
+   under står nødvendig/valgt/status, og feltene er delt i lukkbare seksjoner
+   med et sammendrag i hodet. */
+/* Samme nedtrekksmeny som verktøylinja (.menu) - typen velges FØR gruppa
+   opprettes, så den ikke ligger igjen som et felt å bytte i etterpå. */
+.reinf-add { margin:2px 0 14px; }
+.reinf-add > summary { border:1px solid var(--line2); border-radius:5px;
+  font-weight:500; color:var(--acc); }
+.reinf-add > summary:hover, .reinf-add[open] > summary { border-color:var(--acc); }
+.reinf-add .menu-content { width:220px; }
+.reinf-card { padding:0 10px 8px; }
+.reinf-card > .feat-head { cursor:pointer; list-style:none; user-select:none;
+  padding:8px 0 7px; margin-bottom:0; }
+.reinf-card > .feat-head::-webkit-details-marker { display:none; }
+.reinf-card > .feat-head::marker { content:''; }
+.reinf-card > .feat-head::before { content:'▸'; color:var(--tx2); font-size:13px;
+  transition:transform .15s; }
+.reinf-card[open] > .feat-head::before { transform:rotate(90deg); }
+.reinf-card:not([open]) > .feat-head { border-bottom:0; padding-bottom:6px; }
+.reinf-card .feat-head .nm { display:flex; flex-direction:column; gap:1px;
+  min-width:0; flex:1 1 auto; cursor:inherit; }
+/* Navnefeltet skal se ut som overskriften det erstatter til det får fokus -
+   ingen boks, ingen ramme - men tydelig redigerbart når du er innom det. */
+.reinf-card .feat-head .nm .rname { font:600 12px var(--sans); color:var(--tx);
+  border:1px solid transparent; background:none; padding:2px 3px; margin:-2px -3px;
+  border-radius:4px; width:100%; min-width:0; cursor:text; }
+.reinf-card .feat-head .nm .rname::placeholder { color:var(--tx2); font-weight:500;
+  opacity:1; }
+.reinf-card .feat-head .nm .rname:hover { border-color:var(--line2); background:#fff; }
+.reinf-card .feat-head .nm .rname:focus { outline:none; border-color:var(--acc);
+  background:#fff; }
+.reinf-card .feat-head .nm .sub { font:10.5px var(--mono); color:var(--tx3);
+  overflow-wrap:anywhere; }
+.badge { flex:0 0 auto; font:600 10px/1 var(--mono); padding:4px 6px; border-radius:9px;
+  white-space:nowrap; }
+.badge.ok  { color:#3f6a26; background:#e7f0df; }
+.badge.bad { color:#9a3b34; background:#fbeceb; }
+
+.reinf-over { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:6px;
+  margin:8px 0 2px; }
+.reinf-over > div { display:flex; flex-direction:column; gap:1px; padding:5px 8px;
+  background:#fff; border:1px solid var(--line); border-radius:5px; min-width:0; }
+.reinf-over .k { font-size:10px; color:var(--tx3); text-transform:uppercase; }
+.reinf-over .v { font:600 12px var(--mono); color:var(--tx); }
+.reinf-card .msg { margin:8px 0 0; }
+.reinf-card .hint { margin:8px 0 0; }
+
+.rsec { margin-top:8px; border-top:1px solid var(--line); }
+.rsec > summary { display:flex; align-items:baseline; gap:8px; padding:7px 0 5px;
+  cursor:pointer; list-style:none; user-select:none; }
+.rsec > summary::-webkit-details-marker { display:none; }
+.rsec > summary::marker { content:''; }
+.rsec > summary::before { content:'▸'; color:var(--tx2); font-size:12px;
+  transition:transform .15s; }
+.rsec[open] > summary::before { transform:rotate(90deg); }
+.rsec > summary span { font-size:10.5px; font-weight:600; text-transform:uppercase;
+  color:var(--tx2); white-space:nowrap; }
+.rsec > summary i { margin-left:auto; font:10.5px var(--mono); font-style:normal;
+  color:var(--tx3); text-align:right; overflow-wrap:anywhere; min-width:0; }
+.rsec[open] > summary i { visibility:hidden; }
+.rsec > summary:hover span { color:var(--acc); }
+.rsec > .fld:last-child { margin-bottom:4px; }
+
+/* Valg som radioknapper under hverandre. */
+.fld.choice { display:flex; flex-direction:column; align-items:stretch; gap:0;
+  margin-bottom:9px; }
+.fld.choice > .lbl { margin-bottom:4px; }
+.fld.choice .opt { display:flex; align-items:center; gap:8px; padding:5px 8px;
+  font-size:12px; color:var(--tx); cursor:pointer; background:#fff;
+  border:1px solid var(--line2); border-top-width:0; }
+.fld.choice .opt:first-of-type { border-top-width:1px; border-radius:5px 5px 0 0; }
+.fld.choice .opt:last-of-type { border-radius:0 0 5px 5px; }
+.fld.choice .opt:only-of-type { border-radius:5px; }
+.fld.choice .opt:hover { background:var(--acc-soft); }
+.fld.choice .opt:has(input:checked) { background:var(--acc-soft); color:var(--acc);
+  font-weight:500; }
+.fld.choice input[type=radio] { margin:0; width:13px; height:13px; accent-color:var(--acc); }
 
 /* === 3D ================================================================= */
 .stage-wrap { flex:1 1 auto; position:relative; min-height:0; }

@@ -231,8 +231,85 @@ body { margin:0; height:100vh; overflow:hidden; background:var(--bg); color:var(
 .feat-head .btn { padding:3px 7px; font-size:10.5px; }
 /* Flatenavnet er langt - snittfeltene får en bredere kolonne enn de vanlige. */
 .feat .fld { grid-template-columns:minmax(0,1fr) minmax(80px,122px); }
-.feat .reinf-sum { padding:8px 0 0; margin-top:6px; border-top:1px solid var(--line); }
-.feat .reinf-sum .row { padding:3px 0; }
+
+/* --- tilleggsarmering ----------------------------------------------------
+   Kortet er en oversikt: hodet sier hva gruppa er og om den holder, rett
+   under står nødvendig/valgt/status, og feltene er delt i lukkbare seksjoner
+   med et sammendrag i hodet. */
+/* Samme nedtrekksmeny som verktøylinja (.menu) - typen velges FØR gruppa
+   opprettes, så den ikke ligger igjen som et felt å bytte i etterpå. */
+.reinf-add { margin:2px 0 14px; }
+.reinf-add > summary { border:1px solid var(--line2); border-radius:5px;
+  font-weight:500; color:var(--acc); }
+.reinf-add > summary:hover, .reinf-add[open] > summary { border-color:var(--acc); }
+.reinf-add .menu-content { width:220px; }
+.reinf-card { padding:0 10px 8px; }
+.reinf-card > .feat-head { cursor:pointer; list-style:none; user-select:none;
+  padding:8px 0 7px; margin-bottom:0; }
+.reinf-card > .feat-head::-webkit-details-marker { display:none; }
+.reinf-card > .feat-head::marker { content:''; }
+.reinf-card > .feat-head::before { content:'▸'; color:var(--tx2); font-size:13px;
+  transition:transform .15s; }
+.reinf-card[open] > .feat-head::before { transform:rotate(90deg); }
+.reinf-card:not([open]) > .feat-head { border-bottom:0; padding-bottom:6px; }
+.reinf-card .feat-head .nm { display:flex; flex-direction:column; gap:1px;
+  min-width:0; flex:1 1 auto; cursor:inherit; }
+/* Navnefeltet skal se ut som overskriften det erstatter til det får fokus -
+   ingen boks, ingen ramme - men tydelig redigerbart når du er innom det. */
+.reinf-card .feat-head .nm .rname { font:600 12px var(--sans); color:var(--tx);
+  border:1px solid transparent; background:none; padding:2px 3px; margin:-2px -3px;
+  border-radius:4px; width:100%; min-width:0; cursor:text; }
+.reinf-card .feat-head .nm .rname::placeholder { color:var(--tx2); font-weight:500;
+  opacity:1; }
+.reinf-card .feat-head .nm .rname:hover { border-color:var(--line2); background:#fff; }
+.reinf-card .feat-head .nm .rname:focus { outline:none; border-color:var(--acc);
+  background:#fff; }
+.reinf-card .feat-head .nm .sub { font:10.5px var(--mono); color:var(--tx3);
+  overflow-wrap:anywhere; }
+.badge { flex:0 0 auto; font:600 10px/1 var(--mono); padding:4px 6px; border-radius:9px;
+  white-space:nowrap; }
+.badge.ok  { color:#3f6a26; background:#e7f0df; }
+.badge.bad { color:#9a3b34; background:#fbeceb; }
+
+.reinf-over { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:6px;
+  margin:8px 0 2px; }
+.reinf-over > div { display:flex; flex-direction:column; gap:1px; padding:5px 8px;
+  background:#fff; border:1px solid var(--line); border-radius:5px; min-width:0; }
+.reinf-over .k { font-size:10px; color:var(--tx3); text-transform:uppercase; }
+.reinf-over .v { font:600 12px var(--mono); color:var(--tx); }
+.reinf-card .msg { margin:8px 0 0; }
+.reinf-card .hint { margin:8px 0 0; }
+
+.rsec { margin-top:8px; border-top:1px solid var(--line); }
+.rsec > summary { display:flex; align-items:baseline; gap:8px; padding:7px 0 5px;
+  cursor:pointer; list-style:none; user-select:none; }
+.rsec > summary::-webkit-details-marker { display:none; }
+.rsec > summary::marker { content:''; }
+.rsec > summary::before { content:'▸'; color:var(--tx2); font-size:12px;
+  transition:transform .15s; }
+.rsec[open] > summary::before { transform:rotate(90deg); }
+.rsec > summary span { font-size:10.5px; font-weight:600; text-transform:uppercase;
+  color:var(--tx2); white-space:nowrap; }
+.rsec > summary i { margin-left:auto; font:10.5px var(--mono); font-style:normal;
+  color:var(--tx3); text-align:right; overflow-wrap:anywhere; min-width:0; }
+.rsec[open] > summary i { visibility:hidden; }
+.rsec > summary:hover span { color:var(--acc); }
+.rsec > .fld:last-child { margin-bottom:4px; }
+
+/* Valg som radioknapper under hverandre. */
+.fld.choice { display:flex; flex-direction:column; align-items:stretch; gap:0;
+  margin-bottom:9px; }
+.fld.choice > .lbl { margin-bottom:4px; }
+.fld.choice .opt { display:flex; align-items:center; gap:8px; padding:5px 8px;
+  font-size:12px; color:var(--tx); cursor:pointer; background:#fff;
+  border:1px solid var(--line2); border-top-width:0; }
+.fld.choice .opt:first-of-type { border-top-width:1px; border-radius:5px 5px 0 0; }
+.fld.choice .opt:last-of-type { border-radius:0 0 5px 5px; }
+.fld.choice .opt:only-of-type { border-radius:5px; }
+.fld.choice .opt:hover { background:var(--acc-soft); }
+.fld.choice .opt:has(input:checked) { background:var(--acc-soft); color:var(--acc);
+  font-weight:500; }
+.fld.choice input[type=radio] { margin:0; width:13px; height:13px; accent-color:var(--acc); }
 
 /* === 3D ================================================================= */
 .stage-wrap { flex:1 1 auto; position:relative; min-height:0; }
@@ -2632,6 +2709,40 @@ const BEND_BAR_LABEL = {
 // Egen stang i bøyen kan ikke være tynnere enn bøylen den skal bære.
 const bendBarDiameter = r => Math.max(r.ds, r.bendBarDs || 0);
 
+// ---------------------------------------------------------------------------
+//  Den nedre enden av beina - på åpen U-bøyle og på rett stang (den lukka
+//  bøylen har ingen frie ender). Se Figur 8.1 i NS-EN 1992-1-1. Begge bøyene
+//  går rundt en dor med diameter ⌀_m etter tab. 8.1N (mandrelDiameter).
+//
+//   none  Rett bein, ingen bøy - vanlig når det er dybde nok til l_bd rett ned.
+//   bend  90° bøy ut i en vannrett fot (Figur 8.1b). Foten skal være minst
+//         10⌀ rett etter bøyen; brukeren kan velge den lengre.
+//   hook  Krok, 180° (Figur 8.1c, ≥ 150°). Halen etter kroken er 5⌀ og går
+//         opp igjen ved siden av beinet. Både doren og halen er gitt av
+//         standarden, så kroken har ingen lengde brukeren velger.
+//
+//  Retninga sier hvilken vei bøyen/kroken peker:
+//   out  Ut fra bolten - utvider fotavtrykket (vanligst).
+//   in   Inn mot bolten - nyttig når det er mer plass mot midten enn utover
+//        (f.eks. nær en fri kant).
+//  På U-bøyla er det langs bøyleretninga, på rett stang på tvers av den (fra
+//  eller mot bolten stanga står ved siden av).
+// ---------------------------------------------------------------------------
+const REINF_END_TYPES = ['none', 'bend', 'hook'];
+const REINF_END_TYPE_LABEL = {
+  none: 'Rett – ingen bøy', bend: 'Bøy 90°', hook: 'Krok 180°',
+};
+// Minste rette stykke etter bøyen, Figur 8.1 b/c: 10⌀ etter 90°-bøy, 5⌀
+// etter krok. For kroken er det også hele halen.
+const END_TAIL_FACTOR = { bend: 10, hook: 5 };
+const endMinTail = (type, ds) => (END_TAIL_FACTOR[type] ?? 0) * ds;
+// Utforminger som har en fri nedre ende å bøye.
+const hasFreeEnd = geometryType => geometryType === 'ubar' || geometryType === 'straight';
+const END_DIRECTIONS = ['out', 'in'];
+const END_DIRECTION_LABEL = {
+  out: 'Ut fra bolten', in: 'Inn mot bolten',
+};
+
 // Alle tre utformingene er tillatt for kjeglebrudd, men de forankres på hver
 // sin måte (NS-EN 1992-4 pkt. 7.2.1.2, jf. B19.3.2.6):
 //
@@ -2698,6 +2809,7 @@ function mandrelDiameter(ds) {
 function newReinforcement(id, purpose = 'tension', over = {}) {
   return {
     id,
+    name: '',                         // valgfritt visningsnavn - se reinforcementLabel()
     purpose,                          // 'tension' | 'shear' | 'generic'
     geometryType: 'ubar',             // 'ubar' | 'closed' | 'straight'
     ds: 12,
@@ -2709,7 +2821,8 @@ function newReinforcement(id, purpose = 'tension', over = {}) {
     clearance: 10,                    // innvendig avstand til bolt, §4
     coverTop: 30,                     // overdekning fra overkant betong
     coverBottom: 30,                  // overdekning fra underkant betong
-    endBend: false,                   // 90° bøy ut i enden av beina (U-bøyle)
+    endType: 'none',                  // 'none' | 'bend' | 'hook' - se END_TYPE_LABEL
+    endDirection: 'out',              // 'out' | 'in' - se END_DIRECTION_LABEL
     endBendLength: null,              // fotlengde; null = det forankringa krever
     height: null,                     // bein-lengde; null = autogenerert
     width: null,                      // avstand mellom beina; null = autogenerert
@@ -2763,6 +2876,13 @@ function requirementIssues(r) {
 const reinforcementsFor = (m, purpose) =>
   (m.reinforcements || []).filter(r => r.purpose === purpose);
 
+// Visningsnavnet på ei gruppe - det brukeren har skrevet, ellers ei
+// forklarende standardtekst bygget av id-en. id-en selv brukes bare som
+// intern nøkkel (v.checks.group, geometrien, kort/seksjon-tilstand), aldri
+// vist til brukeren direkte - se [[reinforcement-groups]].
+const reinforcementLabel = r =>
+  r.name?.trim() || `${PURPOSE_LABEL[r.purpose]} (${r.id})`;
+
 // ---------------------------------------------------------------------------
 //  Migrering fra den gamle, flate `m.reinf`-forma (én global strekk- og
 //  skjærgruppe, satt sammen i ui/app.js før denne datastrukturen fantes).
@@ -2793,6 +2913,7 @@ function migrateReinforcements(m) {
   }
   // Eldre navn på utforminga, og kombinasjoner som ikke finnes for formålet.
   for (const r of m.reinforcements) {
+    r.name ??= '';
     r.geometryType = GEOMETRY_ALIAS[r.geometryType] ?? r.geometryType;
     const allowed = GEOMETRY_FOR[r.purpose] || GEOMETRY_TYPES;
     if (!allowed.includes(r.geometryType)) r.geometryType = allowed[0];
@@ -2808,6 +2929,13 @@ function migrateReinforcements(m) {
     r.bendBarDs ??= null;
     r.surfaceReinf ??= { present: true, ds: 12, cover: 30, spacing: 150 };
     r.surfaceReinf.spacing ??= 150;
+    // endBend var en boolsk bryter - nå egen type (rett/bøy/krok) og retning.
+    if (r.endBend !== undefined) {
+      r.endType ??= r.endBend ? 'bend' : 'none';
+      delete r.endBend;
+    }
+    r.endType ??= 'none';
+    r.endDirection ??= 'out';
   }
   return m;
 }
@@ -3221,7 +3349,15 @@ function tensionLayout(m, r) {
   const dtBend = cd.dt ?? 0;                       // ...og diameteren dens
   const dLegTop = bent ? dCrown + rm : coverTop;   // der det rette beinet starter
   const dAvail = Math.max(0, memberThickness(m, pts) - coverBottom);
-  const { lbd, lbRqd, lbmin } = anchorageLength(m.concrete.fck, ds, r.fyk / 1.15, bent);
+  // Bøy eller krok i nedre ende - på åpen U-bøyle og rett stang. Den lukka
+  // bøylen har ingen frie ender. Se REINF_END_TYPE_LABEL.
+  const endType = hasFreeEnd(r.geometryType) && (r.endType === 'bend' || r.endType === 'hook')
+    ? r.endType : 'none';
+  const endBend = endType !== 'none';
+  const endDir = r.endDirection === 'in' ? -1 : 1;
+  // α_1 = 0,7 for forankringa utenfor kjegla gjelder en bøyd stangende
+  // (tab. 8.2) - også en rett stang med bøy/krok nederst.
+  const { lbd, lbRqd, lbmin } = anchorageLength(m.concrete.fck, ds, r.fyk / 1.15, bent || endBend);
   const dWanted = hef + lbd;                       // forbi kjegla, pluss l_bd
   const dBot = Math.min(dWanted, dAvail);
 
@@ -3245,34 +3381,62 @@ function tensionLayout(m, r) {
   const offsets = [];
   for (let k = 0; k < nSide; k++) offsets.push(dMin + k * sMin);
 
-  // --- endebøy --------------------------------------------------------------
-  // Bøy i enden av beina, ut fra bolten (bare på åpen U-bøyle - den lukka har
-  // ingen frie ender, og rett stang har ingen bøy). Bøyen med foten teller som
-  // forankring, og flytter samtidig punktet den nye kjegla regnes fra utover.
-  const endBend = !!r.endBend && r.geometryType === 'ubar';
-  const bendArc = bent ? Math.PI * rm / 2 : 0;     // kvartbøy i hjørnet
+  // --- endebøy/krok -----------------------------------------------------
+  // Bøyen/kroken rundt doren (tab. 8.1N), pluss det rette stykket etter den,
+  // teller som forankring, og flytter samtidig punktet den nye kjegla regnes
+  // fra - utover ('out') eller innover ('in'), se END_DIRECTION_LABEL.
+  //
+  //   bend  90° rundt doren, så en vannrett fot. Foten er minst 10⌀ (fig.
+  //         8.1b); ellers så lang forankringa krever, eller det brukeren ber om.
+  //   hook  180° rundt doren, så en hale på 5⌀ rett opp igjen (fig. 8.1c).
+  //         Alt er gitt av standarden - ingen lengde å velge.
+  const bendArc = bent ? Math.PI * rm / 2 : 0;     // kvartbøy i HJØRNET (krona)
+  const footBendArc = endType === 'hook' ? Math.PI * rm
+    : endType === 'bend' ? Math.PI * rm / 2 : 0;
+  const footMin = endMinTail(endType, ds);
   const legBottom = endBend ? Math.max(dLegTop, dBot - rm) : dBot;
   const straightOutside = Math.max(0, legBottom - Math.max(hef, dLegTop));
   const at = (s, v) => ({ x: u.x * s + nv.x * v, y: u.y * s + nv.y * v });
 
-  let footLen = 0;
-  if (endBend) {
-    const need = r.endBendLength > 0
-      ? r.endBendLength
-      : Math.max(0, lbd - straightOutside - bendArc);
-    footLen = need;
+  // Hvert bein sin nedre ende, og retninga bøyen går i (i bøylens system:
+  // ds langs u, dv langs n). U-bøyla bøyer langs bøyleretninga, rett stang på
+  // tvers - bort fra eller mot bolten den står ved.
+  const endStarts = [];
+  if (endBend)
     for (const p of pts) {
       const sp = p.x * u.x + p.y * u.y, v0 = p.x * nv.x + p.y * nv.y;
       for (const d of offsets)
         for (const sgn of [1, -1]) {
           const v = v0 + sgn * d;
-          footLen = Math.min(footLen,
-            fitInside(m, t => at(sp + halfSpan + rm + t, v), need, coverTop),
-            fitInside(m, t => at(sp - halfSpan - rm - t, v), need, coverTop));
+          if (bent)
+            endStarts.push({ s: sp + halfSpan, v, ds: endDir, dv: 0 },
+                           { s: sp - halfSpan, v, ds: -endDir, dv: 0 });
+          else
+            endStarts.push({ s: sp, v, ds: 0, dv: sgn * endDir });
         }
     }
+  const along = (e, t) => at(e.s + e.ds * t, e.v + e.dv * t);
+
+  let footLen = 0, endFits = true;
+  if (endType === 'bend') {
+    const need = r.endBendLength > 0
+      ? r.endBendLength
+      : Math.max(footMin, lbd - straightOutside - footBendArc);
+    footLen = need;
+    for (const e of endStarts)
+      footLen = Math.min(footLen, fitInside(m, t => along(e, rm + t), need, coverTop));
+    endFits = footLen + 1e-6 >= footMin;
+  } else if (endType === 'hook') {
+    footLen = footMin;
+    for (const e of endStarts)
+      if (fitInside(m, t => along(e, t), 2 * rm, coverTop) < 2 * rm - 1e-6) endFits = false;
   }
-  const anchorageAvail = straightOutside + (endBend ? bendArc + footLen : 0);
+  // Hvor langt til siden enden når: kroken to dorradier, bøyen dorradius + fot.
+  const endReach = endType === 'hook' ? 2 * rm : endType === 'bend' ? rm + footLen : 0;
+  // Krokhalen går opp igjen; bare den biten som ligger under kjegla teller.
+  const footCounted = endType === 'hook'
+    ? Math.min(footLen, Math.max(0, legBottom - Math.max(hef, dLegTop))) : footLen;
+  const anchorageAvail = straightOutside + footBendArc + footCounted;
 
   // --- bøylene --------------------------------------------------------------
   // Én bøyle pr. offset pr. side pr. bolt, symmetrisk om bolten. To bolter som
@@ -3280,7 +3444,7 @@ function tensionLayout(m, r) {
   // ville den samme stanga blitt talt to ganger.
   const bars = [];
   const seen = new Map();
-  const reach = endBend ? rm + footLen : 0;
+  const reach = endDir * endReach;
   // «Bøyle om hver bolt» gir én spennvidde pr. bolt; «bøyle over hele
   // boltraden» slår boltene som ligger på linje langs bøyleretninga sammen,
   // så bøylen spenner fra ytterste til ytterste med beina rett utenfor
@@ -3312,7 +3476,7 @@ function tensionLayout(m, r) {
         const hit = seen.get(key);
         if (hit) { for (const q of row.pts) if (!hit.anchors.includes(q)) hit.anchors.push(q); continue; }
         const bar = {
-          d, v, sgn, s0, uStart, uEnd, halfSpan, endBend, footLen, legBottom,
+          d, v, sgn, s0, uStart, uEnd, halfSpan, endBend, endType, endDir, footLen, legBottom,
           anchors: [...row.pts],
           // Loddrette bein i planet. Rett stang har bare ett.
           legs: bent ? [at(uStart, v), at(uEnd, v)] : [at(s0, v)],
@@ -3320,7 +3484,7 @@ function tensionLayout(m, r) {
           // av beinet.
           endPoints: bent
             ? [at(uStart - reach, v), at(uEnd + reach, v)]
-            : [at(s0, v)],
+            : [at(s0, v + sgn * reach)],
         };
         seen.set(key, bar);
         bars.push(bar);
@@ -3403,7 +3567,9 @@ function tensionLayout(m, r) {
 
   return {
     kind: 'tension-u', u, n: nv, rm, coverTop, coverBottom, ds, bent,
-    dCrown, dLegTop, dBot, lbd, lbRqd, lbmin, endBend, footLen, legBottom, bendArc,
+    dCrown, dLegTop, dBot, lbd, lbRqd, lbmin, endBend, endType,
+    endDirection: r.endDirection === 'in' ? 'in' : 'out', footLen, footMin, footCounted,
+    endFits, endReach, legBottom, bendArc, footBendArc,
     wrapSurface, bendBarMode: cd.mode, dBend, dtBend,
     bendBarLbd: bent
       ? anchorageLength(m.concrete.fck, dtBend || ds, r.fyk / 1.15, false).lbd : 0,
@@ -3642,19 +3808,55 @@ function arcTo(pts, P, cu, cz, rad, a0, a1, seg) {
   }
 }
 
+// Bøy/krok i nedre ende av et loddrett bein, i ett loddrett plan: s langs
+// retninga enden peker i, z loddrett. Beinet står i sLeg og går over i buen
+// i zLeg; `side` (±1) er hvilken vei buen går. Punktene kommer fra den frie
+// enden og inn mot beinet.
+//   bend  90° rundt doren, så vannrett fot med lengde `tail`.
+//   hook  180° rundt doren, så halen `tail` rett opp igjen ved siden av beinet.
+function endPath(type, sLeg, zLeg, side, rm, tail, seg) {
+  const c = sLeg + side * rm;                        // senter i doren
+  const aLeg = side > 0 ? -Math.PI : 0;              // der beinet går over i buen
+  const pts = [];
+  const arc = (a0, a1, k) => {
+    for (let i = 0; i <= k; i++) {
+      const phi = a0 + (a1 - a0) * (i / k);
+      pts.push([c + rm * Math.cos(phi), zLeg + rm * Math.sin(phi)]);
+    }
+  };
+  if (type === 'hook') {
+    pts.push([c + side * rm, zLeg + tail]);          // toppen av halen
+    arc(side > 0 ? 0 : -Math.PI, aLeg, 2 * seg);
+  } else {
+    pts.push([c + side * tail, zLeg - rm]);          // enden av foten
+    arc(-Math.PI / 2, aLeg, seg);
+  }
+  return pts;
+}
+
 // Én kjeglebruddbøyle: vannrett del rett under overflatearmeringa, bøyd 90° i
 // hvert hjørne og ned i to bein. «Lukket bøyle» får i tillegg bunn med to bøyer
-// til. Rett stang er bare det loddrette beinet - ingen bøy, ingen omslutting.
+// til. Rett stang er bare det loddrette beinet - ingen omslutting. Åpen
+// U-bøyle og rett stang kan få bøy eller krok nederst (endPath).
 function tensionBarPath(layout, bar, geometryType) {
   const { u, n, rm } = layout;
   const P = (s, z) => V(u.x * s + n.x * bar.v, u.y * s + n.y * bar.v, z);
   const zTop = -layout.dCrown, zBot = -layout.dBot;
+  const seg = Math.max(4, Math.round(ARC_SEG / 2));
+  const dir = bar.endDir < 0 ? -1 : 1;
+  const zLeg = -layout.legBottom;                    // der beinet møter endebøyen
 
-  if (geometryType === 'straight')
-    return [{ points: [P(bar.s0, -layout.dLegTop), P(bar.s0, zBot)], closed: false }];
+  if (geometryType === 'straight') {
+    if (!bar.endBend)
+      return [{ points: [P(bar.s0, -layout.dLegTop), P(bar.s0, zBot)], closed: false }];
+    // Rett stang bøyer på tvers av retninga, fra (ut) eller mot (inn) bolten.
+    const Q = (t, z) => V(u.x * bar.s0 + n.x * t, u.y * bar.s0 + n.y * t, z);
+    const end = endPath(bar.endType, bar.v, zLeg, bar.sgn * dir, rm, bar.footLen, seg);
+    return [{ points: [Q(bar.v, -layout.dLegTop), ...end.reverse().map(([t, z]) => Q(t, z))],
+              closed: false }];
+  }
 
   const zTan = zTop - rm;                    // der beinet møter hjørnebøyen
-  const seg = Math.max(4, Math.round(ARC_SEG / 2));
   const uA = bar.uStart + rm, uB = bar.uEnd - rm;
   const pts = [];
 
@@ -3667,18 +3869,17 @@ function tensionBarPath(layout, bar, geometryType) {
     return [{ points: pts, closed: true }];
   }
 
-  // Med bøy i enden svinger beinet 90° UT fra bolten nederst, og fortsetter i
-  // en vannrett fot. Bøyens senter ligger en mandrelradius inn og opp fra
-  // bunnpunktet, så foten havner i kote -dBot.
+  // Med bøy/krok i enden svinger beinet nederst rundt doren - ut fra bolten
+  // ('out') eller inn mot den ('in'), se END_DIRECTION_LABEL. Bunnen av
+  // buen havner i kote -dBot.
   if (bar.endBend) {
-    const zLeg = -layout.legBottom;                  // der beinet møter endebøyen
-    const f = bar.footLen;
-    pts.push(P(bar.uStart - rm - f, zLeg - rm));     // fotenden, venstre
-    arcTo(pts, P, bar.uStart - rm, zLeg, rm, -Math.PI / 2, 0, seg);
+    const toP = ([s, z]) => P(s, z);
+    const left = endPath(bar.endType, bar.uStart, zLeg, -dir, rm, bar.footLen, seg);
+    const right = endPath(bar.endType, bar.uEnd, zLeg, dir, rm, bar.footLen, seg);
+    pts.push(...left.map(toP));
     arcTo(pts, P, uA, zTan, rm, Math.PI, Math.PI / 2, seg);
     arcTo(pts, P, uB, zTan, rm, Math.PI / 2, 0, seg);
-    arcTo(pts, P, bar.uEnd + rm, zLeg, rm, Math.PI, -Math.PI / 2 + 2 * Math.PI, seg);
-    pts.push(P(bar.uEnd + rm + f, zLeg - rm));       // fotenden, høyre
+    pts.push(...right.reverse().map(toP));
     return [{ points: pts, closed: false }];
   }
 
@@ -4762,7 +4963,8 @@ function reinforcementCone(m, res, r, L) {
     `Regelverk · ${cracked ? 'opprisset' : 'uopprisset'}`);
   const gM = c.in('γ_Mc', g.gMc, '–', 'γ_c · γ_inst – 4.4.3.1');
   c.in('n_punkt', pts.length, 'stk',
-    L.endBend ? 'Endene av føttene på bøylene' : 'Bunnen av bøylebeina');
+    L.endType === 'hook' ? 'Enden av kroken på hvert bein'
+      : L.endBend ? 'Enden av foten på hvert bein' : 'Bunnen av hvert bein');
   c.in('N_Ed,g', NEd, 'N', 'Sum strekk i boltegruppa');
 
   const N0 = c.step({ sym: 'N⁰_Rk,c', desc: 'Kjeglekapasitet for ett punkt, uten kant- eller gruppevirkning',
@@ -4774,7 +4976,9 @@ function reinforcementCone(m, res, r, L) {
   const Ac = c.step({ sym: 'A_c,N', desc: 'Faktisk utbruddsareal fra armeringsendene',
     formula: 'union av (endepunkt ± 1,5·h_ef,re), klippet mot frie kanter',
     subst: `${pts.length} punkt, c_cr,N = ${n(ccr, 0)} mm` +
-           (L.endBend ? `, flyttet ${n(L.rm + L.footLen, 0)} mm ut av endebøyen` : ''),
+           (L.endBend ? `, flyttet ${n(L.endReach, 0)} mm ` +
+             (L.endDirection === 'in' ? 'innover' : 'utover') +
+             (L.endType === 'hook' ? ' av kroken' : ' av foten') : ''),
     value: clippedSquares(m, pts, ccr), unit: 'mm²', ref: '(7.3)' });
 
   let cmin = Infinity;
@@ -4807,8 +5011,10 @@ function reinforcementCone(m, res, r, L) {
     note: 'Kjegla fra endeplata er erstattet av armeringa, men lasta må fortsatt ' +
           'ut i betongen der armeringa slutter – derfor denne kontrollen. ' +
           (L.endBend
-            ? 'Bøyen i enden flytter punktene utover og gjør kjegla større.'
-            : 'En bøy ut i enden av beina ville flyttet punktene utover og gitt større kjegle.') +
+            ? L.endDirection === 'in'
+              ? 'Kroken/bøyen i enden flytter punktene innover, mot midten.'
+              : 'Kroken/bøyen i enden flytter punktene utover og gjør kjegla større.'
+            : 'En bøy eller krok ut i enden av beina ville flyttet punktene utover og gitt større kjegle.') +
           ' Forenklet: ψ_ec,N = 1,0, siden bøylene ligger symmetrisk om boltraden.' };
 }
 
@@ -5007,7 +5213,11 @@ function tensionSupplementary(m, res, r) {
     const fyd = r.fyk / GAMMA_S;
     const As = Math.PI * r.ds * r.ds / 4;
     const sigmaSd = nLegs > 0 ? Math.min(fyd, NEd / (nLegs * As)) : 0;
-    const alOut = anchorageLength(m.concrete.fck, r.ds, sigmaSd, bent);
+    // Utenfor kjegla er det enden av stanga som forankrer: bøyd når det er en
+    // U-bøyle, eller når en rett stang har bøy/krok nederst (tab. 8.2).
+    const bentEnd = bent || L.endBend;
+    const alphaOut = bentEnd ? 0.7 : 1.0;
+    const alOut = anchorageLength(m.concrete.fck, r.ds, sigmaSd, bentEnd);
     cl.in('⌀_s', r.ds, 'mm', 'Tilleggsarmering');
     cl.in('N_Ed,bolt', NEd, 'N', 'Strekk i den styrende bolten, se stålkontrollen');
     cl.in('n_eff', nLegs, 'stk', 'Bein pr. bolt, se stålkontrollen');
@@ -5021,7 +5231,7 @@ function tensionSupplementary(m, res, r) {
       formula: '(⌀_s / 4) · (σ_sd / f_bd)',
       subst: `(${n(r.ds, 0)} / 4) · (${n(sSd)} / ${n(f)})`,
       value: alOut.lbRqd, unit: 'mm', ref: '(8.3)' });
-    const a1 = cl.in('α_1', alpha1, '–', bent ? 'Krok/bøy i enden – tab. 8.2' : 'Rett stang');
+    const a1 = cl.in('α_1', alphaOut, '–', bentEnd ? 'Krok/bøy i enden – tab. 8.2' : 'Rett stang');
     cl.step({ sym: 'l_b,min', desc: 'Nedre grense for strekkforankring',
       formula: 'maks(0,3·l_b,rqd; 10·⌀_s; 100 mm)',
       subst: `maks(${n(0.3 * alOut.lbRqd, 0)}; ${n(10 * r.ds, 0)}; 100)`,
@@ -5031,9 +5241,11 @@ function tensionSupplementary(m, res, r) {
       ref: '(8.4)' });
     const avail = cl.step({ sym: 'l_bd,tilgj.', desc:
         'Forankring tilgjengelig UTENFOR bruddkjegla, langs stanga fra h_ef og nedover',
-      formula: L.endBend ? 'rett bein + endebøy + fot' : 'rett bein under kjegla',
+      formula: L.endType === 'hook'
+        ? 'rett bein + krok 180° rundt ⌀_m + hale 5⌀ (den delen som ligger under kjegla)'
+        : L.endBend ? 'rett bein + bøy 90° rundt ⌀_m + fot' : 'rett bein under kjegla',
       subst: L.endBend
-        ? `${n(L.outsideLen, 0)} + ${n(L.bendArc, 0)} + ${n(L.footLen, 0)}`
+        ? `${n(L.outsideLen, 0)} + ${n(L.footBendArc, 0)} + ${n(L.footCounted, 0)}`
         : `${n(L.outsideLen, 0)}`,
       value: L.anchorageAvail, unit: 'mm' });
     cl.util({ formula: 'l_bd / l_bd,tilgj.', subst: `${n(lbd, 0)} / ${n(avail, 0)}`,
@@ -5047,10 +5259,10 @@ function tensionSupplementary(m, res, r) {
       note: fitsOut
         ? undefined
         : `Bare ${n(L.anchorageAvail, 0)} mm forankring utenfor kjegla mot l_bd = ` +
-          `${n(alOut.lbd, 0)} mm.` + (bent && !L.endBend
-            ? ' En bøy ut i enden av beina gir bøyen pluss foten som forankring, ' +
-              'og hjelper i en tynn plate.'
-            : ' Øk tykkelsen, reduser ⌀, eller legg inn endebøy.') });
+          `${n(alOut.lbd, 0)} mm.` + (!L.endBend
+            ? ' En bøy eller krok ut i enden av beina gir bøyen/kroken pluss foten ' +
+              'som forankring, og hjelper i en tynn plate.'
+            : ' Øk tykkelsen, reduser ⌀, eller legg inn endebøy/krok.') });
   }
 
   // --- d2) egen stang i bøyen: forankring, EN 1992-1-1 8.4 ----------------
@@ -5127,6 +5339,118 @@ function tensionSupplementary(m, res, r) {
           'er kraftveien videre inn i konstruksjonen. ') +
         'Overlappet er ikke kontrollert mot den faktiske armeringen i konstruksjonen ' +
         'for øvrig, bare mot den oppgitte lengden.' });
+  }
+
+  // --- g) sjekkliste for enkeltkrava i pkt. 7.2.1.2(2) a)-f) --------------
+  //  Ordrett fra NS-EN 1992-4:2018 (E), vurdert mot de samme størrelsene som
+  //  kontrollene over. Punkt f) - overflatearmering mot stavmodell og
+  //  spaltekrefter etter 7.2.1.7(2)b) - er ikke implementert og vises derfor
+  //  alltid som ikke kontrollert.
+  {
+    const noReach = !!L && L.zConeMin <= L.dLegTop + 1e-6;
+    const dOk = !!L && G.insideLen >= G.insideMin && !noReach;
+    const lbdC = checks.find(c => c.id === `N-sre-lbd-${r.id}`);
+    const coneC = checks.find(c => c.id === `N-sre-cone-${r.id}`);
+    const lbdOk = !L || (lbdC ? lbdC.util <= 1 : true);
+    const coneOk = !L || (coneC ? coneC.util <= 1 : true);
+    const eOk = lbdOk && coneOk;
+    const aOk = G.reqIssues.length === 0;
+    const cOk = !!L && L.zoneOk && L.allServed;
+    const fOk = false;
+    const govTxt = gov ? ` (styrende bolt ${gov.p.id})` : '';
+
+    const items = [
+      { letter: 'a', ok: aOk,
+        quote: 'The reinforcement shall consist of ribbed reinforcing bars ' +
+          '(f_yk,re ≤ 600 N/mm²) with a diameter ϕ not larger than 16 mm and shall be ' +
+          'detailed as stirrups or loops with a mandrel diameter ϕ_m according to ' +
+          'EN 1992-1-1.',
+        comment: aOk
+          ? `⌀ = ${n(r.ds, 0)} mm ≤ 16 mm, f_yk = ${n(r.fyk, 0)} N/mm² ≤ 600 N/mm², ` +
+            `ϕ_m = ${n(mandrelDiameter(r.ds), 0)} mm etter EN 1992-1-1 tab. 8.1N. ` +
+            'Ribbet stål (kamstål) er forutsatt, ikke kontrollert i modellen.' +
+            (bent ? '' : ' Bokstaven beskriver bøyle-/løkkeutforming - rett stang er her ' +
+              'lagt til grunn som forankringsform etter punkt d) (l₁ ≥ 10⌀); vurder om ' +
+              'prosjektet krever bøyle/løkke i stedet.')
+          : G.reqIssues.join(' ') },
+      { letter: 'b', ok: true,
+        quote: 'Where supplementary reinforcement has been sized for the most loaded ' +
+          'fastener, the same reinforcement shall be provided around all fasteners.',
+        comment: `Gruppe ${r.id} har samme ⌀, antall og utforming rundt alle boltene den ` +
+          `betjener, dimensjonert for den mest belastede${govTxt}.` },
+      { letter: 'c', ok: cOk,
+        quote: 'The supplementary reinforcement should be placed symmetrically as close ' +
+          'to the fasteners as practicable to minimize the effect of eccentricity ' +
+          'associated with the angle of the failure cone. Preferably, the supplementary ' +
+          'reinforcement should enclose the surface reinforcement. Only reinforcement ' +
+          'bars with a distance ≤ 0,75h_ef from the fastener shall be assumed as ' +
+          'effective.',
+        comment: (cOk
+          ? `Armeringa ligger symmetrisk om hver bolt, pakket fra bolten og utover. ` +
+            `Alle boltene gruppa betjener har et bein innenfor 0,75·h_ef` +
+            (L ? ` = ${n(L.dMax, 0)} mm.` : '.')
+          : (L && !L.zoneOk ? 'Beina får ikke plass innenfor 0,75·h_ef. ' : '') +
+            (L && !L.allServed ? 'Ikke alle boltene har et bein innenfor 0,75·h_ef. ' : '') +
+            'Se plasseringskontrollen.') +
+          (bent
+            ? (r.bendBar === 'surface'
+              ? ' Bøyen omslutter overflatearmeringa, slik standarden foretrekker.'
+              : ' Bøyen omslutter IKKE overflatearmeringa (egen stang i bøyen er valgt) - ' +
+                'standarden sier «preferably», ikke et absolutt krav, men vurder om ' +
+                'overflatearmeringa likevel bør omsluttes.')
+            : '') },
+      { letter: 'd', ok: dOk,
+        quote: 'Only supplementary reinforcement with an anchorage length in the ' +
+          'concrete failure cone of l_1 ≥ 4ϕ (anchorage with bends, hooks or loops) or ' +
+          'l_1 ≥ 10ϕ (anchorage with straight bars with or without welded transverse ' +
+          'bars) shall be assumed as effective.',
+        comment: dOk
+          ? `l₁ = ${n(G.insideLen, 0)} mm ≥ ${minAnchorageFactor(r.geometryType)}⌀ = ` +
+            `${n(G.insideMin, 0)} mm (${typeTxt}). Se forankringskontrollen i bruddlegemet.`
+          : noReach
+            ? 'Beinet krysser ikke bruddflata i det hele tatt (kjegleflata krysser over ' +
+              'toppen av beinet) - ingen effektiv forankring i bruddlegemet.'
+            : `l₁ = ${n(G.insideLen, 0)} mm < ${minAnchorageFactor(r.geometryType)}⌀ = ` +
+              `${n(G.insideMin, 0)} mm.` },
+      { letter: 'e', ok: eOk,
+        quote: 'The supplementary reinforcement shall be anchored outside the assumed ' +
+          'failure cone with an anchorage length l_bd according to EN 1992-1-1 (see ' +
+          'Figure 7.2 a)). Concrete cone failure assuming an embedment length ' +
+          'corresponding to the end of the supplementary reinforcement shall be ' +
+          'verified using Formula (7.1) for N_Rk,c. This verification may be omitted ' +
+          'if in reinforced structural elements the tension in the anchored reinforcing ' +
+          'bar is transferred to the reinforcement in the structural element by ' +
+          'adequate lapping.',
+        comment: (lbdOk ? 'Forankringslengden utenfor kjegla er tilstrekkelig, se ' +
+            'kontrollen for l_bd. ' : 'Forankringslengden utenfor kjegla er IKKE ' +
+            'tilstrekkelig, se kontrollen for l_bd. ') +
+          (coneOk ? 'Kjeglebrudd fra enden av armeringa (formel 7.1) er kontrollert og OK. '
+            : 'Kjeglebrudd fra enden av armeringa (formel 7.1) er kontrollert og IKKE OK. ') +
+          'Denne kjeglekontrollen kunne vært utelatt ved tilstrekkelig overlapp mot ' +
+          'konstruksjonens armering, men modellen regner den alltid, som en ' +
+          'konservativ kontroll.' },
+      { letter: 'f', ok: fOk,
+        quote: 'Surface reinforcement should be provided as shown in Figure 7.2 ' +
+          'designed to resist the forces arising from the assumed strut and tie model ' +
+          'and the splitting forces according to 7.2.1.7 (2)b).',
+        comment: 'IKKE kontrollert av modellen: dimensjonering av overflatearmeringa mot ' +
+          'stavmodellen og spaltekreftene etter 7.2.1.7(2)b) må dokumenteres særskilt.' },
+    ];
+
+    const allOk = items.every(it => it.ok);
+    checks.push({ id: `N-sre-detailing-${r.id}`,
+      mode: `Tilleggsarmering ${r.id} – detaljeringskrav 7.2.1.2(2) a-f`,
+      clause: '7.2.1.2(2)', scope: 'gruppe', NRk: NaN, NRd: NaN, NEd: NaN,
+      util: allOk ? 0 : 2, binary: true, calc: new Calc('7.2.1.2(2)'), group: r.id,
+      expr: 'a)-f) i 7.2.1.2(2)', requirements: items,
+      note: '(1) When the design relies on supplementary reinforcement, concrete cone ' +
+        'failure according to Table 7.1 and 7.2.1.4 need not be verified but the ' +
+        'supplementary reinforcement shall be designed according to 7.2.1.9 to resist ' +
+        'the total load. ' +
+        (allOk
+          ? 'Alle enkeltkrav a)-f) i pkt. 7.2.1.2(2) er vurdert som oppfylt - se tabellen.'
+          : 'Ett eller flere av enkeltkrava a)-f) i pkt. 7.2.1.2(2) er ikke oppfylt, ' +
+            'eller ikke kontrollert av modellen (punkt f) - se tabellen.') });
   }
 
   return { checks, qualifies: G.qualifies, geometry: G };
@@ -6171,14 +6495,21 @@ function validate(m) {
     const G = groupGeometry(m, null, r);
     if (G.geo && G.geo.kind === 'shear-u' && !G.geo.edgeDir)
       warn(`${tag}: ingen fri kant å legge kantbruddarmeringa langs.`);
-    else if (G.geo && !G.geo.fits)
-      warn(`${tag}: ` + (G.geo.kind === 'shear-u'
-        ? `trenger ${Math.round(G.geo.wanted)} mm innover fra kanten, men det er ` +
-          `bare ${Math.round(G.geo.available)} mm til motsatt kant (minus overdekning).`
-        : `forankringa utenfor kjegla er ${Math.round(G.geo.anchorageAvail)} mm mot ` +
-          `l_bd = ${Math.round(G.geo.lbd)} mm.` +
-          (G.geo.endBend ? '' : ' Prøv en bøy ut i enden av beina, som gir bøyen og ' +
-           'foten som forankring i tillegg.')));
+    else if (G.geo && !G.geo.fits && G.geo.kind === 'shear-u')
+      warn(`${tag}: trenger ${Math.round(G.geo.wanted)} mm innover fra kanten, men det er ` +
+        `bare ${Math.round(G.geo.available)} mm til motsatt kant (minus overdekning).`);
+    // (Kjeglebrudd: G.geo.lbd/anchorageAvail her er regnet med stanga fullt
+    // utnyttet (f_yd) - en konservativ geometrisk grovsjekk, uavhengig av last.
+    // Den faktiske, lastbaserte kontrollen (σ_sd av N_Ed) vises i sjekklista som
+    // «Tilleggsarmering N – forankringslengde utenfor kjegla», og kan gjerne slå
+    // OK selv om denne grovsjekken ikke gjør det. Varsel her droppes derfor for
+    // å unngå å motsi den kontrollen.)
+    if (G.geo?.endBend && !G.geo.endFits)
+      warn(`${tag}: ` + (G.geo.endType === 'hook'
+        ? `kroken får ikke plass – den trenger ${Math.round(2 * G.geo.rm)} mm til siden ` +
+          `(dordiameter ⌀_m, tab. 8.1N) innenfor overdekninga. Snu retninga eller velg bøy.`
+        : `foten etter 90°-bøyen er ${Math.round(G.geo.footLen)} mm, mindre enn ` +
+          `10⌀ = ${Math.round(G.geo.footMin)} mm (NS-EN 1992-1-1 fig. 8.1b).`));
     if (G.geo && G.insideLen < G.insideMin)
       warn(`${tag}: lengde inne i bruddlegemet ${Math.round(G.insideLen)} mm er kortere enn ` +
            `kravet ${Math.round(G.insideMin)} mm.`);
@@ -6278,7 +6609,7 @@ function verify(m) {
         const idx = primary.findIndex(c => c.id === targetId);
         if (idx >= 0) {
           replacedConcreteChecks.push({ ...primary[idx],
-            replacedBy: `Tilleggsarmering ${r.id}`, group: r.id });
+            replacedBy: reinforcementLabel(r), group: r.id });
           primary = primary.filter(c => c.id !== targetId);
         }
       }
@@ -8340,18 +8671,61 @@ const shapeName = (sh, i) =>
 //  Feltene for én tilleggsarmeringsgruppe - "velg type, antall, diameter,
 //  plassering" i stedet for å tegne armeringa manuelt (spesifikasjonens pkt. 9).
 //  Samme per-indeks-mønster som shapeFields() over.
+//
+//  Hvert felt hører til en seksjon (`sec`, se REINF_SECTIONS), så kortet kan
+//  vises som en oversikt med lukkbare deler. Valg med få, lange alternativer
+//  er `t: 'choice'` - radioknapper under hverandre i stedet for nedtrekk.
 // ---------------------------------------------------------------------------
+
+// Skal bøylen omslutte overflatearmeringa, kan den ikke ha sin egen
+// overdekning i tillegg: den MÅ ligge rett under nettet. Da er det nettets
+// overdekning som er det ene tallet som gjelder, og bøylens overdekning
+// vises som avledet - ellers står det to tall i skjemaet som ikke kan
+// stemme samtidig.
+const wrapsSurface = r => r.purpose === 'tension' && r.geometryType !== 'straight'
+  && r.bendBar !== 'own' && !!r.surfaceReinf?.present;
+const coverTopShown = r => wrapsSurface(r)
+  ? Math.round(crownDepth(r).dCrown - r.ds / 2) : r.coverTop;
+
+// Seksjonene i kortet, i vist rekkefølge. `sum` er sammendraget i seksjons-
+// hodet - det som står igjen å lese når seksjonen er lukket.
+const REINF_SECTIONS = [
+  { id: 'type', l: 'Utforming',
+    sum: (m, r) => GEOMETRY_LABEL[r.geometryType] },
+  { id: 'bars', l: 'Armering',
+    sum: (m, r) => `${r.count}×⌀${r.ds} · f_yk ${r.fyk}` },
+  { id: 'place', l: 'Plassering',
+    sum: (m, r) => r.purpose === 'tension'
+      ? `${r.direction ?? 0}° · ${r.clearance} mm til bolt`
+      : `${r.placement === 'manual' ? 'manuell' : 'automatisk'} · ${r.clearance} mm til bolt` },
+  { id: 'cover', l: 'Overdekning',
+    sum: (m, r) => r.purpose === 'shear' ? `${coverTopShown(r)} mm`
+      : `${coverTopShown(r)} / ${r.coverBottom} mm` },
+  { id: 'bend', l: 'Stang i bøyen',
+    sum: (m, r) => r.bendBar === 'own' ? `egen ⌀${bendBarDiameter(r)}`
+      : r.surfaceReinf?.present
+        ? `nett ⌀${r.surfaceReinf.ds} c/c ${r.surfaceReinf.spacing}` : 'ingenting' },
+  { id: 'end', l: 'Ende',
+    sum: (m, r) => REINF_END_TYPE_LABEL[r.endType] +
+      (r.endType === 'none' ? '' : ` · ${END_DIRECTION_LABEL[r.endDirection].toLowerCase()}`) },
+  { id: 'lap', l: 'Overlapp',
+    sum: (m, r) => r.lapToExisting?.present ? `${r.lapToExisting.lapLength} mm` : 'ingen' },
+];
+
+// Typen (purpose) velges når gruppa opprettes (se addReinforcementMenu i
+// ui/app.js) og har ikke noe felt her - det valget er allerede tatt, og å la
+// det stå redigerbart ville bare invitert til å bytte det ut fra under en
+// ferdig utfylt gruppe. Utforminga (U-bøyle/lukket/rett) kan derimot endres
+// fritt gjennom hele arbeidet.
 function reinforcementFields(m, i) {
   const P = k => `reinforcements.${i}.${k}`;
   const r = m.reinforcements[i];
   const tension = r.purpose === 'tension';
   const out = [
-    { p: P('purpose'), l: 'Type', t: 'select',
-      o: Object.entries(PURPOSE_LABEL).map(([v, t]) => [v, t]) },
-    { p: P('geometryType'), l: 'Utforming', t: 'select',
+    { sec: 'type', p: P('geometryType'), l: 'Utforming', t: 'choice',
       o: (GEOMETRY_FOR[r.purpose] || Object.keys(GEOMETRY_LABEL))
         .map(v => [v, GEOMETRY_LABEL[v]]) },
-    { p: P('count'), l: tension
+    { sec: 'bars', p: P('count'), l: tension
         ? (r.geometryType === 'straight' ? 'Stenger pr. bolt' : 'Bøyler pr. bolt')
         : 'Antall bein',
       t: 'num', step: 2, min: 2,
@@ -8360,13 +8734,13 @@ function reinforcementFields(m, i) {
           'nær bolten som praktisk mulig og pakkes utover med minste tillatte ' +
           'senteravstand (NS-EN 1992-1-1 8.2). 0,75·h_ef er den ytre grensa ' +
           'for hva som teller med, ikke der de skal ligge.' : undefined },
-    { p: P('ds'), l: 'Diameter ⌀', t: 'select', num: true,
+    { sec: 'bars', p: P('ds'), l: 'Diameter ⌀', t: 'select', num: true,
       o: REINF_DIAMETERS.map(d => [d, `⌀${d}`]) },
-    { p: P('fyk'), l: 'f_yk', t: 'num', u: 'MPa', step: 50,
+    { sec: 'bars', p: P('fyk'), l: 'f_yk', t: 'num', u: 'MPa', step: 50,
       hint: 'Ribbet armeringsstål, f_yk ≤ 600 N/mm² – pkt. 7.2.2.6.' },
   ];
   if (tension && r.geometryType !== 'straight')
-    out.push({ p: P('barLayout'), l: 'Bøylefordeling', t: 'select',
+    out.push({ sec: 'place', p: P('barLayout'), l: 'Bøylefordeling', t: 'choice',
       o: TENSION_LAYOUTS.map(v => [v, TENSION_LAYOUT_LABEL[v]]),
       hint: 'Én bøyle om hver bolt gir et bein like ved hver bolt. Én bøyle ' +
             'over hele boltraden gir færre stenger og ett bøyeskjema, men bare ' +
@@ -8374,15 +8748,15 @@ function reinforcementFields(m, i) {
             'midt i raden lenger enn 0,75·h_ef fra nærmeste bein, flagges det ' +
             'av plasseringskontrollen.' });
   if (tension)
-    out.push({ p: P('direction'), l: 'Retning', t: 'num', u: '°', step: 15,
+    out.push({ sec: 'place', p: P('direction'), l: 'Retning', t: 'num', u: '°', step: 15,
       hint: r.geometryType === 'straight'
         ? 'Hvilken vei stengene fordeles om bolten, dreid om loddaksen.'
         : 'Hvilken vei bøylene ligger, dreid om loddaksen. Bøylene straddler ' +
           'bolten i denne retninga, og forskyves på tvers av den for å gå klar.' });
   else
-    out.push({ p: P('placement'), l: 'Plassering', t: 'select', o: [
+    out.push({ sec: 'place', p: P('placement'), l: 'Plassering', t: 'choice', o: [
       ['auto', 'Automatisk'], ['manual', 'Manuell']] });
-  out.push({ p: P('clearance'), l: 'Innvendig avstand til bolt', t: 'num', u: 'mm', step: 5 });
+  out.push({ sec: 'place', p: P('clearance'), l: 'Innvendig avstand til bolt', t: 'num', u: 'mm', step: 5 });
   // Kjeglebrudd og bøylene rundt bolten har en reell underkant (beina går
   // ned mot den); kantbruddbøylen ligger i ett vannrett nivå og har bare en
   // overkant å forholde seg til.
@@ -8391,13 +8765,13 @@ function reinforcementFields(m, i) {
   // rett stang har verken bøy å omslutte med eller to bein å spenne mellom.
   if (tension && r.geometryType !== 'straight') {
     const G = groupGeometry(m, null, r);
-    out.push({ p: P('span'), l: 'Bøylebredde (mellom beina)', t: 'num', u: 'mm', step: 10,
+    out.push({ sec: 'place', p: P('span'), l: 'Bøylebredde (mellom beina)', t: 'num', u: 'mm', step: 10,
       val: r.span ?? Math.round(2 * (G.geo?.halfSpan ?? 0)),
       hint: 'Avstanden mellom de to loddrette beina, målt langs bøyleretninga. ' +
             'Tomt = så trangt bøyeradien tillater, altså beina så nær bolten ' +
             'som praktisk mulig. Bredda går inn i den faktiske avstanden ' +
             'bolt → bein: √((bredde/2)² + tverravstand²) ≤ 0,75·h_ef.' });
-    out.push({ p: P('bendBar'), l: 'Stang i bøyen', t: 'select',
+    out.push({ sec: 'bend', p: P('bendBar'), l: 'Hva ligger i bøyen', t: 'choice',
       o: BEND_BARS.map(v => [v, BEND_BAR_LABEL[v]]),
       hint: 'Bøyen krøller seg rundt en stang på tvers, så bøylen ligger OVER ' +
             'den. Stanga tar radialtrykket fra bøyen og fører strekkraften ' +
@@ -8405,41 +8779,35 @@ function reinforcementFields(m, i) {
             'bøylen nettet – eller det legges en egen stang, og da står bøylen ' +
             'fritt og nettet tegnes ikke.' });
     if (r.bendBar === 'own')
-      out.push({ p: P('bendBarDs'), l: 'Stang i bøyen ⌀', t: 'select', num: true,
+      out.push({ sec: 'bend', p: P('bendBarDs'), l: 'Stang i bøyen ⌀', t: 'select', num: true,
         val: bendBarDiameter(r),
         o: REBAR_SIZES.filter(d => d >= r.ds).map(d => [d, `⌀${d}`]),
         hint: `Minst like tjukk som bøylen (⌀${r.ds}). Forankres etter ` +
               'NS-EN 1992-1-1 8.4 – se kontrollen «stang i bøyen».' });
     else
       out.push(
-        { p: P('surfaceReinf.present'), l: 'Overflatearmering lagt inn', t: 'bool',
+        { sec: 'bend', p: P('surfaceReinf.present'), l: 'Overflatearmering lagt inn', t: 'bool',
           hint: 'Uten nett er det ingenting i bøyen – da bør du velge egen ' +
                 'stang i bøyen i stedet.' },
         ...(r.surfaceReinf?.present ? [
-          { p: P('surfaceReinf.ds'), l: 'Overflatearmering ⌀', t: 'select', num: true,
+          { sec: 'bend', p: P('surfaceReinf.ds'), l: 'Nett ⌀', t: 'select', num: true,
             o: REBAR_SIZES.map(d => [d, `⌀${d}`]) },
-          { p: P('surfaceReinf.spacing'), l: 'Overflatearmering c/c', t: 'num',
+          { sec: 'bend', p: P('surfaceReinf.spacing'), l: 'Nett c/c', t: 'num',
             u: 'mm', step: 25, min: 25,
             hint: 'Senteravstand i nettet. Brukes til å tegne nettet i 3D – ' +
                   'kapasiteten til overflatearmeringa er ikke kontrollert her.' },
-          { p: P('surfaceReinf.cover'), l: 'Overflatearmering, overdekning',
+          { sec: 'bend', p: P('surfaceReinf.cover'), l: 'Nett, overdekning',
             t: 'num', u: 'mm', step: 5, min: 0,
             hint: 'Til ytterste lag. Laget som går på tvers av bøylene ligger ' +
                   'innerst – det er det bøyen omslutter, og bøylen legges rett ' +
                   'over det.' },
         ] : []));
   }
-  // Skal bøylen omslutte overflatearmeringa, kan den ikke ha sin egen
-  // overdekning i tillegg: den MÅ ligge rett under nettet. Da er det nettets
-  // overdekning som er det ene tallet som gjelder, og bøylens overdekning
-  // vises som avledet - ellers står det to tall i skjemaet som ikke kan
-  // stemme samtidig.
-  const wraps = tension && r.geometryType !== 'straight'
-    && r.bendBar !== 'own' && !!r.surfaceReinf?.present;
-  out.push({ p: P('coverTop'), l: hasDepth ? 'Overdekning, overkant' : 'Overdekning',
+  const wraps = wrapsSurface(r);
+  out.push({ sec: 'cover', p: P('coverTop'), l: hasDepth ? 'Overkant' : 'Overdekning',
     t: 'num', u: 'mm', step: 5,
     ro: wraps,
-    val: wraps ? Math.round(crownDepth(r).dCrown - r.ds / 2) : undefined,
+    val: wraps ? coverTopShown(r) : undefined,
     hint: !tension
       ? 'Avstand fra betongoverflata (og fra kanten for kantbruddbøyler) til bøylen.'
       : wraps
@@ -8449,42 +8817,62 @@ function reinforcementFields(m, i) {
         : 'Fra betongoverflata ned til toppen av armeringa. Stanga i bøyen ' +
           'legges inne i bøyen, altså under den vannrette delen.' });
   if (hasDepth)
-    out.push({ p: P('coverBottom'), l: 'Overdekning, underkant', t: 'num', u: 'mm', step: 5,
+    out.push({ sec: 'cover', p: P('coverBottom'), l: 'Underkant', t: 'num', u: 'mm', step: 5,
       hint: 'Hvor nær underkant betong beina får gå.' });
-  // Endebøy finnes bare på den åpne U-bøylen - den lukka har ingen frie ender.
-  if (tension && r.geometryType === 'ubar') {
-    out.push({ p: P('endBend'), l: 'Bøy ut i enden av beina', t: 'bool',
-      hint: 'Beina bøyes 90° utover nederst og fortsetter i en vannrett fot. ' +
-            'Bøyen og foten teller som forankring – nyttig i tynne plater der ' +
-            'det ikke er dybde nok til l_bd – og flytter samtidig punktet ' +
-            'kjegla fra armeringsenden regnes fra utover, så den kjegla blir større.' });
-    if (r.endBend) {
+  // Endebøy/krok finnes på den åpne U-bøylen og på rett stang - den lukka
+  // har ingen frie ender.
+  if (tension && hasFreeEnd(r.geometryType)) {
+    const dm = mandrelDiameter(r.ds);
+    out.push({ sec: 'end', p: P('endType'), l: r.geometryType === 'straight' ? 'Nedre ende' : 'Enden av beina',
+      t: 'choice', o: REINF_END_TYPES.map(v => [v, REINF_END_TYPE_LABEL[v]]),
+      hint: `Begge bøyes rundt dor ⌀_m = ${dm} mm (NS-EN 1992-1-1 tab. 8.1N). ` +
+            'Bøy 90°: vannrett fot, minst 10⌀ (fig. 8.1b). Krok 180°: halen ' +
+            'er 5⌀ rett opp igjen (fig. 8.1c) – lengden er gitt av standarden. ' +
+            'Bøyen/kroken teller som forankring i tillegg til det rette ' +
+            'beinet – nyttig i tynne plater der det ikke er dybde nok til l_bd.' });
+    if (r.endType === 'bend' || r.endType === 'hook') {
+      out.push({ sec: 'end', p: P('endDirection'), l: 'Retning', t: 'choice',
+        o: END_DIRECTIONS.map(v => [v, END_DIRECTION_LABEL[v]]),
+        hint: (r.geometryType === 'straight'
+                ? 'Hvilken vei enden peker, på tvers av retninga – fra eller mot bolten. '
+                : 'Hvilken vei enden peker, langs bøyleretninga. ') +
+              'Ut flytter samtidig punktet kjegla fra armeringsenden regnes ' +
+              'fra utover, så den kjegla blir større; inn flytter det innover.' });
       const G = groupGeometry(m, null, r);
-      out.push({ p: P('endBendLength'), l: 'Fotlengde', t: 'num', u: 'mm', step: 10,
-        val: r.endBendLength ?? Math.round(G.geo?.footLen ?? 0),
-        hint: '0 / tomt = så lang som forankringa krever, begrenset av betongen.' });
+      if (r.endType === 'bend')
+        out.push({ sec: 'end', p: P('endBendLength'), l: 'Fotlengde', t: 'num', u: 'mm', step: 10,
+          min: 10 * r.ds,
+          val: r.endBendLength ?? Math.round(G.geo?.footLen ?? 0),
+          hint: `Minst 10⌀ = ${10 * r.ds} mm. Tomt = så lang som forankringa ` +
+                'krever, begrenset av betongen.' });
+      else
+        out.push({ sec: 'end', p: P('endBendLength'), l: 'Krokhale (5⌀)', t: 'num', u: 'mm', ro: true,
+          val: 5 * r.ds,
+          hint: `Gitt av NS-EN 1992-1-1 fig. 8.1c: 180° rundt dor ⌀_m = ${dm} mm, ` +
+                `så 5⌀ = ${5 * r.ds} mm rett hale. Kroken rekker ${dm + r.ds} mm ` +
+                'til siden (utvendig).' });
     }
   }
   if (!tension && r.placement === 'manual') {
     const G = groupGeometry(m, null, r);
     out.push(
-      { p: P('height'), l: 'Bein-lengde', t: 'num', u: 'mm', step: 10,
+      { sec: 'place', p: P('height'), l: 'Bein-lengde', t: 'num', u: 'mm', step: 10,
         val: r.height ?? Math.round(G.geo?.legLen ?? 0),
         hint: r.purpose === 'shear'
           ? 'Hvor langt beina går innover fra bøyen.'
           : 'Hvor langt beina går nedover fra bøyen.' },
-      { p: P('width'), l: 'Avstand mellom beina', t: 'num', u: 'mm', step: 10,
+      { sec: 'place', p: P('width'), l: 'Avstand mellom beina', t: 'num', u: 'mm', step: 10,
         val: r.width ?? Math.round(2 * (G.geo?.rOff ?? 0)) });
   }
   if (r.purpose === 'tension') {
     out.push(
-      { p: P('lapToExisting.present'), l: 'Overlapp mot konstruksjonsarmering', t: 'bool',
+      { sec: 'lap', p: P('lapToExisting.present'), l: 'Overlapp mot konstruksjonsarmering', t: 'bool',
         hint: r.geometryType === 'straight'
           ? 'PÅKREVD for rett tilleggsarmering: den omslutter ikke ' +
             'overflatearmeringa, så lastoverføringa videre må dokumenteres ' +
             'med overlapp eller tilsvarende (EN 1992-1-1 8.7).'
           : undefined },
-      { p: P('lapToExisting.lapLength'), l: 'Overlappslengde', t: 'num', u: 'mm', step: 10,
+      { sec: 'lap', p: P('lapToExisting.lapLength'), l: 'Overlappslengde', t: 'num', u: 'mm', step: 10,
         when: () => r.lapToExisting?.present });
   }
   return out.filter(f => !f.when || f.when(m));
@@ -10413,15 +10801,21 @@ function reinforcementSummary(v, r) {
 // hver gang tallene endrer seg (se updateReinforcementStatus). Selve
 // skjemafeltene røres ikke da: patcher du dem inn på nytt for hvert tastetrykk
 // mister feltet fokus midt i tallet du skriver.
+function reinforcementOk(v, r) {
+  const s = reinforcementSummary(v, r), issues = requirementIssues(r);
+  return { s, issues, ok: s.ok && !issues.length };
+}
+
 function reinforcementStatusHtml(v, r) {
-  const issues = requirementIssues(r);
-  const s = reinforcementSummary(v, r);
-  const okAll = s.ok && !issues.length;
-  let html = `<div class="assump reinf-sum">` +
-    `<div class="row"><span class="k">Nødvendig</span><span class="v">${s.need}×⌀${r.ds}</span></div>` +
-    `<div class="row"><span class="k">Valgt</span><span class="v">${r.count}×⌀${r.ds}</span></div>` +
-    `<div class="row"><span class="k">Status</span><span class="v" style="color:${
-      okAll ? 'var(--ok)' : 'var(--bad)'}">${okAll ? 'OK' : 'IKKE OK'}</span></div></div>`;
+  const { s, issues, ok } = reinforcementOk(v, r);
+  const cell = (k, val, style = '') =>
+    `<div><span class="k">${k}</span><span class="v"${style}>${val}</span></div>`;
+  let html = `<div class="reinf-over">` +
+    cell('Nødvendig', `${s.need}×⌀${r.ds}`) +
+    cell('Valgt', `${r.count}×⌀${r.ds}`) +
+    cell('Utnyttelse', pct(s.worst), ` style="color:${utilCss(s.worst)}"`) +
+    cell('Status', ok ? 'OK' : 'IKKE OK', ` style="color:${ok ? 'var(--ok)' : 'var(--bad)'}"`) +
+    `</div>`;
   if (issues.length) html += `<p class="msg err">${esc(issues.join(' '))}</p>`;
   if (s.replaced)
     html += `<p class="hint">Erstatter ${r.purpose === 'tension' ? 'betongkjeglebrudd' : 'kantbrudd'} ` +
@@ -10429,44 +10823,135 @@ function reinforcementStatusHtml(v, r) {
   return html;
 }
 
+// Kort linje i korthodet - det som står igjen når kortet er lukket.
+const reinforcementTitle = r =>
+  `${PURPOSE_LABEL[r.purpose]} · ${r.count}×⌀${r.ds} · ${REINF_SECTIONS[0].sum(model, r)}`;
+
 // Kalles fra refresh() på HVER endring (også de som ikke bygger skjemaet om).
 // Går rett i DOM-en, uavhengig av om «Tilleggsarmering»-fanen er åpen - da
-// finnes ingen elementer å treffe, og løkka er en no-op.
+// finnes ingen elementer å treffe, og løkkene er no-op.
 function updateReinforcementStatus(v) {
+  const byId = id => model.reinforcements.find(x => x.id === id);
   for (const node of document.querySelectorAll('[data-reinf-status]')) {
-    const r = model.reinforcements.find(x => x.id === node.dataset.reinfStatus);
+    const r = byId(node.dataset.reinfStatus);
     if (r) node.innerHTML = reinforcementStatusHtml(v, r);
+  }
+  for (const node of document.querySelectorAll('[data-reinf-badge]')) {
+    const r = byId(node.dataset.reinfBadge);
+    if (!r) continue;
+    const { ok } = reinforcementOk(v, r);
+    node.className = 'badge ' + (ok ? 'ok' : 'bad');
+    node.textContent = ok ? 'OK' : 'IKKE OK';
+  }
+  for (const node of document.querySelectorAll('[data-reinf-title]')) {
+    const r = byId(node.dataset.reinfTitle);
+    if (r) node.textContent = reinforcementTitle(r);
+  }
+  for (const node of document.querySelectorAll('[data-reinf-sec]')) {
+    const [id, sec] = node.dataset.reinfSec.split(':');
+    const r = byId(id), S = REINF_SECTIONS.find(x => x.id === sec);
+    if (r && S) node.textContent = S.sum(model, r);
   }
 }
 
+// Åpen/lukket pr. kort og pr. seksjon - skjemaet bygges helt om ved hvert
+// valg, så tilstanden holdes her (som groupOpen for resultatlista).
+const reinfOpen = {};
+const isOpen = key => reinfOpen[key] ?? true;
+
+// Type velges FØR gruppa opprettes, i menyen under - resten av skjemaet
+// (utforming, armering, osv.) tilpasser seg formålet fra første stund i
+// stedet for å starte som «Strekk / kjeglebrudd» og måtte endres om det
+// egentlig skulle vært kantarmering. Valget er dermed alt gjort når kortet
+// vises, og har ikke noe felt å endre det i (se reinforcementFields()).
 function renderReinforcementGroups(host) {
-  const addRow = el('div', 'feat-add');
-  const add = el('button', 'btn', '+ Legg til tilleggsarmering');
-  add.onclick = () => {
-    model.reinforcements.push(newReinforcement(nextReinforcementId(model), 'tension'));
-    refresh(true);
-  };
-  addRow.appendChild(add);
-  host.appendChild(addRow);
+  const menu = el('details', 'menu reinf-add');
+  menu.appendChild(el('summary', null, '+ Legg til tilleggsarmering'));
+  const content = el('div', 'menu-content actions');
+  for (const purpose of PURPOSES) {
+    const add = el('button', 'btn', esc(PURPOSE_LABEL[purpose]));
+    add.onclick = () => {
+      menu.open = false;
+      const id = nextReinforcementId(model);
+      model.reinforcements.push(newReinforcement(id, purpose));
+      reinfOpen[id] = true;
+      refresh(true);
+      // Navnefeltet er det naturlige neste steget - marker det med én gang.
+      requestAnimationFrame(() => {
+        const input = host.querySelector(`[data-reinf-name="${id}"]`);
+        if (input) { input.focus(); input.select(); }
+      });
+    };
+    content.appendChild(add);
+  }
+  menu.appendChild(content);
+  host.appendChild(menu);
 
   const v = verify(model);   // fersk - skjemaet bygges før refresh() sitt eget kall
   for (let i = 0; i < model.reinforcements.length; i++) {
     const r = model.reinforcements[i];
-    const card = el('div', 'feat');
-    const hdr = el('div', 'feat-head');
-    hdr.appendChild(el('span', 'nm', `${esc(r.id)} · ${esc(PURPOSE_LABEL[r.purpose])}`));
+    const card = el('details', 'feat reinf-card');
+    card.open = isOpen(r.id);
+    card.ontoggle = () => { reinfOpen[r.id] = card.open; };
+
+    // Korthodet er oversikten når kortet er lukket: navn, type, armering og
+    // status. Navnet er fritt tekstfelt - tomt betyr «bruk standardnavnet»
+    // (reinforcementLabel), så det alltid står noe fornuftig i rapporten.
+    const hdr = el('summary', 'feat-head');
+    const name = el('div', 'nm');
+    const nameInput = el('input', 'rname');
+    nameInput.type = 'text';
+    nameInput.value = r.name || '';
+    nameInput.placeholder = reinforcementLabel(r);
+    nameInput.autocomplete = 'off';
+    nameInput.title = 'Eget navn på gruppa, f.eks. «Kantarmering nord». ' +
+      'Tomt bruker et standardnavn.';
+    nameInput.dataset.reinfName = r.id;
+    // Klikk i feltet skal redigere teksten, ikke åpne/lukke kortet - samme
+    // knep som «Fjern»-knappen under bruker.
+    nameInput.onclick = e => e.preventDefault();
+    nameInput.oninput = () => { r.name = nameInput.value; refresh(false); };
+    name.appendChild(nameInput);
+    const sub = el('span', 'sub');
+    sub.dataset.reinfTitle = r.id;
+    sub.textContent = reinforcementTitle(r);
+    name.appendChild(sub);
+    hdr.appendChild(name);
+    const { ok } = reinforcementOk(v, r);
+    const badge = el('span', 'badge ' + (ok ? 'ok' : 'bad'), ok ? 'OK' : 'IKKE OK');
+    badge.dataset.reinfBadge = r.id;
+    hdr.appendChild(badge);
     const del = el('button', 'btn', 'Fjern');
     del.title = 'Fjern gruppa';
-    del.onclick = () => { model.reinforcements.splice(i, 1); refresh(true); };
+    del.onclick = e => {
+      e.preventDefault();          // ellers lukkes/åpnes kortet også
+      model.reinforcements.splice(i, 1); refresh(true);
+    };
     hdr.appendChild(del);
     card.appendChild(hdr);
-
-    for (const f of reinforcementFields(model, i)) card.appendChild(field(f));
 
     const status = el('div');
     status.dataset.reinfStatus = r.id;
     status.innerHTML = reinforcementStatusHtml(v, r);
     card.appendChild(status);
+
+    const fields = reinforcementFields(model, i);
+    for (const S of REINF_SECTIONS) {
+      const own = fields.filter(f => f.sec === S.id);
+      if (!own.length) continue;
+      const key = `${r.id}:${S.id}`;
+      const sec = el('details', 'rsec');
+      sec.open = isOpen(key);
+      sec.ontoggle = () => { reinfOpen[key] = sec.open; };
+      const sh = el('summary', null, `<span>${esc(S.l)}</span>`);
+      const sum = el('i');
+      sum.dataset.reinfSec = key;
+      sum.textContent = S.sum(model, r);
+      sh.appendChild(sum);
+      sec.appendChild(sh);
+      for (const f of own) sec.appendChild(field(f));
+      card.appendChild(sec);
+    }
 
     host.appendChild(card);
   }
@@ -10510,6 +10995,26 @@ function pickShapeAt(p) {
 }
 
 function field(f) {
+  // Få, lange alternativer: radioknapper under hverandre, så alle valgene
+  // kan leses på én gang i den smale ruta.
+  if (f.t === 'choice') {
+    const wrap = el('div', 'fld choice');
+    wrap.setAttribute('role', 'radiogroup');
+    wrap.appendChild(el('span', 'lbl', esc(typeof f.l === 'function' ? f.l(model) : f.l)));
+    const cur = String(get(model, f.p));
+    for (const [v, t] of (typeof f.o === 'function' ? f.o(model) : f.o)) {
+      const opt = el('label', 'opt');
+      const input = el('input');
+      input.type = 'radio'; input.name = f.p; input.value = v;
+      input.checked = String(v) === cur;
+      input.onchange = () => { set(model, f.p, f.num ? +v : v); refresh(true); };
+      opt.appendChild(input);
+      opt.appendChild(el('span', null, esc(t)));
+      wrap.appendChild(opt);
+    }
+    if (f.hint) wrap.title = f.hint;
+    return wrap;
+  }
   const wrap = el('label', 'fld');
   const label = typeof f.l === 'function' ? f.l(model) : f.l;
   wrap.appendChild(el('span', 'lbl', esc(label) + (f.u ? ` <i>${esc(f.u)}</i>` : '')));
@@ -10759,6 +11264,8 @@ function checkRow(c) {
   const row = el('button', 'chk' + (ok ? (c.util > 1 ? ' over' : '') : ' na'));
   row.setAttribute('aria-current', String(activeCheck === c.id));
   const sub = !ok ? esc(c.note || 'Ikke aktuell for denne geometrien')
+    : c.requirements ? `<b>${c.requirements.filter(it => it.ok).length}</b> / ` +
+      `${c.requirements.length} krav oppfylt · pkt. ${esc(c.clause)}`
     : c.expr ? `<b>${n(c.util, 2)}</b> / 1,00 · ${esc(c.expr)}`
     : `<b>${kN(c.NEd)} kN</b> / ${kN(c.NRd)} kN · pkt. ${esc(c.clause)}`;
   const pc = !ok ? '–' : bin ? (c.util > 1 ? 'Ikke OK' : 'OK') : pct(c.util);
@@ -10907,6 +11414,18 @@ function renderSheet(v) {
     host.innerHTML = H.join('');
     return;
   }
+
+  if (c.requirements) {
+    H.push('<h3>Enkeltkrav</h3><table class="io reqs"><thead><tr>' +
+      '<th>Pkt</th><th>Krav (ordrett, NS-EN 1992-4:2018 (E))</th><th>Vurdering</th>' +
+      '<th>Kommentar</th></tr></thead><tbody>');
+    for (const it of c.requirements)
+      H.push(`<tr><td class="sym">${esc(it.letter)})</td><td>${esc(it.quote)}</td>` +
+        `<td style="color:${it.ok ? 'var(--ok)' : 'var(--bad)'};font-weight:600">` +
+        `${it.ok ? 'OK' : 'Ikke OK'}</td><td>${esc(it.comment || '')}</td></tr>`);
+    H.push('</tbody></table>');
+  }
+
   if (!cal) { host.innerHTML = H.join('') + '<p class="empty">Ingen utregning registrert.</p>'; return; }
 
   const fig = figureFor(c, model);
@@ -11366,7 +11885,7 @@ function buildReport(v) {
     for (const r of m.reinforcements) {
       const s = reinforcementSummary(v, r);
       const issues = requirementIssues(r);
-      L.push(`${r.id}  ${PURPOSE_LABEL[r.purpose]}  ⌀${r.ds}, ${r.geometryType}`);
+      L.push(`${reinforcementLabel(r)}  ⌀${r.ds}, ${r.geometryType}`);
       L.push(`  Nødvendig: ${s.need}×⌀${r.ds}    Valgt: ${r.count}×⌀${r.ds}    ` +
         `Status: ${s.ok && !issues.length ? 'OK' : 'IKKE OK'}`);
       // Plasseringa er selve kravet i pkt. 7.2.1.2 - den hører hjemme i

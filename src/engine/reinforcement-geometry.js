@@ -30,7 +30,8 @@ import { anchorPositions, edgeDistances, memberThickness,
          memberLimits, anchorFoot } from '../core/model.js';
 import { coneSurfaceDepth } from './geometry.js';
 import { minAnchorageFactor, mandrelDiameter, barsPerAnchor,
-         minBarSpacing, bendBarDiameter } from '../core/reinforcement.js';
+         minBarSpacing, bendBarDiameter, endMinTail,
+         hasFreeEnd } from '../core/reinforcement.js';
 
 export const DEFAULT_COVER = 30;
 const ARC_SEG = 18;                 // punkter i en halvsirkelbøy
@@ -304,7 +305,15 @@ export function tensionLayout(m, r) {
   const dtBend = cd.dt ?? 0;                       // ...og diameteren dens
   const dLegTop = bent ? dCrown + rm : coverTop;   // der det rette beinet starter
   const dAvail = Math.max(0, memberThickness(m, pts) - coverBottom);
-  const { lbd, lbRqd, lbmin } = anchorageLength(m.concrete.fck, ds, r.fyk / 1.15, bent);
+  // Bøy eller krok i nedre ende - på åpen U-bøyle og rett stang. Den lukka
+  // bøylen har ingen frie ender. Se REINF_END_TYPE_LABEL.
+  const endType = hasFreeEnd(r.geometryType) && (r.endType === 'bend' || r.endType === 'hook')
+    ? r.endType : 'none';
+  const endBend = endType !== 'none';
+  const endDir = r.endDirection === 'in' ? -1 : 1;
+  // α_1 = 0,7 for forankringa utenfor kjegla gjelder en bøyd stangende
+  // (tab. 8.2) - også en rett stang med bøy/krok nederst.
+  const { lbd, lbRqd, lbmin } = anchorageLength(m.concrete.fck, ds, r.fyk / 1.15, bent || endBend);
   const dWanted = hef + lbd;                       // forbi kjegla, pluss l_bd
   const dBot = Math.min(dWanted, dAvail);
 
@@ -328,34 +337,62 @@ export function tensionLayout(m, r) {
   const offsets = [];
   for (let k = 0; k < nSide; k++) offsets.push(dMin + k * sMin);
 
-  // --- endebøy --------------------------------------------------------------
-  // Bøy i enden av beina, ut fra bolten (bare på åpen U-bøyle - den lukka har
-  // ingen frie ender, og rett stang har ingen bøy). Bøyen med foten teller som
-  // forankring, og flytter samtidig punktet den nye kjegla regnes fra utover.
-  const endBend = !!r.endBend && r.geometryType === 'ubar';
-  const bendArc = bent ? Math.PI * rm / 2 : 0;     // kvartbøy i hjørnet
+  // --- endebøy/krok -----------------------------------------------------
+  // Bøyen/kroken rundt doren (tab. 8.1N), pluss det rette stykket etter den,
+  // teller som forankring, og flytter samtidig punktet den nye kjegla regnes
+  // fra - utover ('out') eller innover ('in'), se END_DIRECTION_LABEL.
+  //
+  //   bend  90° rundt doren, så en vannrett fot. Foten er minst 10⌀ (fig.
+  //         8.1b); ellers så lang forankringa krever, eller det brukeren ber om.
+  //   hook  180° rundt doren, så en hale på 5⌀ rett opp igjen (fig. 8.1c).
+  //         Alt er gitt av standarden - ingen lengde å velge.
+  const bendArc = bent ? Math.PI * rm / 2 : 0;     // kvartbøy i HJØRNET (krona)
+  const footBendArc = endType === 'hook' ? Math.PI * rm
+    : endType === 'bend' ? Math.PI * rm / 2 : 0;
+  const footMin = endMinTail(endType, ds);
   const legBottom = endBend ? Math.max(dLegTop, dBot - rm) : dBot;
   const straightOutside = Math.max(0, legBottom - Math.max(hef, dLegTop));
   const at = (s, v) => ({ x: u.x * s + nv.x * v, y: u.y * s + nv.y * v });
 
-  let footLen = 0;
-  if (endBend) {
-    const need = r.endBendLength > 0
-      ? r.endBendLength
-      : Math.max(0, lbd - straightOutside - bendArc);
-    footLen = need;
+  // Hvert bein sin nedre ende, og retninga bøyen går i (i bøylens system:
+  // ds langs u, dv langs n). U-bøyla bøyer langs bøyleretninga, rett stang på
+  // tvers - bort fra eller mot bolten den står ved.
+  const endStarts = [];
+  if (endBend)
     for (const p of pts) {
       const sp = p.x * u.x + p.y * u.y, v0 = p.x * nv.x + p.y * nv.y;
       for (const d of offsets)
         for (const sgn of [1, -1]) {
           const v = v0 + sgn * d;
-          footLen = Math.min(footLen,
-            fitInside(m, t => at(sp + halfSpan + rm + t, v), need, coverTop),
-            fitInside(m, t => at(sp - halfSpan - rm - t, v), need, coverTop));
+          if (bent)
+            endStarts.push({ s: sp + halfSpan, v, ds: endDir, dv: 0 },
+                           { s: sp - halfSpan, v, ds: -endDir, dv: 0 });
+          else
+            endStarts.push({ s: sp, v, ds: 0, dv: sgn * endDir });
         }
     }
+  const along = (e, t) => at(e.s + e.ds * t, e.v + e.dv * t);
+
+  let footLen = 0, endFits = true;
+  if (endType === 'bend') {
+    const need = r.endBendLength > 0
+      ? r.endBendLength
+      : Math.max(footMin, lbd - straightOutside - footBendArc);
+    footLen = need;
+    for (const e of endStarts)
+      footLen = Math.min(footLen, fitInside(m, t => along(e, rm + t), need, coverTop));
+    endFits = footLen + 1e-6 >= footMin;
+  } else if (endType === 'hook') {
+    footLen = footMin;
+    for (const e of endStarts)
+      if (fitInside(m, t => along(e, t), 2 * rm, coverTop) < 2 * rm - 1e-6) endFits = false;
   }
-  const anchorageAvail = straightOutside + (endBend ? bendArc + footLen : 0);
+  // Hvor langt til siden enden når: kroken to dorradier, bøyen dorradius + fot.
+  const endReach = endType === 'hook' ? 2 * rm : endType === 'bend' ? rm + footLen : 0;
+  // Krokhalen går opp igjen; bare den biten som ligger under kjegla teller.
+  const footCounted = endType === 'hook'
+    ? Math.min(footLen, Math.max(0, legBottom - Math.max(hef, dLegTop))) : footLen;
+  const anchorageAvail = straightOutside + footBendArc + footCounted;
 
   // --- bøylene --------------------------------------------------------------
   // Én bøyle pr. offset pr. side pr. bolt, symmetrisk om bolten. To bolter som
@@ -363,7 +400,7 @@ export function tensionLayout(m, r) {
   // ville den samme stanga blitt talt to ganger.
   const bars = [];
   const seen = new Map();
-  const reach = endBend ? rm + footLen : 0;
+  const reach = endDir * endReach;
   // «Bøyle om hver bolt» gir én spennvidde pr. bolt; «bøyle over hele
   // boltraden» slår boltene som ligger på linje langs bøyleretninga sammen,
   // så bøylen spenner fra ytterste til ytterste med beina rett utenfor
@@ -395,7 +432,7 @@ export function tensionLayout(m, r) {
         const hit = seen.get(key);
         if (hit) { for (const q of row.pts) if (!hit.anchors.includes(q)) hit.anchors.push(q); continue; }
         const bar = {
-          d, v, sgn, s0, uStart, uEnd, halfSpan, endBend, footLen, legBottom,
+          d, v, sgn, s0, uStart, uEnd, halfSpan, endBend, endType, endDir, footLen, legBottom,
           anchors: [...row.pts],
           // Loddrette bein i planet. Rett stang har bare ett.
           legs: bent ? [at(uStart, v), at(uEnd, v)] : [at(s0, v)],
@@ -403,7 +440,7 @@ export function tensionLayout(m, r) {
           // av beinet.
           endPoints: bent
             ? [at(uStart - reach, v), at(uEnd + reach, v)]
-            : [at(s0, v)],
+            : [at(s0, v + sgn * reach)],
         };
         seen.set(key, bar);
         bars.push(bar);
@@ -486,7 +523,9 @@ export function tensionLayout(m, r) {
 
   return {
     kind: 'tension-u', u, n: nv, rm, coverTop, coverBottom, ds, bent,
-    dCrown, dLegTop, dBot, lbd, lbRqd, lbmin, endBend, footLen, legBottom, bendArc,
+    dCrown, dLegTop, dBot, lbd, lbRqd, lbmin, endBend, endType,
+    endDirection: r.endDirection === 'in' ? 'in' : 'out', footLen, footMin, footCounted,
+    endFits, endReach, legBottom, bendArc, footBendArc,
     wrapSurface, bendBarMode: cd.mode, dBend, dtBend,
     bendBarLbd: bent
       ? anchorageLength(m.concrete.fck, dtBend || ds, r.fyk / 1.15, false).lbd : 0,
@@ -725,19 +764,55 @@ function arcTo(pts, P, cu, cz, rad, a0, a1, seg) {
   }
 }
 
+// Bøy/krok i nedre ende av et loddrett bein, i ett loddrett plan: s langs
+// retninga enden peker i, z loddrett. Beinet står i sLeg og går over i buen
+// i zLeg; `side` (±1) er hvilken vei buen går. Punktene kommer fra den frie
+// enden og inn mot beinet.
+//   bend  90° rundt doren, så vannrett fot med lengde `tail`.
+//   hook  180° rundt doren, så halen `tail` rett opp igjen ved siden av beinet.
+function endPath(type, sLeg, zLeg, side, rm, tail, seg) {
+  const c = sLeg + side * rm;                        // senter i doren
+  const aLeg = side > 0 ? -Math.PI : 0;              // der beinet går over i buen
+  const pts = [];
+  const arc = (a0, a1, k) => {
+    for (let i = 0; i <= k; i++) {
+      const phi = a0 + (a1 - a0) * (i / k);
+      pts.push([c + rm * Math.cos(phi), zLeg + rm * Math.sin(phi)]);
+    }
+  };
+  if (type === 'hook') {
+    pts.push([c + side * rm, zLeg + tail]);          // toppen av halen
+    arc(side > 0 ? 0 : -Math.PI, aLeg, 2 * seg);
+  } else {
+    pts.push([c + side * tail, zLeg - rm]);          // enden av foten
+    arc(-Math.PI / 2, aLeg, seg);
+  }
+  return pts;
+}
+
 // Én kjeglebruddbøyle: vannrett del rett under overflatearmeringa, bøyd 90° i
 // hvert hjørne og ned i to bein. «Lukket bøyle» får i tillegg bunn med to bøyer
-// til. Rett stang er bare det loddrette beinet - ingen bøy, ingen omslutting.
+// til. Rett stang er bare det loddrette beinet - ingen omslutting. Åpen
+// U-bøyle og rett stang kan få bøy eller krok nederst (endPath).
 function tensionBarPath(layout, bar, geometryType) {
   const { u, n, rm } = layout;
   const P = (s, z) => V(u.x * s + n.x * bar.v, u.y * s + n.y * bar.v, z);
   const zTop = -layout.dCrown, zBot = -layout.dBot;
+  const seg = Math.max(4, Math.round(ARC_SEG / 2));
+  const dir = bar.endDir < 0 ? -1 : 1;
+  const zLeg = -layout.legBottom;                    // der beinet møter endebøyen
 
-  if (geometryType === 'straight')
-    return [{ points: [P(bar.s0, -layout.dLegTop), P(bar.s0, zBot)], closed: false }];
+  if (geometryType === 'straight') {
+    if (!bar.endBend)
+      return [{ points: [P(bar.s0, -layout.dLegTop), P(bar.s0, zBot)], closed: false }];
+    // Rett stang bøyer på tvers av retninga, fra (ut) eller mot (inn) bolten.
+    const Q = (t, z) => V(u.x * bar.s0 + n.x * t, u.y * bar.s0 + n.y * t, z);
+    const end = endPath(bar.endType, bar.v, zLeg, bar.sgn * dir, rm, bar.footLen, seg);
+    return [{ points: [Q(bar.v, -layout.dLegTop), ...end.reverse().map(([t, z]) => Q(t, z))],
+              closed: false }];
+  }
 
   const zTan = zTop - rm;                    // der beinet møter hjørnebøyen
-  const seg = Math.max(4, Math.round(ARC_SEG / 2));
   const uA = bar.uStart + rm, uB = bar.uEnd - rm;
   const pts = [];
 
@@ -750,18 +825,17 @@ function tensionBarPath(layout, bar, geometryType) {
     return [{ points: pts, closed: true }];
   }
 
-  // Med bøy i enden svinger beinet 90° UT fra bolten nederst, og fortsetter i
-  // en vannrett fot. Bøyens senter ligger en mandrelradius inn og opp fra
-  // bunnpunktet, så foten havner i kote -dBot.
+  // Med bøy/krok i enden svinger beinet nederst rundt doren - ut fra bolten
+  // ('out') eller inn mot den ('in'), se END_DIRECTION_LABEL. Bunnen av
+  // buen havner i kote -dBot.
   if (bar.endBend) {
-    const zLeg = -layout.legBottom;                  // der beinet møter endebøyen
-    const f = bar.footLen;
-    pts.push(P(bar.uStart - rm - f, zLeg - rm));     // fotenden, venstre
-    arcTo(pts, P, bar.uStart - rm, zLeg, rm, -Math.PI / 2, 0, seg);
+    const toP = ([s, z]) => P(s, z);
+    const left = endPath(bar.endType, bar.uStart, zLeg, -dir, rm, bar.footLen, seg);
+    const right = endPath(bar.endType, bar.uEnd, zLeg, dir, rm, bar.footLen, seg);
+    pts.push(...left.map(toP));
     arcTo(pts, P, uA, zTan, rm, Math.PI, Math.PI / 2, seg);
     arcTo(pts, P, uB, zTan, rm, Math.PI / 2, 0, seg);
-    arcTo(pts, P, bar.uEnd + rm, zLeg, rm, Math.PI, -Math.PI / 2 + 2 * Math.PI, seg);
-    pts.push(P(bar.uEnd + rm + f, zLeg - rm));       // fotenden, høyre
+    pts.push(...right.reverse().map(toP));
     return [{ points: pts, closed: false }];
   }
 

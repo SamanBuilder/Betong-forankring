@@ -194,14 +194,21 @@ export function validate(m) {
     const G = groupGeometry(m, null, r);
     if (G.geo && G.geo.kind === 'shear-u' && !G.geo.edgeDir)
       warn(`${tag}: ingen fri kant å legge kantbruddarmeringa langs.`);
-    else if (G.geo && !G.geo.fits)
-      warn(`${tag}: ` + (G.geo.kind === 'shear-u'
-        ? `trenger ${Math.round(G.geo.wanted)} mm innover fra kanten, men det er ` +
-          `bare ${Math.round(G.geo.available)} mm til motsatt kant (minus overdekning).`
-        : `forankringa utenfor kjegla er ${Math.round(G.geo.anchorageAvail)} mm mot ` +
-          `l_bd = ${Math.round(G.geo.lbd)} mm.` +
-          (G.geo.endBend ? '' : ' Prøv en bøy ut i enden av beina, som gir bøyen og ' +
-           'foten som forankring i tillegg.')));
+    else if (G.geo && !G.geo.fits && G.geo.kind === 'shear-u')
+      warn(`${tag}: trenger ${Math.round(G.geo.wanted)} mm innover fra kanten, men det er ` +
+        `bare ${Math.round(G.geo.available)} mm til motsatt kant (minus overdekning).`);
+    // (Kjeglebrudd: G.geo.lbd/anchorageAvail her er regnet med stanga fullt
+    // utnyttet (f_yd) - en konservativ geometrisk grovsjekk, uavhengig av last.
+    // Den faktiske, lastbaserte kontrollen (σ_sd av N_Ed) vises i sjekklista som
+    // «Tilleggsarmering N – forankringslengde utenfor kjegla», og kan gjerne slå
+    // OK selv om denne grovsjekken ikke gjør det. Varsel her droppes derfor for
+    // å unngå å motsi den kontrollen.)
+    if (G.geo?.endBend && !G.geo.endFits)
+      warn(`${tag}: ` + (G.geo.endType === 'hook'
+        ? `kroken får ikke plass – den trenger ${Math.round(2 * G.geo.rm)} mm til siden ` +
+          `(dordiameter ⌀_m, tab. 8.1N) innenfor overdekninga. Snu retninga eller velg bøy.`
+        : `foten etter 90°-bøyen er ${Math.round(G.geo.footLen)} mm, mindre enn ` +
+          `10⌀ = ${Math.round(G.geo.footMin)} mm (NS-EN 1992-1-1 fig. 8.1b).`));
     if (G.geo && G.insideLen < G.insideMin)
       warn(`${tag}: lengde inne i bruddlegemet ${Math.round(G.insideLen)} mm er kortere enn ` +
            `kravet ${Math.round(G.insideMin)} mm.`);

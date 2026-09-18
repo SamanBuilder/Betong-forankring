@@ -21,7 +21,7 @@ import {
 import { tensionSupplementary, shearSupplementary } from './supplementary-reinforcement.js';
 import { validate, bearingCheck } from './validate.js';
 import { syncPlan } from '../core/model.js';
-import { migrateReinforcements, bruddformFor } from '../core/reinforcement.js';
+import { migrateReinforcements, bruddformFor, reinforcementLabel } from '../core/reinforcement.js';
 
 const STD_LABEL = {
   'EN1992-4': 'NS-EN 1992-4:2018',
@@ -89,7 +89,7 @@ export function verify(m) {
         const idx = primary.findIndex(c => c.id === targetId);
         if (idx >= 0) {
           replacedConcreteChecks.push({ ...primary[idx],
-            replacedBy: `Tilleggsarmering ${r.id}`, group: r.id });
+            replacedBy: reinforcementLabel(r), group: r.id });
           primary = primary.filter(c => c.id !== targetId);
         }
       }

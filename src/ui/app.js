@@ -11,10 +11,12 @@ import { defaultModel, CONCRETE_GRADES, STUD_STEELS, studSize, rodSize,
          LIMIT_STATES, anchorFoot, steelsFor, defaultSteel, endsFor,
          syncPlan, migratePlan } from '../core/model.js';
 import { newReinforcement, nextReinforcementId, requirementIssues,
-         PURPOSE_LABEL, migrateReinforcements } from '../core/reinforcement.js';
+         PURPOSE_LABEL, PURPOSES, migrateReinforcements,
+         reinforcementLabel } from '../core/reinforcement.js';
 import { verify } from '../engine/verify.js';
 import { buildScene } from '../viz/scene-builder.js';
-import { FIELDS, barSizes, get, set, reinforcementFields } from './fields.js';
+import { FIELDS, barSizes, get, set, reinforcementFields,
+         REINF_SECTIONS } from './fields.js';
 import { planShapes, shapeLoop, shapeZ, loopArea, isShaped,
          SHAPE_LABEL, OP_LABEL } from '../engine/solid.js';
 import { PlanEditor, TOOLS } from './plan-editor.js';
@@ -226,15 +228,21 @@ function reinforcementSummary(v, r) {
 // hver gang tallene endrer seg (se updateReinforcementStatus). Selve
 // skjemafeltene røres ikke da: patcher du dem inn på nytt for hvert tastetrykk
 // mister feltet fokus midt i tallet du skriver.
+function reinforcementOk(v, r) {
+  const s = reinforcementSummary(v, r), issues = requirementIssues(r);
+  return { s, issues, ok: s.ok && !issues.length };
+}
+
 function reinforcementStatusHtml(v, r) {
-  const issues = requirementIssues(r);
-  const s = reinforcementSummary(v, r);
-  const okAll = s.ok && !issues.length;
-  let html = `<div class="assump reinf-sum">` +
-    `<div class="row"><span class="k">Nødvendig</span><span class="v">${s.need}×⌀${r.ds}</span></div>` +
-    `<div class="row"><span class="k">Valgt</span><span class="v">${r.count}×⌀${r.ds}</span></div>` +
-    `<div class="row"><span class="k">Status</span><span class="v" style="color:${
-      okAll ? 'var(--ok)' : 'var(--bad)'}">${okAll ? 'OK' : 'IKKE OK'}</span></div></div>`;
+  const { s, issues, ok } = reinforcementOk(v, r);
+  const cell = (k, val, style = '') =>
+    `<div><span class="k">${k}</span><span class="v"${style}>${val}</span></div>`;
+  let html = `<div class="reinf-over">` +
+    cell('Nødvendig', `${s.need}×⌀${r.ds}`) +
+    cell('Valgt', `${r.count}×⌀${r.ds}`) +
+    cell('Utnyttelse', pct(s.worst), ` style="color:${utilCss(s.worst)}"`) +
+    cell('Status', ok ? 'OK' : 'IKKE OK', ` style="color:${ok ? 'var(--ok)' : 'var(--bad)'}"`) +
+    `</div>`;
   if (issues.length) html += `<p class="msg err">${esc(issues.join(' '))}</p>`;
   if (s.replaced)
     html += `<p class="hint">Erstatter ${r.purpose === 'tension' ? 'betongkjeglebrudd' : 'kantbrudd'} ` +
@@ -242,44 +250,135 @@ function reinforcementStatusHtml(v, r) {
   return html;
 }
 
+// Kort linje i korthodet - det som står igjen når kortet er lukket.
+const reinforcementTitle = r =>
+  `${PURPOSE_LABEL[r.purpose]} · ${r.count}×⌀${r.ds} · ${REINF_SECTIONS[0].sum(model, r)}`;
+
 // Kalles fra refresh() på HVER endring (også de som ikke bygger skjemaet om).
 // Går rett i DOM-en, uavhengig av om «Tilleggsarmering»-fanen er åpen - da
-// finnes ingen elementer å treffe, og løkka er en no-op.
+// finnes ingen elementer å treffe, og løkkene er no-op.
 function updateReinforcementStatus(v) {
+  const byId = id => model.reinforcements.find(x => x.id === id);
   for (const node of document.querySelectorAll('[data-reinf-status]')) {
-    const r = model.reinforcements.find(x => x.id === node.dataset.reinfStatus);
+    const r = byId(node.dataset.reinfStatus);
     if (r) node.innerHTML = reinforcementStatusHtml(v, r);
+  }
+  for (const node of document.querySelectorAll('[data-reinf-badge]')) {
+    const r = byId(node.dataset.reinfBadge);
+    if (!r) continue;
+    const { ok } = reinforcementOk(v, r);
+    node.className = 'badge ' + (ok ? 'ok' : 'bad');
+    node.textContent = ok ? 'OK' : 'IKKE OK';
+  }
+  for (const node of document.querySelectorAll('[data-reinf-title]')) {
+    const r = byId(node.dataset.reinfTitle);
+    if (r) node.textContent = reinforcementTitle(r);
+  }
+  for (const node of document.querySelectorAll('[data-reinf-sec]')) {
+    const [id, sec] = node.dataset.reinfSec.split(':');
+    const r = byId(id), S = REINF_SECTIONS.find(x => x.id === sec);
+    if (r && S) node.textContent = S.sum(model, r);
   }
 }
 
+// Åpen/lukket pr. kort og pr. seksjon - skjemaet bygges helt om ved hvert
+// valg, så tilstanden holdes her (som groupOpen for resultatlista).
+const reinfOpen = {};
+const isOpen = key => reinfOpen[key] ?? true;
+
+// Type velges FØR gruppa opprettes, i menyen under - resten av skjemaet
+// (utforming, armering, osv.) tilpasser seg formålet fra første stund i
+// stedet for å starte som «Strekk / kjeglebrudd» og måtte endres om det
+// egentlig skulle vært kantarmering. Valget er dermed alt gjort når kortet
+// vises, og har ikke noe felt å endre det i (se reinforcementFields()).
 function renderReinforcementGroups(host) {
-  const addRow = el('div', 'feat-add');
-  const add = el('button', 'btn', '+ Legg til tilleggsarmering');
-  add.onclick = () => {
-    model.reinforcements.push(newReinforcement(nextReinforcementId(model), 'tension'));
-    refresh(true);
-  };
-  addRow.appendChild(add);
-  host.appendChild(addRow);
+  const menu = el('details', 'menu reinf-add');
+  menu.appendChild(el('summary', null, '+ Legg til tilleggsarmering'));
+  const content = el('div', 'menu-content actions');
+  for (const purpose of PURPOSES) {
+    const add = el('button', 'btn', esc(PURPOSE_LABEL[purpose]));
+    add.onclick = () => {
+      menu.open = false;
+      const id = nextReinforcementId(model);
+      model.reinforcements.push(newReinforcement(id, purpose));
+      reinfOpen[id] = true;
+      refresh(true);
+      // Navnefeltet er det naturlige neste steget - marker det med én gang.
+      requestAnimationFrame(() => {
+        const input = host.querySelector(`[data-reinf-name="${id}"]`);
+        if (input) { input.focus(); input.select(); }
+      });
+    };
+    content.appendChild(add);
+  }
+  menu.appendChild(content);
+  host.appendChild(menu);
 
   const v = verify(model);   // fersk - skjemaet bygges før refresh() sitt eget kall
   for (let i = 0; i < model.reinforcements.length; i++) {
     const r = model.reinforcements[i];
-    const card = el('div', 'feat');
-    const hdr = el('div', 'feat-head');
-    hdr.appendChild(el('span', 'nm', `${esc(r.id)} · ${esc(PURPOSE_LABEL[r.purpose])}`));
+    const card = el('details', 'feat reinf-card');
+    card.open = isOpen(r.id);
+    card.ontoggle = () => { reinfOpen[r.id] = card.open; };
+
+    // Korthodet er oversikten når kortet er lukket: navn, type, armering og
+    // status. Navnet er fritt tekstfelt - tomt betyr «bruk standardnavnet»
+    // (reinforcementLabel), så det alltid står noe fornuftig i rapporten.
+    const hdr = el('summary', 'feat-head');
+    const name = el('div', 'nm');
+    const nameInput = el('input', 'rname');
+    nameInput.type = 'text';
+    nameInput.value = r.name || '';
+    nameInput.placeholder = reinforcementLabel(r);
+    nameInput.autocomplete = 'off';
+    nameInput.title = 'Eget navn på gruppa, f.eks. «Kantarmering nord». ' +
+      'Tomt bruker et standardnavn.';
+    nameInput.dataset.reinfName = r.id;
+    // Klikk i feltet skal redigere teksten, ikke åpne/lukke kortet - samme
+    // knep som «Fjern»-knappen under bruker.
+    nameInput.onclick = e => e.preventDefault();
+    nameInput.oninput = () => { r.name = nameInput.value; refresh(false); };
+    name.appendChild(nameInput);
+    const sub = el('span', 'sub');
+    sub.dataset.reinfTitle = r.id;
+    sub.textContent = reinforcementTitle(r);
+    name.appendChild(sub);
+    hdr.appendChild(name);
+    const { ok } = reinforcementOk(v, r);
+    const badge = el('span', 'badge ' + (ok ? 'ok' : 'bad'), ok ? 'OK' : 'IKKE OK');
+    badge.dataset.reinfBadge = r.id;
+    hdr.appendChild(badge);
     const del = el('button', 'btn', 'Fjern');
     del.title = 'Fjern gruppa';
-    del.onclick = () => { model.reinforcements.splice(i, 1); refresh(true); };
+    del.onclick = e => {
+      e.preventDefault();          // ellers lukkes/åpnes kortet også
+      model.reinforcements.splice(i, 1); refresh(true);
+    };
     hdr.appendChild(del);
     card.appendChild(hdr);
-
-    for (const f of reinforcementFields(model, i)) card.appendChild(field(f));
 
     const status = el('div');
     status.dataset.reinfStatus = r.id;
     status.innerHTML = reinforcementStatusHtml(v, r);
     card.appendChild(status);
+
+    const fields = reinforcementFields(model, i);
+    for (const S of REINF_SECTIONS) {
+      const own = fields.filter(f => f.sec === S.id);
+      if (!own.length) continue;
+      const key = `${r.id}:${S.id}`;
+      const sec = el('details', 'rsec');
+      sec.open = isOpen(key);
+      sec.ontoggle = () => { reinfOpen[key] = sec.open; };
+      const sh = el('summary', null, `<span>${esc(S.l)}</span>`);
+      const sum = el('i');
+      sum.dataset.reinfSec = key;
+      sum.textContent = S.sum(model, r);
+      sh.appendChild(sum);
+      sec.appendChild(sh);
+      for (const f of own) sec.appendChild(field(f));
+      card.appendChild(sec);
+    }
 
     host.appendChild(card);
   }
@@ -323,6 +422,26 @@ function pickShapeAt(p) {
 }
 
 function field(f) {
+  // Få, lange alternativer: radioknapper under hverandre, så alle valgene
+  // kan leses på én gang i den smale ruta.
+  if (f.t === 'choice') {
+    const wrap = el('div', 'fld choice');
+    wrap.setAttribute('role', 'radiogroup');
+    wrap.appendChild(el('span', 'lbl', esc(typeof f.l === 'function' ? f.l(model) : f.l)));
+    const cur = String(get(model, f.p));
+    for (const [v, t] of (typeof f.o === 'function' ? f.o(model) : f.o)) {
+      const opt = el('label', 'opt');
+      const input = el('input');
+      input.type = 'radio'; input.name = f.p; input.value = v;
+      input.checked = String(v) === cur;
+      input.onchange = () => { set(model, f.p, f.num ? +v : v); refresh(true); };
+      opt.appendChild(input);
+      opt.appendChild(el('span', null, esc(t)));
+      wrap.appendChild(opt);
+    }
+    if (f.hint) wrap.title = f.hint;
+    return wrap;
+  }
   const wrap = el('label', 'fld');
   const label = typeof f.l === 'function' ? f.l(model) : f.l;
   wrap.appendChild(el('span', 'lbl', esc(label) + (f.u ? ` <i>${esc(f.u)}</i>` : '')));
@@ -572,6 +691,8 @@ function checkRow(c) {
   const row = el('button', 'chk' + (ok ? (c.util > 1 ? ' over' : '') : ' na'));
   row.setAttribute('aria-current', String(activeCheck === c.id));
   const sub = !ok ? esc(c.note || 'Ikke aktuell for denne geometrien')
+    : c.requirements ? `<b>${c.requirements.filter(it => it.ok).length}</b> / ` +
+      `${c.requirements.length} krav oppfylt · pkt. ${esc(c.clause)}`
     : c.expr ? `<b>${n(c.util, 2)}</b> / 1,00 · ${esc(c.expr)}`
     : `<b>${kN(c.NEd)} kN</b> / ${kN(c.NRd)} kN · pkt. ${esc(c.clause)}`;
   const pc = !ok ? '–' : bin ? (c.util > 1 ? 'Ikke OK' : 'OK') : pct(c.util);
@@ -720,6 +841,18 @@ function renderSheet(v) {
     host.innerHTML = H.join('');
     return;
   }
+
+  if (c.requirements) {
+    H.push('<h3>Enkeltkrav</h3><table class="io reqs"><thead><tr>' +
+      '<th>Pkt</th><th>Krav (ordrett, NS-EN 1992-4:2018 (E))</th><th>Vurdering</th>' +
+      '<th>Kommentar</th></tr></thead><tbody>');
+    for (const it of c.requirements)
+      H.push(`<tr><td class="sym">${esc(it.letter)})</td><td>${esc(it.quote)}</td>` +
+        `<td style="color:${it.ok ? 'var(--ok)' : 'var(--bad)'};font-weight:600">` +
+        `${it.ok ? 'OK' : 'Ikke OK'}</td><td>${esc(it.comment || '')}</td></tr>`);
+    H.push('</tbody></table>');
+  }
+
   if (!cal) { host.innerHTML = H.join('') + '<p class="empty">Ingen utregning registrert.</p>'; return; }
 
   const fig = figureFor(c, model);
@@ -1179,7 +1312,7 @@ function buildReport(v) {
     for (const r of m.reinforcements) {
       const s = reinforcementSummary(v, r);
       const issues = requirementIssues(r);
-      L.push(`${r.id}  ${PURPOSE_LABEL[r.purpose]}  ⌀${r.ds}, ${r.geometryType}`);
+      L.push(`${reinforcementLabel(r)}  ⌀${r.ds}, ${r.geometryType}`);
       L.push(`  Nødvendig: ${s.need}×⌀${r.ds}    Valgt: ${r.count}×⌀${r.ds}    ` +
         `Status: ${s.ok && !issues.length ? 'OK' : 'IKKE OK'}`);
       // Plasseringa er selve kravet i pkt. 7.2.1.2 - den hører hjemme i

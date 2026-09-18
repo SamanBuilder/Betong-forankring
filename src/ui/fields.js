@@ -7,7 +7,9 @@ import { CONCRETE_GRADES, STUD_SIZES, REBAR_SIZES, ROD_SIZES,
 import { planShapes, shapeZ, SHAPE_LABEL } from '../engine/solid.js';
 import { REINF_DIAMETERS, PURPOSE_LABEL, GEOMETRY_LABEL, GEOMETRY_FOR,
          TENSION_LAYOUTS, TENSION_LAYOUT_LABEL, BEND_BARS, BEND_BAR_LABEL,
-         bendBarDiameter } from '../core/reinforcement.js';
+         bendBarDiameter, REINF_END_TYPES, REINF_END_TYPE_LABEL,
+         END_DIRECTIONS, END_DIRECTION_LABEL, hasFreeEnd,
+         mandrelDiameter } from '../core/reinforcement.js';
 import { groupGeometry } from '../engine/supplementary-reinforcement.js';
 import { crownDepth } from '../engine/reinforcement-geometry.js';
 
@@ -256,18 +258,61 @@ export const shapeName = (sh, i) =>
 //  Feltene for én tilleggsarmeringsgruppe - "velg type, antall, diameter,
 //  plassering" i stedet for å tegne armeringa manuelt (spesifikasjonens pkt. 9).
 //  Samme per-indeks-mønster som shapeFields() over.
+//
+//  Hvert felt hører til en seksjon (`sec`, se REINF_SECTIONS), så kortet kan
+//  vises som en oversikt med lukkbare deler. Valg med få, lange alternativer
+//  er `t: 'choice'` - radioknapper under hverandre i stedet for nedtrekk.
 // ---------------------------------------------------------------------------
+
+// Skal bøylen omslutte overflatearmeringa, kan den ikke ha sin egen
+// overdekning i tillegg: den MÅ ligge rett under nettet. Da er det nettets
+// overdekning som er det ene tallet som gjelder, og bøylens overdekning
+// vises som avledet - ellers står det to tall i skjemaet som ikke kan
+// stemme samtidig.
+const wrapsSurface = r => r.purpose === 'tension' && r.geometryType !== 'straight'
+  && r.bendBar !== 'own' && !!r.surfaceReinf?.present;
+const coverTopShown = r => wrapsSurface(r)
+  ? Math.round(crownDepth(r).dCrown - r.ds / 2) : r.coverTop;
+
+// Seksjonene i kortet, i vist rekkefølge. `sum` er sammendraget i seksjons-
+// hodet - det som står igjen å lese når seksjonen er lukket.
+export const REINF_SECTIONS = [
+  { id: 'type', l: 'Utforming',
+    sum: (m, r) => GEOMETRY_LABEL[r.geometryType] },
+  { id: 'bars', l: 'Armering',
+    sum: (m, r) => `${r.count}×⌀${r.ds} · f_yk ${r.fyk}` },
+  { id: 'place', l: 'Plassering',
+    sum: (m, r) => r.purpose === 'tension'
+      ? `${r.direction ?? 0}° · ${r.clearance} mm til bolt`
+      : `${r.placement === 'manual' ? 'manuell' : 'automatisk'} · ${r.clearance} mm til bolt` },
+  { id: 'cover', l: 'Overdekning',
+    sum: (m, r) => r.purpose === 'shear' ? `${coverTopShown(r)} mm`
+      : `${coverTopShown(r)} / ${r.coverBottom} mm` },
+  { id: 'bend', l: 'Stang i bøyen',
+    sum: (m, r) => r.bendBar === 'own' ? `egen ⌀${bendBarDiameter(r)}`
+      : r.surfaceReinf?.present
+        ? `nett ⌀${r.surfaceReinf.ds} c/c ${r.surfaceReinf.spacing}` : 'ingenting' },
+  { id: 'end', l: 'Ende',
+    sum: (m, r) => REINF_END_TYPE_LABEL[r.endType] +
+      (r.endType === 'none' ? '' : ` · ${END_DIRECTION_LABEL[r.endDirection].toLowerCase()}`) },
+  { id: 'lap', l: 'Overlapp',
+    sum: (m, r) => r.lapToExisting?.present ? `${r.lapToExisting.lapLength} mm` : 'ingen' },
+];
+
+// Typen (purpose) velges når gruppa opprettes (se addReinforcementMenu i
+// ui/app.js) og har ikke noe felt her - det valget er allerede tatt, og å la
+// det stå redigerbart ville bare invitert til å bytte det ut fra under en
+// ferdig utfylt gruppe. Utforminga (U-bøyle/lukket/rett) kan derimot endres
+// fritt gjennom hele arbeidet.
 export function reinforcementFields(m, i) {
   const P = k => `reinforcements.${i}.${k}`;
   const r = m.reinforcements[i];
   const tension = r.purpose === 'tension';
   const out = [
-    { p: P('purpose'), l: 'Type', t: 'select',
-      o: Object.entries(PURPOSE_LABEL).map(([v, t]) => [v, t]) },
-    { p: P('geometryType'), l: 'Utforming', t: 'select',
+    { sec: 'type', p: P('geometryType'), l: 'Utforming', t: 'choice',
       o: (GEOMETRY_FOR[r.purpose] || Object.keys(GEOMETRY_LABEL))
         .map(v => [v, GEOMETRY_LABEL[v]]) },
-    { p: P('count'), l: tension
+    { sec: 'bars', p: P('count'), l: tension
         ? (r.geometryType === 'straight' ? 'Stenger pr. bolt' : 'Bøyler pr. bolt')
         : 'Antall bein',
       t: 'num', step: 2, min: 2,
@@ -276,13 +321,13 @@ export function reinforcementFields(m, i) {
           'nær bolten som praktisk mulig og pakkes utover med minste tillatte ' +
           'senteravstand (NS-EN 1992-1-1 8.2). 0,75·h_ef er den ytre grensa ' +
           'for hva som teller med, ikke der de skal ligge.' : undefined },
-    { p: P('ds'), l: 'Diameter ⌀', t: 'select', num: true,
+    { sec: 'bars', p: P('ds'), l: 'Diameter ⌀', t: 'select', num: true,
       o: REINF_DIAMETERS.map(d => [d, `⌀${d}`]) },
-    { p: P('fyk'), l: 'f_yk', t: 'num', u: 'MPa', step: 50,
+    { sec: 'bars', p: P('fyk'), l: 'f_yk', t: 'num', u: 'MPa', step: 50,
       hint: 'Ribbet armeringsstål, f_yk ≤ 600 N/mm² – pkt. 7.2.2.6.' },
   ];
   if (tension && r.geometryType !== 'straight')
-    out.push({ p: P('barLayout'), l: 'Bøylefordeling', t: 'select',
+    out.push({ sec: 'place', p: P('barLayout'), l: 'Bøylefordeling', t: 'choice',
       o: TENSION_LAYOUTS.map(v => [v, TENSION_LAYOUT_LABEL[v]]),
       hint: 'Én bøyle om hver bolt gir et bein like ved hver bolt. Én bøyle ' +
             'over hele boltraden gir færre stenger og ett bøyeskjema, men bare ' +
@@ -290,15 +335,15 @@ export function reinforcementFields(m, i) {
             'midt i raden lenger enn 0,75·h_ef fra nærmeste bein, flagges det ' +
             'av plasseringskontrollen.' });
   if (tension)
-    out.push({ p: P('direction'), l: 'Retning', t: 'num', u: '°', step: 15,
+    out.push({ sec: 'place', p: P('direction'), l: 'Retning', t: 'num', u: '°', step: 15,
       hint: r.geometryType === 'straight'
         ? 'Hvilken vei stengene fordeles om bolten, dreid om loddaksen.'
         : 'Hvilken vei bøylene ligger, dreid om loddaksen. Bøylene straddler ' +
           'bolten i denne retninga, og forskyves på tvers av den for å gå klar.' });
   else
-    out.push({ p: P('placement'), l: 'Plassering', t: 'select', o: [
+    out.push({ sec: 'place', p: P('placement'), l: 'Plassering', t: 'choice', o: [
       ['auto', 'Automatisk'], ['manual', 'Manuell']] });
-  out.push({ p: P('clearance'), l: 'Innvendig avstand til bolt', t: 'num', u: 'mm', step: 5 });
+  out.push({ sec: 'place', p: P('clearance'), l: 'Innvendig avstand til bolt', t: 'num', u: 'mm', step: 5 });
   // Kjeglebrudd og bøylene rundt bolten har en reell underkant (beina går
   // ned mot den); kantbruddbøylen ligger i ett vannrett nivå og har bare en
   // overkant å forholde seg til.
@@ -307,13 +352,13 @@ export function reinforcementFields(m, i) {
   // rett stang har verken bøy å omslutte med eller to bein å spenne mellom.
   if (tension && r.geometryType !== 'straight') {
     const G = groupGeometry(m, null, r);
-    out.push({ p: P('span'), l: 'Bøylebredde (mellom beina)', t: 'num', u: 'mm', step: 10,
+    out.push({ sec: 'place', p: P('span'), l: 'Bøylebredde (mellom beina)', t: 'num', u: 'mm', step: 10,
       val: r.span ?? Math.round(2 * (G.geo?.halfSpan ?? 0)),
       hint: 'Avstanden mellom de to loddrette beina, målt langs bøyleretninga. ' +
             'Tomt = så trangt bøyeradien tillater, altså beina så nær bolten ' +
             'som praktisk mulig. Bredda går inn i den faktiske avstanden ' +
             'bolt → bein: √((bredde/2)² + tverravstand²) ≤ 0,75·h_ef.' });
-    out.push({ p: P('bendBar'), l: 'Stang i bøyen', t: 'select',
+    out.push({ sec: 'bend', p: P('bendBar'), l: 'Hva ligger i bøyen', t: 'choice',
       o: BEND_BARS.map(v => [v, BEND_BAR_LABEL[v]]),
       hint: 'Bøyen krøller seg rundt en stang på tvers, så bøylen ligger OVER ' +
             'den. Stanga tar radialtrykket fra bøyen og fører strekkraften ' +
@@ -321,41 +366,35 @@ export function reinforcementFields(m, i) {
             'bøylen nettet – eller det legges en egen stang, og da står bøylen ' +
             'fritt og nettet tegnes ikke.' });
     if (r.bendBar === 'own')
-      out.push({ p: P('bendBarDs'), l: 'Stang i bøyen ⌀', t: 'select', num: true,
+      out.push({ sec: 'bend', p: P('bendBarDs'), l: 'Stang i bøyen ⌀', t: 'select', num: true,
         val: bendBarDiameter(r),
         o: REBAR_SIZES.filter(d => d >= r.ds).map(d => [d, `⌀${d}`]),
         hint: `Minst like tjukk som bøylen (⌀${r.ds}). Forankres etter ` +
               'NS-EN 1992-1-1 8.4 – se kontrollen «stang i bøyen».' });
     else
       out.push(
-        { p: P('surfaceReinf.present'), l: 'Overflatearmering lagt inn', t: 'bool',
+        { sec: 'bend', p: P('surfaceReinf.present'), l: 'Overflatearmering lagt inn', t: 'bool',
           hint: 'Uten nett er det ingenting i bøyen – da bør du velge egen ' +
                 'stang i bøyen i stedet.' },
         ...(r.surfaceReinf?.present ? [
-          { p: P('surfaceReinf.ds'), l: 'Overflatearmering ⌀', t: 'select', num: true,
+          { sec: 'bend', p: P('surfaceReinf.ds'), l: 'Nett ⌀', t: 'select', num: true,
             o: REBAR_SIZES.map(d => [d, `⌀${d}`]) },
-          { p: P('surfaceReinf.spacing'), l: 'Overflatearmering c/c', t: 'num',
+          { sec: 'bend', p: P('surfaceReinf.spacing'), l: 'Nett c/c', t: 'num',
             u: 'mm', step: 25, min: 25,
             hint: 'Senteravstand i nettet. Brukes til å tegne nettet i 3D – ' +
                   'kapasiteten til overflatearmeringa er ikke kontrollert her.' },
-          { p: P('surfaceReinf.cover'), l: 'Overflatearmering, overdekning',
+          { sec: 'bend', p: P('surfaceReinf.cover'), l: 'Nett, overdekning',
             t: 'num', u: 'mm', step: 5, min: 0,
             hint: 'Til ytterste lag. Laget som går på tvers av bøylene ligger ' +
                   'innerst – det er det bøyen omslutter, og bøylen legges rett ' +
                   'over det.' },
         ] : []));
   }
-  // Skal bøylen omslutte overflatearmeringa, kan den ikke ha sin egen
-  // overdekning i tillegg: den MÅ ligge rett under nettet. Da er det nettets
-  // overdekning som er det ene tallet som gjelder, og bøylens overdekning
-  // vises som avledet - ellers står det to tall i skjemaet som ikke kan
-  // stemme samtidig.
-  const wraps = tension && r.geometryType !== 'straight'
-    && r.bendBar !== 'own' && !!r.surfaceReinf?.present;
-  out.push({ p: P('coverTop'), l: hasDepth ? 'Overdekning, overkant' : 'Overdekning',
+  const wraps = wrapsSurface(r);
+  out.push({ sec: 'cover', p: P('coverTop'), l: hasDepth ? 'Overkant' : 'Overdekning',
     t: 'num', u: 'mm', step: 5,
     ro: wraps,
-    val: wraps ? Math.round(crownDepth(r).dCrown - r.ds / 2) : undefined,
+    val: wraps ? coverTopShown(r) : undefined,
     hint: !tension
       ? 'Avstand fra betongoverflata (og fra kanten for kantbruddbøyler) til bøylen.'
       : wraps
@@ -365,42 +404,62 @@ export function reinforcementFields(m, i) {
         : 'Fra betongoverflata ned til toppen av armeringa. Stanga i bøyen ' +
           'legges inne i bøyen, altså under den vannrette delen.' });
   if (hasDepth)
-    out.push({ p: P('coverBottom'), l: 'Overdekning, underkant', t: 'num', u: 'mm', step: 5,
+    out.push({ sec: 'cover', p: P('coverBottom'), l: 'Underkant', t: 'num', u: 'mm', step: 5,
       hint: 'Hvor nær underkant betong beina får gå.' });
-  // Endebøy finnes bare på den åpne U-bøylen - den lukka har ingen frie ender.
-  if (tension && r.geometryType === 'ubar') {
-    out.push({ p: P('endBend'), l: 'Bøy ut i enden av beina', t: 'bool',
-      hint: 'Beina bøyes 90° utover nederst og fortsetter i en vannrett fot. ' +
-            'Bøyen og foten teller som forankring – nyttig i tynne plater der ' +
-            'det ikke er dybde nok til l_bd – og flytter samtidig punktet ' +
-            'kjegla fra armeringsenden regnes fra utover, så den kjegla blir større.' });
-    if (r.endBend) {
+  // Endebøy/krok finnes på den åpne U-bøylen og på rett stang - den lukka
+  // har ingen frie ender.
+  if (tension && hasFreeEnd(r.geometryType)) {
+    const dm = mandrelDiameter(r.ds);
+    out.push({ sec: 'end', p: P('endType'), l: r.geometryType === 'straight' ? 'Nedre ende' : 'Enden av beina',
+      t: 'choice', o: REINF_END_TYPES.map(v => [v, REINF_END_TYPE_LABEL[v]]),
+      hint: `Begge bøyes rundt dor ⌀_m = ${dm} mm (NS-EN 1992-1-1 tab. 8.1N). ` +
+            'Bøy 90°: vannrett fot, minst 10⌀ (fig. 8.1b). Krok 180°: halen ' +
+            'er 5⌀ rett opp igjen (fig. 8.1c) – lengden er gitt av standarden. ' +
+            'Bøyen/kroken teller som forankring i tillegg til det rette ' +
+            'beinet – nyttig i tynne plater der det ikke er dybde nok til l_bd.' });
+    if (r.endType === 'bend' || r.endType === 'hook') {
+      out.push({ sec: 'end', p: P('endDirection'), l: 'Retning', t: 'choice',
+        o: END_DIRECTIONS.map(v => [v, END_DIRECTION_LABEL[v]]),
+        hint: (r.geometryType === 'straight'
+                ? 'Hvilken vei enden peker, på tvers av retninga – fra eller mot bolten. '
+                : 'Hvilken vei enden peker, langs bøyleretninga. ') +
+              'Ut flytter samtidig punktet kjegla fra armeringsenden regnes ' +
+              'fra utover, så den kjegla blir større; inn flytter det innover.' });
       const G = groupGeometry(m, null, r);
-      out.push({ p: P('endBendLength'), l: 'Fotlengde', t: 'num', u: 'mm', step: 10,
-        val: r.endBendLength ?? Math.round(G.geo?.footLen ?? 0),
-        hint: '0 / tomt = så lang som forankringa krever, begrenset av betongen.' });
+      if (r.endType === 'bend')
+        out.push({ sec: 'end', p: P('endBendLength'), l: 'Fotlengde', t: 'num', u: 'mm', step: 10,
+          min: 10 * r.ds,
+          val: r.endBendLength ?? Math.round(G.geo?.footLen ?? 0),
+          hint: `Minst 10⌀ = ${10 * r.ds} mm. Tomt = så lang som forankringa ` +
+                'krever, begrenset av betongen.' });
+      else
+        out.push({ sec: 'end', p: P('endBendLength'), l: 'Krokhale (5⌀)', t: 'num', u: 'mm', ro: true,
+          val: 5 * r.ds,
+          hint: `Gitt av NS-EN 1992-1-1 fig. 8.1c: 180° rundt dor ⌀_m = ${dm} mm, ` +
+                `så 5⌀ = ${5 * r.ds} mm rett hale. Kroken rekker ${dm + r.ds} mm ` +
+                'til siden (utvendig).' });
     }
   }
   if (!tension && r.placement === 'manual') {
     const G = groupGeometry(m, null, r);
     out.push(
-      { p: P('height'), l: 'Bein-lengde', t: 'num', u: 'mm', step: 10,
+      { sec: 'place', p: P('height'), l: 'Bein-lengde', t: 'num', u: 'mm', step: 10,
         val: r.height ?? Math.round(G.geo?.legLen ?? 0),
         hint: r.purpose === 'shear'
           ? 'Hvor langt beina går innover fra bøyen.'
           : 'Hvor langt beina går nedover fra bøyen.' },
-      { p: P('width'), l: 'Avstand mellom beina', t: 'num', u: 'mm', step: 10,
+      { sec: 'place', p: P('width'), l: 'Avstand mellom beina', t: 'num', u: 'mm', step: 10,
         val: r.width ?? Math.round(2 * (G.geo?.rOff ?? 0)) });
   }
   if (r.purpose === 'tension') {
     out.push(
-      { p: P('lapToExisting.present'), l: 'Overlapp mot konstruksjonsarmering', t: 'bool',
+      { sec: 'lap', p: P('lapToExisting.present'), l: 'Overlapp mot konstruksjonsarmering', t: 'bool',
         hint: r.geometryType === 'straight'
           ? 'PÅKREVD for rett tilleggsarmering: den omslutter ikke ' +
             'overflatearmeringa, så lastoverføringa videre må dokumenteres ' +
             'med overlapp eller tilsvarende (EN 1992-1-1 8.7).'
           : undefined },
-      { p: P('lapToExisting.lapLength'), l: 'Overlappslengde', t: 'num', u: 'mm', step: 10,
+      { sec: 'lap', p: P('lapToExisting.lapLength'), l: 'Overlappslengde', t: 'num', u: 'mm', step: 10,
         when: () => r.lapToExisting?.present });
   }
   return out.filter(f => !f.when || f.when(m));

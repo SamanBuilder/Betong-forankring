@@ -26,7 +26,7 @@ import { Calc, n } from './calc.js';
 import { edgeDistances } from '../core/model.js';
 import { clamp, clippedSquares } from './geometry.js';
 import { K, partialFactors } from './en1992-4.js';
-import { requirementIssues, minAnchorageFactor } from '../core/reinforcement.js';
+import { requirementIssues, minAnchorageFactor, mandrelDiameter } from '../core/reinforcement.js';
 import { fbd, anchorageLength, minInsideLength, barGeometry, anchorsServed,
          effectiveCount, minEdgeForAnchors, tensionLayout,
          buildBendBars } from './reinforcement-geometry.js';
@@ -101,7 +101,8 @@ function reinforcementCone(m, res, r, L) {
     `Regelverk · ${cracked ? 'opprisset' : 'uopprisset'}`);
   const gM = c.in('γ_Mc', g.gMc, '–', 'γ_c · γ_inst – 4.4.3.1');
   c.in('n_punkt', pts.length, 'stk',
-    L.endBend ? 'Endene av føttene på bøylene' : 'Bunnen av bøylebeina');
+    L.endType === 'hook' ? 'Enden av kroken på hvert bein'
+      : L.endBend ? 'Enden av foten på hvert bein' : 'Bunnen av hvert bein');
   c.in('N_Ed,g', NEd, 'N', 'Sum strekk i boltegruppa');
 
   const N0 = c.step({ sym: 'N⁰_Rk,c', desc: 'Kjeglekapasitet for ett punkt, uten kant- eller gruppevirkning',
@@ -113,7 +114,9 @@ function reinforcementCone(m, res, r, L) {
   const Ac = c.step({ sym: 'A_c,N', desc: 'Faktisk utbruddsareal fra armeringsendene',
     formula: 'union av (endepunkt ± 1,5·h_ef,re), klippet mot frie kanter',
     subst: `${pts.length} punkt, c_cr,N = ${n(ccr, 0)} mm` +
-           (L.endBend ? `, flyttet ${n(L.rm + L.footLen, 0)} mm ut av endebøyen` : ''),
+           (L.endBend ? `, flyttet ${n(L.endReach, 0)} mm ` +
+             (L.endDirection === 'in' ? 'innover' : 'utover') +
+             (L.endType === 'hook' ? ' av kroken' : ' av foten') : ''),
     value: clippedSquares(m, pts, ccr), unit: 'mm²', ref: '(7.3)' });
 
   let cmin = Infinity;
@@ -146,8 +149,10 @@ function reinforcementCone(m, res, r, L) {
     note: 'Kjegla fra endeplata er erstattet av armeringa, men lasta må fortsatt ' +
           'ut i betongen der armeringa slutter – derfor denne kontrollen. ' +
           (L.endBend
-            ? 'Bøyen i enden flytter punktene utover og gjør kjegla større.'
-            : 'En bøy ut i enden av beina ville flyttet punktene utover og gitt større kjegle.') +
+            ? L.endDirection === 'in'
+              ? 'Kroken/bøyen i enden flytter punktene innover, mot midten.'
+              : 'Kroken/bøyen i enden flytter punktene utover og gjør kjegla større.'
+            : 'En bøy eller krok ut i enden av beina ville flyttet punktene utover og gitt større kjegle.') +
           ' Forenklet: ψ_ec,N = 1,0, siden bøylene ligger symmetrisk om boltraden.' };
 }
 
@@ -346,7 +351,11 @@ export function tensionSupplementary(m, res, r) {
     const fyd = r.fyk / GAMMA_S;
     const As = Math.PI * r.ds * r.ds / 4;
     const sigmaSd = nLegs > 0 ? Math.min(fyd, NEd / (nLegs * As)) : 0;
-    const alOut = anchorageLength(m.concrete.fck, r.ds, sigmaSd, bent);
+    // Utenfor kjegla er det enden av stanga som forankrer: bøyd når det er en
+    // U-bøyle, eller når en rett stang har bøy/krok nederst (tab. 8.2).
+    const bentEnd = bent || L.endBend;
+    const alphaOut = bentEnd ? 0.7 : 1.0;
+    const alOut = anchorageLength(m.concrete.fck, r.ds, sigmaSd, bentEnd);
     cl.in('⌀_s', r.ds, 'mm', 'Tilleggsarmering');
     cl.in('N_Ed,bolt', NEd, 'N', 'Strekk i den styrende bolten, se stålkontrollen');
     cl.in('n_eff', nLegs, 'stk', 'Bein pr. bolt, se stålkontrollen');
@@ -360,7 +369,7 @@ export function tensionSupplementary(m, res, r) {
       formula: '(⌀_s / 4) · (σ_sd / f_bd)',
       subst: `(${n(r.ds, 0)} / 4) · (${n(sSd)} / ${n(f)})`,
       value: alOut.lbRqd, unit: 'mm', ref: '(8.3)' });
-    const a1 = cl.in('α_1', alpha1, '–', bent ? 'Krok/bøy i enden – tab. 8.2' : 'Rett stang');
+    const a1 = cl.in('α_1', alphaOut, '–', bentEnd ? 'Krok/bøy i enden – tab. 8.2' : 'Rett stang');
     cl.step({ sym: 'l_b,min', desc: 'Nedre grense for strekkforankring',
       formula: 'maks(0,3·l_b,rqd; 10·⌀_s; 100 mm)',
       subst: `maks(${n(0.3 * alOut.lbRqd, 0)}; ${n(10 * r.ds, 0)}; 100)`,
@@ -370,9 +379,11 @@ export function tensionSupplementary(m, res, r) {
       ref: '(8.4)' });
     const avail = cl.step({ sym: 'l_bd,tilgj.', desc:
         'Forankring tilgjengelig UTENFOR bruddkjegla, langs stanga fra h_ef og nedover',
-      formula: L.endBend ? 'rett bein + endebøy + fot' : 'rett bein under kjegla',
+      formula: L.endType === 'hook'
+        ? 'rett bein + krok 180° rundt ⌀_m + hale 5⌀ (den delen som ligger under kjegla)'
+        : L.endBend ? 'rett bein + bøy 90° rundt ⌀_m + fot' : 'rett bein under kjegla',
       subst: L.endBend
-        ? `${n(L.outsideLen, 0)} + ${n(L.bendArc, 0)} + ${n(L.footLen, 0)}`
+        ? `${n(L.outsideLen, 0)} + ${n(L.footBendArc, 0)} + ${n(L.footCounted, 0)}`
         : `${n(L.outsideLen, 0)}`,
       value: L.anchorageAvail, unit: 'mm' });
     cl.util({ formula: 'l_bd / l_bd,tilgj.', subst: `${n(lbd, 0)} / ${n(avail, 0)}`,
@@ -386,10 +397,10 @@ export function tensionSupplementary(m, res, r) {
       note: fitsOut
         ? undefined
         : `Bare ${n(L.anchorageAvail, 0)} mm forankring utenfor kjegla mot l_bd = ` +
-          `${n(alOut.lbd, 0)} mm.` + (bent && !L.endBend
-            ? ' En bøy ut i enden av beina gir bøyen pluss foten som forankring, ' +
-              'og hjelper i en tynn plate.'
-            : ' Øk tykkelsen, reduser ⌀, eller legg inn endebøy.') });
+          `${n(alOut.lbd, 0)} mm.` + (!L.endBend
+            ? ' En bøy eller krok ut i enden av beina gir bøyen/kroken pluss foten ' +
+              'som forankring, og hjelper i en tynn plate.'
+            : ' Øk tykkelsen, reduser ⌀, eller legg inn endebøy/krok.') });
   }
 
   // --- d2) egen stang i bøyen: forankring, EN 1992-1-1 8.4 ----------------
@@ -466,6 +477,118 @@ export function tensionSupplementary(m, res, r) {
           'er kraftveien videre inn i konstruksjonen. ') +
         'Overlappet er ikke kontrollert mot den faktiske armeringen i konstruksjonen ' +
         'for øvrig, bare mot den oppgitte lengden.' });
+  }
+
+  // --- g) sjekkliste for enkeltkrava i pkt. 7.2.1.2(2) a)-f) --------------
+  //  Ordrett fra NS-EN 1992-4:2018 (E), vurdert mot de samme størrelsene som
+  //  kontrollene over. Punkt f) - overflatearmering mot stavmodell og
+  //  spaltekrefter etter 7.2.1.7(2)b) - er ikke implementert og vises derfor
+  //  alltid som ikke kontrollert.
+  {
+    const noReach = !!L && L.zConeMin <= L.dLegTop + 1e-6;
+    const dOk = !!L && G.insideLen >= G.insideMin && !noReach;
+    const lbdC = checks.find(c => c.id === `N-sre-lbd-${r.id}`);
+    const coneC = checks.find(c => c.id === `N-sre-cone-${r.id}`);
+    const lbdOk = !L || (lbdC ? lbdC.util <= 1 : true);
+    const coneOk = !L || (coneC ? coneC.util <= 1 : true);
+    const eOk = lbdOk && coneOk;
+    const aOk = G.reqIssues.length === 0;
+    const cOk = !!L && L.zoneOk && L.allServed;
+    const fOk = false;
+    const govTxt = gov ? ` (styrende bolt ${gov.p.id})` : '';
+
+    const items = [
+      { letter: 'a', ok: aOk,
+        quote: 'The reinforcement shall consist of ribbed reinforcing bars ' +
+          '(f_yk,re ≤ 600 N/mm²) with a diameter ϕ not larger than 16 mm and shall be ' +
+          'detailed as stirrups or loops with a mandrel diameter ϕ_m according to ' +
+          'EN 1992-1-1.',
+        comment: aOk
+          ? `⌀ = ${n(r.ds, 0)} mm ≤ 16 mm, f_yk = ${n(r.fyk, 0)} N/mm² ≤ 600 N/mm², ` +
+            `ϕ_m = ${n(mandrelDiameter(r.ds), 0)} mm etter EN 1992-1-1 tab. 8.1N. ` +
+            'Ribbet stål (kamstål) er forutsatt, ikke kontrollert i modellen.' +
+            (bent ? '' : ' Bokstaven beskriver bøyle-/løkkeutforming - rett stang er her ' +
+              'lagt til grunn som forankringsform etter punkt d) (l₁ ≥ 10⌀); vurder om ' +
+              'prosjektet krever bøyle/løkke i stedet.')
+          : G.reqIssues.join(' ') },
+      { letter: 'b', ok: true,
+        quote: 'Where supplementary reinforcement has been sized for the most loaded ' +
+          'fastener, the same reinforcement shall be provided around all fasteners.',
+        comment: `Gruppe ${r.id} har samme ⌀, antall og utforming rundt alle boltene den ` +
+          `betjener, dimensjonert for den mest belastede${govTxt}.` },
+      { letter: 'c', ok: cOk,
+        quote: 'The supplementary reinforcement should be placed symmetrically as close ' +
+          'to the fasteners as practicable to minimize the effect of eccentricity ' +
+          'associated with the angle of the failure cone. Preferably, the supplementary ' +
+          'reinforcement should enclose the surface reinforcement. Only reinforcement ' +
+          'bars with a distance ≤ 0,75h_ef from the fastener shall be assumed as ' +
+          'effective.',
+        comment: (cOk
+          ? `Armeringa ligger symmetrisk om hver bolt, pakket fra bolten og utover. ` +
+            `Alle boltene gruppa betjener har et bein innenfor 0,75·h_ef` +
+            (L ? ` = ${n(L.dMax, 0)} mm.` : '.')
+          : (L && !L.zoneOk ? 'Beina får ikke plass innenfor 0,75·h_ef. ' : '') +
+            (L && !L.allServed ? 'Ikke alle boltene har et bein innenfor 0,75·h_ef. ' : '') +
+            'Se plasseringskontrollen.') +
+          (bent
+            ? (r.bendBar === 'surface'
+              ? ' Bøyen omslutter overflatearmeringa, slik standarden foretrekker.'
+              : ' Bøyen omslutter IKKE overflatearmeringa (egen stang i bøyen er valgt) - ' +
+                'standarden sier «preferably», ikke et absolutt krav, men vurder om ' +
+                'overflatearmeringa likevel bør omsluttes.')
+            : '') },
+      { letter: 'd', ok: dOk,
+        quote: 'Only supplementary reinforcement with an anchorage length in the ' +
+          'concrete failure cone of l_1 ≥ 4ϕ (anchorage with bends, hooks or loops) or ' +
+          'l_1 ≥ 10ϕ (anchorage with straight bars with or without welded transverse ' +
+          'bars) shall be assumed as effective.',
+        comment: dOk
+          ? `l₁ = ${n(G.insideLen, 0)} mm ≥ ${minAnchorageFactor(r.geometryType)}⌀ = ` +
+            `${n(G.insideMin, 0)} mm (${typeTxt}). Se forankringskontrollen i bruddlegemet.`
+          : noReach
+            ? 'Beinet krysser ikke bruddflata i det hele tatt (kjegleflata krysser over ' +
+              'toppen av beinet) - ingen effektiv forankring i bruddlegemet.'
+            : `l₁ = ${n(G.insideLen, 0)} mm < ${minAnchorageFactor(r.geometryType)}⌀ = ` +
+              `${n(G.insideMin, 0)} mm.` },
+      { letter: 'e', ok: eOk,
+        quote: 'The supplementary reinforcement shall be anchored outside the assumed ' +
+          'failure cone with an anchorage length l_bd according to EN 1992-1-1 (see ' +
+          'Figure 7.2 a)). Concrete cone failure assuming an embedment length ' +
+          'corresponding to the end of the supplementary reinforcement shall be ' +
+          'verified using Formula (7.1) for N_Rk,c. This verification may be omitted ' +
+          'if in reinforced structural elements the tension in the anchored reinforcing ' +
+          'bar is transferred to the reinforcement in the structural element by ' +
+          'adequate lapping.',
+        comment: (lbdOk ? 'Forankringslengden utenfor kjegla er tilstrekkelig, se ' +
+            'kontrollen for l_bd. ' : 'Forankringslengden utenfor kjegla er IKKE ' +
+            'tilstrekkelig, se kontrollen for l_bd. ') +
+          (coneOk ? 'Kjeglebrudd fra enden av armeringa (formel 7.1) er kontrollert og OK. '
+            : 'Kjeglebrudd fra enden av armeringa (formel 7.1) er kontrollert og IKKE OK. ') +
+          'Denne kjeglekontrollen kunne vært utelatt ved tilstrekkelig overlapp mot ' +
+          'konstruksjonens armering, men modellen regner den alltid, som en ' +
+          'konservativ kontroll.' },
+      { letter: 'f', ok: fOk,
+        quote: 'Surface reinforcement should be provided as shown in Figure 7.2 ' +
+          'designed to resist the forces arising from the assumed strut and tie model ' +
+          'and the splitting forces according to 7.2.1.7 (2)b).',
+        comment: 'IKKE kontrollert av modellen: dimensjonering av overflatearmeringa mot ' +
+          'stavmodellen og spaltekreftene etter 7.2.1.7(2)b) må dokumenteres særskilt.' },
+    ];
+
+    const allOk = items.every(it => it.ok);
+    checks.push({ id: `N-sre-detailing-${r.id}`,
+      mode: `Tilleggsarmering ${r.id} – detaljeringskrav 7.2.1.2(2) a-f`,
+      clause: '7.2.1.2(2)', scope: 'gruppe', NRk: NaN, NRd: NaN, NEd: NaN,
+      util: allOk ? 0 : 2, binary: true, calc: new Calc('7.2.1.2(2)'), group: r.id,
+      expr: 'a)-f) i 7.2.1.2(2)', requirements: items,
+      note: '(1) When the design relies on supplementary reinforcement, concrete cone ' +
+        'failure according to Table 7.1 and 7.2.1.4 need not be verified but the ' +
+        'supplementary reinforcement shall be designed according to 7.2.1.9 to resist ' +
+        'the total load. ' +
+        (allOk
+          ? 'Alle enkeltkrav a)-f) i pkt. 7.2.1.2(2) er vurdert som oppfylt - se tabellen.'
+          : 'Ett eller flere av enkeltkrava a)-f) i pkt. 7.2.1.2(2) er ikke oppfylt, ' +
+            'eller ikke kontrollert av modellen (punkt f) - se tabellen.') });
   }
 
   return { checks, qualifies: G.qualifies, geometry: G };

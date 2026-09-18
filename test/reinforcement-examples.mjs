@@ -488,7 +488,7 @@ console.log('\nEndebøy: bøy ut i enden av beina (tynn plate)');
   syncPlan(m);
 
   const rett = newReinforcement('r1', 'tension', { count: 2, ds: 12 });
-  const bøyd = newReinforcement('r2', 'tension', { count: 2, ds: 12, endBend: true });
+  const bøyd = newReinforcement('r2', 'tension', { count: 2, ds: 12, endType: 'bend' });
   const A = tensionLayout(m, rett), B = tensionLayout(m, bøyd);
 
   ok('uten endebøy: for kort forankring i den tynne plata', !A.fits,
@@ -522,7 +522,7 @@ console.log('\nEndebøy: bøy ut i enden av beina (tynn plate)');
     return verify(mm).checks.find(c => c.id === `N-sre-cone-${r.id}`);
   };
   const cA = coneOf(newReinforcement('r1', 'tension', { count: 2, ds: 12 }));
-  const cB = coneOf(newReinforcement('r2', 'tension', { count: 2, ds: 12, endBend: true }));
+  const cB = coneOf(newReinforcement('r2', 'tension', { count: 2, ds: 12, endType: 'bend' }));
   ok('kjeglekontroll fra armeringsenden finnes', !!cA && !!cB);
   ok('endebøyen gir større kjegle fra armeringsenden', cB.NRd > cA.NRd,
     `${(cB.NRd / 1000).toFixed(0)} kN mot ${(cA.NRd / 1000).toFixed(0)} kN`);
@@ -537,6 +537,52 @@ console.log('\nEndebøy: bøy ut i enden av beina (tynn plate)');
   ok('kjegla fra armeringsenden er større enn kjegla fra endeplata',
     cB.NRd > fraEndeplata.NRd,
     `${(cB.NRd / 1000).toFixed(0)} kN mot ${(fraEndeplata.NRd / 1000).toFixed(0)} kN`);
+}
+
+console.log('\nKrok 180° og bøy 90° (NS-EN 1992-1-1 fig. 8.1)');
+{
+  const m = defaultModel();
+  m.concrete.h = 300; m.anchors.hef = 150;
+  m.concrete.Lx = 4000; m.concrete.Ly = 4000;
+  syncLoad(m); syncPlan(m);
+  const ds = 12, rm = 2 * ds;                       // ⌀_m = 4⌀, tab. 8.1N
+  const bøy = newReinforcement('r1', 'tension', { count: 2, ds, endType: 'bend', endBendLength: 50 });
+  const krok = newReinforcement('r2', 'tension', { count: 2, ds, endType: 'hook', endBendLength: 999 });
+  const B = tensionLayout(m, bøy), H = tensionLayout(m, krok);
+
+  ok('krok: halen er 5⌀ – brukerens fotlengde ignoreres', H.footLen === 5 * ds,
+    `hale = ${H.footLen} mm`);
+  ok('krok: 180° rundt doren', Math.abs(H.footBendArc - Math.PI * rm) < 1e-9);
+  ok('bøy: 90° rundt doren', Math.abs(B.footBendArc - Math.PI * rm / 2) < 1e-9);
+  ok('bøy: fot kortere enn 10⌀ flagges', !B.endFits && B.footMin === 10 * ds);
+
+  const pH = buildBars(m, krok)[0].paths[0].points;
+  const pB = buildBars(m, bøy)[0].paths[0].points;
+  const zMinH = Math.min(...pH.map(p => p.z));
+  ok('krok: halen peker opp igjen', pH[0].z > zMinH + rm + 5 * ds - 1,
+    `topp hale ${pH[0].z.toFixed(0)}, bunn bue ${zMinH.toFixed(0)}`);
+  ok('bøy: foten ligger vannrett i bunnen',
+    Math.abs(pB[0].z - Math.min(...pB.map(p => p.z))) < 1e-6);
+  ok('krok holder seg innenfor underkant betong',
+    zMinH >= -(m.concrete.h - krok.coverBottom) - 1e-6);
+
+  // Rett stang: samme endevalg nederst.
+  const lap = { present: true, lapLength: 500 };
+  const rett = newReinforcement('r3', 'tension', { count: 2, ds, geometryType: 'straight',
+    lapToExisting: lap });
+  const rettKrok = newReinforcement('r4', 'tension', { count: 2, ds, geometryType: 'straight',
+    endType: 'hook', lapToExisting: lap });
+  const rettBøy = newReinforcement('r5', 'tension', { count: 2, ds, geometryType: 'straight',
+    endType: 'bend', lapToExisting: lap });
+  const S0 = tensionLayout(m, rett), SH = tensionLayout(m, rettKrok), SB = tensionLayout(m, rettBøy);
+  ok('rett stang: krok og bøy tas med', SH.endType === 'hook' && SB.endType === 'bend');
+  ok('rett stang: krok gir mer forankring enn rett ende',
+    SH.anchorageAvail > S0.anchorageAvail,
+    `${SH.anchorageAvail.toFixed(0)} mm mot ${S0.anchorageAvail.toFixed(0)} mm`);
+  const b0 = SH.bars[0];
+  ok('rett stang: kjeglepunktet flyttes 2·r_m til siden av kroken',
+    Math.abs(Math.hypot(b0.endPoints[0].x - b0.legs[0].x, b0.endPoints[0].y - b0.legs[0].y) - 2 * rm) < 1e-6);
+  ok('rett stang med krok tegnes med bue', buildBars(m, rettKrok)[0].paths[0].points.length > 10);
 }
 
 console.log('\nUtforming: U-bøyle, lukket bøyle og rett stang gir hver sin form');

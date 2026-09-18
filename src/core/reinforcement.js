@@ -69,6 +69,40 @@ export const BEND_BAR_LABEL = {
 // Egen stang i bøyen kan ikke være tynnere enn bøylen den skal bære.
 export const bendBarDiameter = r => Math.max(r.ds, r.bendBarDs || 0);
 
+// ---------------------------------------------------------------------------
+//  Den nedre enden av beina - på åpen U-bøyle og på rett stang (den lukka
+//  bøylen har ingen frie ender). Se Figur 8.1 i NS-EN 1992-1-1. Begge bøyene
+//  går rundt en dor med diameter ⌀_m etter tab. 8.1N (mandrelDiameter).
+//
+//   none  Rett bein, ingen bøy - vanlig når det er dybde nok til l_bd rett ned.
+//   bend  90° bøy ut i en vannrett fot (Figur 8.1b). Foten skal være minst
+//         10⌀ rett etter bøyen; brukeren kan velge den lengre.
+//   hook  Krok, 180° (Figur 8.1c, ≥ 150°). Halen etter kroken er 5⌀ og går
+//         opp igjen ved siden av beinet. Både doren og halen er gitt av
+//         standarden, så kroken har ingen lengde brukeren velger.
+//
+//  Retninga sier hvilken vei bøyen/kroken peker:
+//   out  Ut fra bolten - utvider fotavtrykket (vanligst).
+//   in   Inn mot bolten - nyttig når det er mer plass mot midten enn utover
+//        (f.eks. nær en fri kant).
+//  På U-bøyla er det langs bøyleretninga, på rett stang på tvers av den (fra
+//  eller mot bolten stanga står ved siden av).
+// ---------------------------------------------------------------------------
+export const REINF_END_TYPES = ['none', 'bend', 'hook'];
+export const REINF_END_TYPE_LABEL = {
+  none: 'Rett – ingen bøy', bend: 'Bøy 90°', hook: 'Krok 180°',
+};
+// Minste rette stykke etter bøyen, Figur 8.1 b/c: 10⌀ etter 90°-bøy, 5⌀
+// etter krok. For kroken er det også hele halen.
+export const END_TAIL_FACTOR = { bend: 10, hook: 5 };
+export const endMinTail = (type, ds) => (END_TAIL_FACTOR[type] ?? 0) * ds;
+// Utforminger som har en fri nedre ende å bøye.
+export const hasFreeEnd = geometryType => geometryType === 'ubar' || geometryType === 'straight';
+export const END_DIRECTIONS = ['out', 'in'];
+export const END_DIRECTION_LABEL = {
+  out: 'Ut fra bolten', in: 'Inn mot bolten',
+};
+
 // Alle tre utformingene er tillatt for kjeglebrudd, men de forankres på hver
 // sin måte (NS-EN 1992-4 pkt. 7.2.1.2, jf. B19.3.2.6):
 //
@@ -135,6 +169,7 @@ export function mandrelDiameter(ds) {
 export function newReinforcement(id, purpose = 'tension', over = {}) {
   return {
     id,
+    name: '',                         // valgfritt visningsnavn - se reinforcementLabel()
     purpose,                          // 'tension' | 'shear' | 'generic'
     geometryType: 'ubar',             // 'ubar' | 'closed' | 'straight'
     ds: 12,
@@ -146,7 +181,8 @@ export function newReinforcement(id, purpose = 'tension', over = {}) {
     clearance: 10,                    // innvendig avstand til bolt, §4
     coverTop: 30,                     // overdekning fra overkant betong
     coverBottom: 30,                  // overdekning fra underkant betong
-    endBend: false,                   // 90° bøy ut i enden av beina (U-bøyle)
+    endType: 'none',                  // 'none' | 'bend' | 'hook' - se END_TYPE_LABEL
+    endDirection: 'out',              // 'out' | 'in' - se END_DIRECTION_LABEL
     endBendLength: null,              // fotlengde; null = det forankringa krever
     height: null,                     // bein-lengde; null = autogenerert
     width: null,                      // avstand mellom beina; null = autogenerert
@@ -200,6 +236,13 @@ export function requirementIssues(r) {
 export const reinforcementsFor = (m, purpose) =>
   (m.reinforcements || []).filter(r => r.purpose === purpose);
 
+// Visningsnavnet på ei gruppe - det brukeren har skrevet, ellers ei
+// forklarende standardtekst bygget av id-en. id-en selv brukes bare som
+// intern nøkkel (v.checks.group, geometrien, kort/seksjon-tilstand), aldri
+// vist til brukeren direkte - se [[reinforcement-groups]].
+export const reinforcementLabel = r =>
+  r.name?.trim() || `${PURPOSE_LABEL[r.purpose]} (${r.id})`;
+
 // ---------------------------------------------------------------------------
 //  Migrering fra den gamle, flate `m.reinf`-forma (én global strekk- og
 //  skjærgruppe, satt sammen i ui/app.js før denne datastrukturen fantes).
@@ -230,6 +273,7 @@ export function migrateReinforcements(m) {
   }
   // Eldre navn på utforminga, og kombinasjoner som ikke finnes for formålet.
   for (const r of m.reinforcements) {
+    r.name ??= '';
     r.geometryType = GEOMETRY_ALIAS[r.geometryType] ?? r.geometryType;
     const allowed = GEOMETRY_FOR[r.purpose] || GEOMETRY_TYPES;
     if (!allowed.includes(r.geometryType)) r.geometryType = allowed[0];
@@ -245,6 +289,13 @@ export function migrateReinforcements(m) {
     r.bendBarDs ??= null;
     r.surfaceReinf ??= { present: true, ds: 12, cover: 30, spacing: 150 };
     r.surfaceReinf.spacing ??= 150;
+    // endBend var en boolsk bryter - nå egen type (rett/bøy/krok) og retning.
+    if (r.endBend !== undefined) {
+      r.endType ??= r.endBend ? 'bend' : 'none';
+      delete r.endBend;
+    }
+    r.endType ??= 'none';
+    r.endDirection ??= 'out';
   }
   return m;
 }
