@@ -29,8 +29,8 @@ const ORDER = [
   'src/engine/reinforcement-geometry.js',
   'src/engine/plate-solver.js',
   'src/engine/en1992-4.js',
-  'src/engine/supplementary-reinforcement.js',
   'src/engine/b19.js',
+  'src/engine/supplementary-reinforcement.js',
   'src/engine/validate.js',
   'src/engine/verify.js',
   'src/viz/three-d-stage.js',
@@ -38,6 +38,7 @@ const ORDER = [
   'src/ui/fields.js',
   'src/ui/plan-editor.js',
   'src/ui/figures.js',
+  'src/ui/report.js',
   'src/ui/app.js',
 ];
 

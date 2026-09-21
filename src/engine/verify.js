@@ -62,9 +62,14 @@ export function verify(m) {
 
   let primary = [...steelChecks, ...tensionConcChecks, ...shearConcChecks];
 
-  // Tilleggsarmering er bare implementert etter NS-EN 1992-4 pkt. 7.2.1.2/
-  // 7.2.2.2/7.2.2.6. B19 dimensjonerer tilsvarende armering med stavmodell
-  // (19.3.2.6 / 19.4.3.5), som ikke er lagt inn.
+  // Tilleggsarmering er implementert etter NS-EN 1992-4 pkt. 7.2.1.2/
+  // 7.2.2.2/7.2.2.6 og NS-EN 1992-1-1 kap. 8. B19 har ingen egne regler for
+  // stål, forankring og l_bd i slik armering (19.3.2.6 viser bare til
+  // stavmodell), så når B19 er valgt for strekk mot betong regnes armeringa
+  // likevel etter Eurokodene - bare kjegla fra armeringsenden regnes etter
+  // B19 19.3.2, som boka dekker. Skjær mot betong etter B19 (dybelskjær,
+  // 19.4) har ingen tilsvarende erstatningsregel, og kontrolleres fortsatt
+  // bare når EN 1992-4 er valgt for skjær.
   //
   // Kjegle-/kantbrudd erstattes (fjernes fra `primary`, og dermed fra
   // styrende kontroll og samvirkning) bare for grupper som faktisk oppfyller
@@ -79,14 +84,17 @@ export function verify(m) {
     for (const r of reinforcements) {
       const isTension = r.purpose === 'tension';
       const fn = isTension ? tensionSupplementary : shearSupplementary;
-      const stdOk = isTension ? tcStd === 'EN1992-4' : scStd === 'EN1992-4';
-      if (!stdOk) continue;
-      const { checks: rc, qualifies } = fn(m, res, r);
+      if (!isTension && scStd !== 'EN1992-4') continue;
+      const { checks: rc, qualifies } = fn(m, res, r, tcStd);
       supplementary.push(...rc);
       const bruddform = bruddformFor(r);
       if (qualifies && bruddform) {
-        const targetId = bruddform === 'cone' ? 'N-cone' : 'V-edge';
-        const idx = primary.findIndex(c => c.id === targetId);
+        // B19 samler kjegle og heft i N-conc. Bare når kjegla styrer der er
+        // det kjeglebrudd armeringa erstatter; styrer heften, gjelder den.
+        const targetId = bruddform === 'edge' ? 'V-edge'
+          : tcStd === 'B19' ? 'N-conc' : 'N-cone';
+        const idx = primary.findIndex(c => c.id === targetId &&
+          (targetId !== 'N-conc' || c.showCone));
         if (idx >= 0) {
           replacedConcreteChecks.push({ ...primary[idx],
             replacedBy: reinforcementLabel(r), group: r.id });
@@ -94,7 +102,7 @@ export function verify(m) {
         }
       }
     }
-    primary = [...primary, ...tag(supplementary, 'EN1992-4')];
+    primary = [...primary, ...supplementary.map(c => tag([c], c.standardId || 'EN1992-4')[0])];
   }
 
   const interactionChecks = general === 'B19'

@@ -8,7 +8,7 @@
 import * as THREE from 'three';
 import { RoundedBoxGeometry } from 'three/addons/geometries/RoundedBoxGeometry.js';
 import { anchorPositions, edgeDistances, anchorFoot, mounting,
-         shaftProps, memberThickness, soleBox, newShape } from '../core/model.js';
+         shaftProps, memberThickness, soleBox } from '../core/model.js';
 import { solidSlabs, solidOutline, surfaceZ, planMask, anchorDepth, baseBox,
          planShapes, shapeLoop, shapeZ, toPlate, spansFullDepth,
          SHAPE_LABEL } from '../engine/solid.js';
@@ -43,26 +43,77 @@ function threadHelix(d, z0, z1, pitch, x, y) {
 }
 
 // ---------------------------------------------------------------------------
-//  Kamstål-kammer.
+//  Kamstål.
 //
-//  Ikke et forsøk på å tegne det virkelige valsemønsteret (skrå kam-par i to
-//  retninger) - bare et sett med smale ringer med jevne mellomrom, nok til at
-//  stanga leses som kamstål og ikke glatt rundstål. Ringradiusen stikker
-//  utenpå skaftet, som de virkelige kammene gjør.
+//  Stanga bygges som et rør der radien varierer rundt og langs aksen, så
+//  kammene er ekte geometri og ikke tekstur: to langsgående ribber på hver
+//  side, og mellom dem skrå tverrkammer som smalner av mot ribbene - på den
+//  ene sida skrått den ene veien, på den andre sida den andre veien, slik
+//  valsemønsteret på B500NC ser ut. Kamhøyden er litt overdrevet så den
+//  syns på avstand. Kurva må ha jevn buelengdeparameter (polyCurve, linje).
+//
+//  Hver kam får et fast antall punkter langs stanga. Ei svært lang stang får
+//  heller litt større kamavstand enn for mange punkter.
 // ---------------------------------------------------------------------------
-function rebarRibs(d, z0, z1, x, y) {
-  const len = z1 - z0;
-  if (!(len > 0)) return [];
-  const spacing = 0.7 * d;                 // omtrentlig kamavstand
-  const count = Math.max(1, Math.min(40, Math.round(len / spacing)));
-  const rings = [];
-  for (let i = 0; i < count; i++) {
-    const z = z0 + (i + 0.5) * len / count;
-    const g = new THREE.TorusGeometry(0.55 * d, 0.09 * d, 5, 14);
-    g.translate(x, y, z);
-    rings.push(g);
+function ribbedTube(curve, r, closed = false) {
+  const L = curve.totalLength ?? curve.getLength();
+  const d = 2 * r, PER_RIB = 8, NR = 16;
+  const nRib = Math.max(1, Math.min(500, Math.round(L / (0.7 * d))));
+  const pitch = L / nRib, nL = nRib * PER_RIB;
+  const hT = 0.09 * d, hL = 0.06 * d;        // tverrkam, langsgående ribbe
+  const w = 0.2;                             // kambredde, andel av avstanden
+  const frames = curve.computeFrenetFrames(nL, closed);
+  const rows = closed ? nL : nL + 1;
+  const pos = new Float32Array(rows * NR * 3);
+  const P = new THREE.Vector3();
+  let k = 0;
+  for (let i = 0; i < rows; i++) {
+    const t = i / nL, sAt = t * L;
+    curve.getPoint(t, P);
+    const N = frames.normals[i], B = frames.binormals[i];
+    for (let j = 0; j < NR; j++) {
+      const th = 2 * Math.PI * j / NR;
+      const half = th < Math.PI ? 0 : 1;
+      const loc = th - half * Math.PI;                 // 0..π på hver side
+      // Skrå kam: senterlinja forskyves langs stanga med vinkelen rundt.
+      const skew = (half ? -1 : 1) * 0.45 * pitch * (loc / Math.PI - 0.5);
+      let ph = ((sAt + skew) / pitch + 0.5 * half) % 1;
+      if (ph < 0) ph += 1;
+      const dist = Math.min(ph, 1 - ph);
+      const bump = dist < w ? 0.5 * (1 + Math.cos(Math.PI * dist / w)) : 0;
+      let rad = r + hT * bump * Math.pow(Math.sin(loc), 0.6);
+      const dl = Math.min(loc, Math.PI - loc);         // avstand til ribbene
+      if (dl < 0.3) rad = Math.max(rad, r + hL * Math.cos(0.5 * Math.PI * dl / 0.3));
+      const c = Math.cos(th) * rad, sn = Math.sin(th) * rad;
+      pos[k++] = P.x + c * N.x + sn * B.x;
+      pos[k++] = P.y + c * N.y + sn * B.y;
+      pos[k++] = P.z + c * N.z + sn * B.z;
+    }
   }
-  return rings;
+  const idx = [];
+  const segs = closed ? rows : rows - 1;
+  for (let i = 0; i < segs; i++) {
+    const i2 = (i + 1) % rows;
+    for (let j = 0; j < NR; j++) {
+      const j2 = (j + 1) % NR;
+      const a = i * NR + j, b = i2 * NR + j, c = i2 * NR + j2, e = i * NR + j2;
+      // Vinkelen går mot klokka rundt tangenten (N × B = T), så trekantene
+      // må gå a-e-b for at normalen skal peke utover.
+      idx.push(a, e, b, b, e, c);
+    }
+  }
+  const g = new THREE.BufferGeometry();
+  g.setAttribute('position', new THREE.BufferAttribute(pos, 3));
+  g.setIndex(idx);
+  g.computeVertexNormals();
+  return g;
+}
+
+// Rett stang langs z, som kurve med jevn buelengde for ribbedTube.
+function zLine(x, y, z0, z1) {
+  const c = new THREE.LineCurve3(new THREE.Vector3(x, y, z0), new THREE.Vector3(x, y, z1));
+  c.totalLength = z1 - z0;
+  return c;
 }
 
 // ---------------------------------------------------------------------------
@@ -84,14 +135,12 @@ function rebarHook(d, zBot, x, y, mat) {
     const phi = Math.PI * (1 - t);
     return target.set(x + rb + rb * Math.cos(phi), y, zBot - rb * Math.sin(phi));
   };
-  const arc = new THREE.Mesh(
-    new THREE.TubeGeometry(curve, 24, d / 2, 10, false), mat);
+  curve.totalLength = Math.PI * rb;
+  const arc = new THREE.Mesh(ribbedTube(curve, d / 2), mat);
   arc.name = 'krok_bue';
 
   const tailMesh = new THREE.Mesh(
-    new THREE.CylinderGeometry(d / 2, d / 2, tail), mat);
-  tailMesh.rotation.x = Math.PI / 2;
-  tailMesh.position.set(x + 2 * rb, y, zBot + tail / 2);
+    ribbedTube(zLine(x + 2 * rb, y, zBot, zBot + tail), d / 2), mat);
   tailMesh.name = 'krok_hale';
 
   const g = new THREE.Group();
@@ -141,9 +190,7 @@ function barMesh(bar, mat, split = null, matIn = null) {
     const pts = path.points.map(p => new THREE.Vector3(p.x, p.y, p.z));
     if (pts.length < 2) continue;
     const curve = polyCurve(pts, path.closed);
-    const seg = Math.max(24, Math.min(600, Math.round(curve.totalLength / 6)));
-    const tube = new THREE.Mesh(
-      new THREE.TubeGeometry(curve, seg, r, 8, path.closed), m2);
+    const tube = new THREE.Mesh(ribbedTube(curve, r, path.closed), m2);
     tube.name = path.inside ? 'tilleggsarmering_i_kjegle' : 'tilleggsarmering';
     g.add(tube);
     // Rør er åpne i endene - en liten kule lukker stangenden. Skjøtene mellom
@@ -240,14 +287,14 @@ const MAT = {
   grout: () => new THREE.MeshStandardMaterial({
     name: 'gytemasse', color: 0xc2baa8, roughness: 0.96, metalness: 0.0,
   }),
+  // Kamstål har rødbrun valsehud med litt rust - ikke blankt stål.
   rebar: () => new THREE.MeshStandardMaterial({
-    name: 'armering', color: 0x666967, roughness: 0.68, metalness: 0.55,
+    name: 'armering', color: 0x8a5641, roughness: 0.78, metalness: 0.3,
     ...OVER_CONCRETE,
   }),
-  // Kamstål som forankringsstang: lysbrun valsehud, skilt fra den rustrøde
-  // forankringsarmeringa (reinf) så de to kamstål-elementene ikke blandes.
+  // Kamstål som forankringsstang: samme rødbrune valsehud, litt mørkere.
   rebarAnchor: () => new THREE.MeshStandardMaterial({
-    name: 'kamstaal', color: 0x747975, roughness: 0.7, metalness: 0.5,
+    name: 'kamstaal', color: 0x7a4a38, roughness: 0.75, metalness: 0.3,
     ...OVER_CONCRETE,
   }),
   // Den delen av tilleggsarmeringa som ligger INNE i bruddkjegla - l_1, den
@@ -256,10 +303,10 @@ const MAT = {
     name: 'armering_i_kjegle', color: 0xe0559b, roughness: 0.7, metalness: 0.15,
     ...OVER_CONCRETE,
   }),
-  // Overflatearmeringa U-bøyla omslutter. Kjøligere og lysere enn
-  // tilleggsarmeringa, så de to nettene skiller seg fra hverandre.
+  // Overflatearmeringa U-bøyla omslutter. Også kamstål, men mattere og
+  // mer grå-brun enn tilleggsarmeringa, så de to nettene skiller seg.
   surfaceMesh: () => new THREE.MeshStandardMaterial({
-    name: 'overflatearmering', color: 0x6f7d86, roughness: 0.85, metalness: 0.15,
+    name: 'overflatearmering', color: 0x75584b, roughness: 0.85, metalness: 0.2,
     ...OVER_CONCRETE,
   }),
 };
@@ -615,8 +662,8 @@ function loadTriad(m, zTop, hud) {
 export function buildScene(v, opts = {}) {
   const show = { concrete: true, cone: true, wedge: true, loads: true,
                  labels: true, rebar: true, plate: true, dims: true,
-                 colorMode: 'material', renderMode: 'cutaway', concreteOpacity: 0.28,
-                 sectionAxis: 'x', sectionPosition: 50, ...opts };
+                 colorMode: 'material', renderMode: 'solid', concreteOpacity: 0.28,
+                 ...opts };
   const byUtil = show.colorMode === 'utilisation';
   const m = v.model, res = v.res;
   const hud = [];                     // HTML-påskrifter verten plasserer
@@ -632,34 +679,35 @@ export function buildScene(v, opts = {}) {
   // betongen, ikke stålet, saa alt det andre kan regne z = 0 som overflata.
   const dz = -surfaceZ(m);
   if (show.concrete) {
-    let visualModel = m;
-    if (show.renderMode === 'cutaway') {
-      // Reuse the solid engine to cap the visual section, without changing input geometry.
-      const b = baseBox(m), slabs = solidSlabs(m);
-      const axis = show.sectionAxis === 'y' ? 'y' : 'x';
-      const lo = b[axis + '0'], hi = b[axis + '1'];
-      const at = lo + (hi - lo) * Math.max(0, Math.min(100, show.sectionPosition)) / 100;
-      const x0 = axis === 'x' ? at : b.x0 - 1;
-      const y0 = axis === 'y' ? at : b.y0 - 1;
-      const x1 = b.x1 + 1, y1 = b.y1 + 1;
-      const cut = newShape('__visual_section', 'rect', {
-        x: (x0 + x1) / 2 + (+m.concrete.ex || 0),
-        y: (y0 + y1) / 2 + (+m.concrete.ey || 0), bx: x1 - x0, by: y1 - y0,
-        z0: Math.min(-m.concrete.h, ...slabs.map(s => s.z0)) - 1,
-        z1: Math.max(0, ...slabs.map(s => s.z1)) + 1,
-      }, 'cut');
-      visualModel = { ...m, concrete: { ...m.concrete, plan: [...planShapes(m), cut] } };
-    }
-    const body = concreteBody(visualModel, dz);
-    body.traverse(o => {
-      if (!o.isMesh) return;
-      const transparent = show.renderMode === 'xray';
-      o.material.transparent = transparent;
-      o.material.opacity = transparent ? show.concreteOpacity : 1;
-      o.material.depthWrite = !transparent;
+    const body = concreteBody(m, dz);
+    const transparent = show.renderMode === 'xray';
+    for (const o of [...body.children]) {
+      if (!o.isMesh) continue;
+      const mat = o.material;
+      mat.transparent = transparent;
+      mat.opacity = transparent ? show.concreteOpacity : 1;
+      mat.depthWrite = !transparent;
+      // Plata, gyta og boltene ligger i samme plan som betongflatene. Uten
+      // forskyvning slaass flatene om dybden og bildet flimrer mellom
+      // betong- og staalfarge; betongen skyves derfor litt bakover, saa
+      // staalet alltid vinner der de faller sammen.
+      mat.polygonOffset = true;
+      mat.polygonOffsetFactor = 1;
+      mat.polygonOffsetUnits = 4;
       o.castShadow = !transparent;
-      o.receiveShadow = true;
-    });
+      o.receiveShadow = !transparent;
+      if (!transparent) continue;
+      // Gjennomsiktig og tosidig i samme mesh gir tilfeldig tegnerekkefoelge
+      // mellom for- og bakside. Baksidene tegnes derfor foerst i en egen
+      // kopi, forsidene etterpaa, saa tonen blir jevn fra alle vinkler.
+      mat.side = THREE.FrontSide;
+      const back = new THREE.Mesh(o.geometry, mat.clone());
+      back.material.side = THREE.BackSide;
+      back.name = 'betong_bakside';
+      back.renderOrder = ORDER.body - 1;
+      back.userData.noExport = true;
+      body.add(back);
+    }
     root.add(body);
   }
 
@@ -720,7 +768,13 @@ export function buildScene(v, opts = {}) {
       return mesh;
     };
 
-    put(new THREE.Mesh(cyl(a.d / 2, shaftLen), mat), zBot + shaftLen / 2, 'skaft');
+    if (a.barType === 'rebar') {
+      // Kamstål: kammene er en del av selve skaftet, se ribbedTube().
+      const sk = new THREE.Mesh(ribbedTube(zLine(an.x, an.y, zBot, shaftTop), a.d / 2), mat);
+      sk.renderOrder = ORDER.steel;
+      sk.name = `skaft_${an.id}`;
+      g.add(sk);
+    } else put(new THREE.Mesh(cyl(a.d / 2, shaftLen), mat), zBot + shaftLen / 2, 'skaft');
 
     // Gjengene tegnes bare der stanga faktisk er gjenget. Er skaftet glatt et
     // stykke ned fra betongoverflata, begynner de først der - samme lengde som
@@ -738,16 +792,6 @@ export function buildScene(v, opts = {}) {
         th.renderOrder = ORDER.steel;
         th.name = `gjenger_${an.id}`;
         g.add(th);
-      }
-    }
-    // Kamstål er ikke glatt: kammer langs hele stanga gjør at den leses som
-    // kamstål og ikke som gjengestang eller sveisebolt.
-    if (a.barType === 'rebar') {
-      for (const geo of rebarRibs(a.d, zBot, shaftTop, an.x, an.y)) {
-        const rb = new THREE.Mesh(geo, mat);
-        rb.renderOrder = ORDER.steel;
-        rb.name = `kammer_${an.id}`;
-        g.add(rb);
       }
     }
     // Foten tegnes fra modellens egne verdier, ikke fra standardtabellen, slik
@@ -950,6 +994,7 @@ function coneMesh(m, srcs, ccr, hef) {
       const s = Math.max(dx, dy);
       if (s < ccr) z = Math.max(z, hef * (1 - s / ccr));
     }
+
     return -z;
   };
   const nx = xs.length - 1, ny = ys.length - 1;

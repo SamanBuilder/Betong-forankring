@@ -33,7 +33,10 @@
         <button class="btn" id="save-project">Lagre prosjekt</button>
         <button class="btn" id="open-project">Åpne prosjekt</button>
         <input type="file" id="open-project-file" accept="application/json,.json" hidden>
-        <button class="btn" id="report">Beregningsrapport</button>
+        <button class="btn" id="report"
+          title="Alle kontrollene regnes med lastkombinasjonen som er valgt i tabellen">Beregningsrapport – valgt lastkombinasjon</button>
+        <button class="btn" id="report-gov"
+          title="Hver kontroll regnes med den bruddgrensekombinasjonen som gir høyest utnyttelse for den">Beregningsrapport – dimensjonerende pr. kontroll</button>
         <button class="btn" id="reset">Nullstill</button>
       </div>
     </details>
@@ -88,7 +91,6 @@
         <div class="render-control">
           <label for="render-mode">Visning</label>
           <select id="render-mode">
-            <option value="cutaway">Snitt</option>
             <option value="solid">Materialer</option>
             <option value="xray">Transparent</option>
           </select>
@@ -98,18 +100,6 @@
           <div class="menu-content control-fields">
             <label for="concrete-opacity">Betongopasitet (%)</label>
             <input type="range" id="concrete-opacity" min="10" max="100" value="28">
-          </div>
-        </details>
-        <details class="menu" name="workspace-menu">
-          <summary>Snitt</summary>
-          <div class="menu-content control-fields">
-            <label for="section-axis">Snittakse</label>
-            <select id="section-axis">
-              <option value="x">X</option>
-              <option value="y">Y</option>
-            </select>
-            <label for="section-position">Snittposisjon (%)</label>
-            <input type="range" id="section-position" min="0" max="100" value="50">
           </div>
         </details>
         <details class="menu" name="workspace-menu">

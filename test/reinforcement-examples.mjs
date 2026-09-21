@@ -640,5 +640,36 @@ console.log('\nOrkestrering: kvalifiserende gruppe erstatter kjegle-/kantbrudd, 
   ok('stålkontrollen er likevel regnet', v.checks.some(c => c.id === 'N-sre-steel-r1'));
 }
 
+console.log('\nOrkestrering med B19 for strekk mot betong: armeringa etter EC, kjegla etter B19');
+{
+  const m = defaultModel();
+  m.concrete.h = 700; m.anchors.hef = 250;
+  m.code.tensionConcreteStandard = 'B19';
+  syncLoad(m);
+  syncPlan(m);
+  m.reinforcements.push(newReinforcement('r1', 'tension', { count: 4, ds: 12, fyk: 500 }));
+  const v = verify(m);
+  const has = id => v.checks.some(c => c.id === id);
+  ok('armeringskontrollene regnes også under B19',
+    ['steel', 'anchorage', 'lbd', 'cone', 'detailing'].every(k => has(`N-sre-${k}-r1`)));
+  const cone = v.checks.find(c => c.id === 'N-sre-cone-r1');
+  ok('kjegla fra armeringsenden regnes etter B19 19.3.2',
+    cone?.clause === '19.3.2' && cone?.standardId === 'B19');
+  ok('stålkontrollen følger fortsatt NS-EN 1992-4',
+    v.checks.find(c => c.id === 'N-sre-steel-r1')?.standardId === 'EN1992-4');
+  // B19-kjegla fra armeringsenden: (11,9/γ_c)·√f_ck,cube·h^1,5, dimensjonerende.
+  const k1 = cone.calc.steps.find(s => s.sym === 'k_1').value;
+  const h = cone.calc.inputs.find(i => i.sym === 'h_ef,re').value;
+  near('N⁰_Rd,c = k_1 · h_ef,re^1,5',
+    cone.calc.steps.find(s => s.sym === 'N⁰_Rd,c').value, k1 * h ** 1.5, 1e-6);
+  ok('B19-kjegla (N-conc) er erstattet', !has('N-conc') &&
+    v.replacedConcreteChecks.some(c => c.id === 'N-conc'));
+  ok('trykk mot fot (19.3.2.4) blir stående', has('N-foot'));
+  const ia = v.checks.find(c => c.id === 'IA-conc');
+  ok('samvirkning betong tar med armeringskontrollene',
+    ia.calc.inputs[0].value >= Math.max(...v.checks
+      .filter(c => /^N-sre-(steel|anchorage|cone)-/.test(c.id)).map(c => c.util)) - 1e-12);
+}
+
 console.log(`\n${runs - fails} av ${runs} stemmer.`);
 if (fails) process.exit(1);

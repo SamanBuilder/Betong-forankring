@@ -23,6 +23,7 @@ import { PlanEditor, TOOLS } from './plan-editor.js';
 import { n, kN } from '../engine/calc.js';
 import { saveFile, saveError } from '../core/download.js';
 import { figureFor } from './figures.js';
+import { reportPdf } from './report.js';
 import { groupGeometry } from '../engine/supplementary-reinforcement.js';
 import '../viz/three-d-stage.js';
 
@@ -41,7 +42,7 @@ const END_TXT = { nut: 'endemutter', plate: 'felles endeplate',
 let model = defaultModel();
 let showOpts = { cone: false, wedge: false, loads: false, labels: false, concrete: true,
                  rebar: true, surfaceMesh: true, dims: false,
-                 renderMode: 'cutaway', concreteOpacity: 0.28, sectionAxis: 'x', sectionPosition: 50,
+                 renderMode: 'solid', concreteOpacity: 0.28,
                  colorMode: 'material', shape: null };
 let hudItems = [];        // {el, pos, quat, scale} – sendes til stage.setLabels
 let activeGroup = 'Betongdel';
@@ -536,27 +537,11 @@ function setResultsTab(t) {
   if (util) util.hidden = t !== 'util';
 }
 
-function renderResults(v) {
+// Forutsetningene øverst i oppsummeringa - de samme radene står i rapporten.
+function assumptionRows(v) {
   const m = model, a = m.anchors, g = v.gamma;
   const foot = anchorFoot(m);
-  $('#verdict').innerHTML = !v.res.converged || v.issues.some(i => i.level === 'error')
-    ? '<span style="color:var(--bad)">Ugyldig beregning</span>'
-    : v.bearing && !v.bearing.ok
-    ? '<span style="color:var(--bad)">Kontakttrykk overskredet</span>'
-    : v.governing
-    ? `<span style="color:${utilCss(v.maxUtil)}">maks ${pct(v.maxUtil)}</span> · ${esc(v.governing.mode)}`
-    : 'ingen kontroller';
-
-  const host = $('#results');
-  host.innerHTML = '';
-  const summary = el('div', 'tabpane');
-  summary.id = 'results-summary';
-  const util = el('div', 'tabpane');
-  util.id = 'results-util';
-  host.appendChild(summary);
-  host.appendChild(util);
-
-  const rows = [
+  return [
     ['Lastkombinasjon', `${model.load.name} · ${
       model.load.limit === 'uls' ? 'bruddgrense' : 'bruksgrense'}`],
     ['Regelverk (stål/samvirkning)', v.standards.generalLabel],
@@ -583,8 +568,61 @@ function renderResults(v) {
       : g.gc ? `γ_c ${n(g.gc, 2)} · γ_M0 ${n(g.gM0, 2)} · γ_M2 ${n(g.gM2, 2)}` +
                (g.steel === 'rebar' ? ` · γ_s ${n(g.gS, 2)}` : '') : '–'],
   ];
+}
+
+// Tekstene under krafttabellen - også i rapporten.
+function anchorNotes(v) {
+  const m = model, cp = v.res.compression;
+  return [
+    m.plate.present
+      ? 'x, y i mm fra platesenter. N, V i kN.'
+      : 'x, y i mm fra boltgruppas senter. N, V i kN.',
+    cp
+      ? `Trykkresultant ${kN(cp.C)} kN i (${n(cp.x, 0)}, ${n(cp.y, 0)}) mm, ` +
+        `maks kontakttrykk ${n(cp.sigmaMax, 2)} N/mm².`
+      : m.plate.present
+        ? 'Ingen kontakt mot betongen – plata er avstivet, og boltene tar trykk i bøyning.'
+        : 'Ingen plate, altså ingen trykkflate – boltene tar både strekk og trykk.',
+  ];
+}
+
+// Kontrollene i den rekkefølgen resultatlista viser dem: Strekk/Skjær/
+// Samvirkning, og innad betong/stål/armering med høyeste utnyttelse først.
+function checkFamilies(v) {
+  const out = [];
+  for (const fam of ['Strekk', 'Skjær', 'Samvirkning']) {
+    const list = v.checks.filter(c => family(c) === fam)
+      .sort((x, y) => (applicable(y) ? y.util : -1) - (applicable(x) ? x.util : -1));
+    if (!list.length) continue;
+    const categories = fam === 'Samvirkning' ? [{ name: null, checks: list }]
+      : CATEGORY_ORDER.map(cat => ({ name: cat, checks: list.filter(c => category(c) === cat) }))
+          .filter(x => x.checks.length);
+    out.push({ name: fam, categories });
+  }
+  return out;
+}
+
+function renderResults(v) {
+  const m = model;
+  $('#verdict').innerHTML = !v.res.converged || v.issues.some(i => i.level === 'error')
+    ? '<span style="color:var(--bad)">Ugyldig beregning</span>'
+    : v.bearing && !v.bearing.ok
+    ? '<span style="color:var(--bad)">Kontakttrykk overskredet</span>'
+    : v.governing
+    ? `<span style="color:${utilCss(v.maxUtil)}">maks ${pct(v.maxUtil)}</span> · ${esc(v.governing.mode)}`
+    : 'ingen kontroller';
+
+  const host = $('#results');
+  host.innerHTML = '';
+  const summary = el('div', 'tabpane');
+  summary.id = 'results-summary';
+  const util = el('div', 'tabpane');
+  util.id = 'results-util';
+  host.appendChild(summary);
+  host.appendChild(util);
+
   const ass = el('div', 'assump');
-  for (const [k, val] of rows)
+  for (const [k, val] of assumptionRows(v))
     ass.appendChild(el('div', 'row', `<span class="k">${esc(k)}</span><span class="v">${esc(val)}</span>`));
   summary.appendChild(ass);
 
@@ -599,16 +637,7 @@ function renderResults(v) {
       `<tr><td>${an.id}</td><td>${an.x}</td><td>${an.y}</td>` +
       `<td>${an.N > 1 ? kN(an.N) : '–'}</td><td>${kN(an.V)}</td></tr>`).join('') + '</tbody>';
   wrap.appendChild(t);
-  wrap.appendChild(el('p', 'hint', m.plate.present
-    ? 'x, y i mm fra platesenter. N, V i kN.'
-    : 'x, y i mm fra boltgruppas senter. N, V i kN.'));
-  const cp = v.res.compression;
-  wrap.appendChild(el('p', 'hint', cp
-    ? `Trykkresultant ${kN(cp.C)} kN i (${n(cp.x, 0)}, ${n(cp.y, 0)}) mm, ` +
-      `maks kontakttrykk ${n(cp.sigmaMax, 2)} N/mm².`
-    : m.plate.present
-      ? 'Ingen kontakt mot betongen – plata er avstivet, og boltene tar trykk i bøyning.'
-      : 'Ingen plate, altså ingen trykkflate – boltene tar både strekk og trykk.'));
+  for (const txt of anchorNotes(v)) wrap.appendChild(el('p', 'hint', txt));
   summary.appendChild(wrap);
 
   if (v.bearing && !v.bearing.ok)
@@ -691,8 +720,8 @@ function checkRow(c) {
   const row = el('button', 'chk' + (ok ? (c.util > 1 ? ' over' : '') : ' na'));
   row.setAttribute('aria-current', String(activeCheck === c.id));
   const sub = !ok ? esc(c.note || 'Ikke aktuell for denne geometrien')
-    : c.requirements ? `<b>${c.requirements.filter(it => it.ok).length}</b> / ` +
-      `${c.requirements.length} krav oppfylt · pkt. ${esc(c.clause)}`
+    : c.requirements ? `<b>${c.requirements.filter(it => it.checked !== false && it.ok).length}</b> / ` +
+      `${c.requirements.filter(it => it.checked !== false).length} krav oppfylt · pkt. ${esc(c.clause)}`
     : c.expr ? `<b>${n(c.util, 2)}</b> / 1,00 · ${esc(c.expr)}`
     : `<b>${kN(c.NEd)} kN</b> / ${kN(c.NRd)} kN · pkt. ${esc(c.clause)}`;
   const pc = !ok ? '–' : bin ? (c.util > 1 ? 'Ikke OK' : 'OK') : pct(c.util);
@@ -846,10 +875,14 @@ function renderSheet(v) {
     H.push('<h3>Enkeltkrav</h3><table class="io reqs"><thead><tr>' +
       '<th>Pkt</th><th>Krav (ordrett, NS-EN 1992-4:2018 (E))</th><th>Vurdering</th>' +
       '<th>Kommentar</th></tr></thead><tbody>');
-    for (const it of c.requirements)
+    for (const it of c.requirements) {
+      const verdict = it.checked === false ? 'Kontrolleres separat'
+        : it.ok ? 'OK' : 'Ikke OK';
+      const color = it.checked === false ? 'var(--warn)' : it.ok ? 'var(--ok)' : 'var(--bad)';
       H.push(`<tr><td class="sym">${esc(it.letter)})</td><td>${esc(it.quote)}</td>` +
-        `<td style="color:${it.ok ? 'var(--ok)' : 'var(--bad)'};font-weight:600">` +
-        `${it.ok ? 'OK' : 'Ikke OK'}</td><td>${esc(it.comment || '')}</td></tr>`);
+        `<td style="color:${color};font-weight:600">${verdict}</td>` +
+        `<td>${esc(it.comment || '')}</td></tr>`);
+    }
     H.push('</tbody></table>');
   }
 
@@ -1101,8 +1134,6 @@ export function boot() {
     const mode = $('#render-mode');
     mode.value = showOpts.renderMode;
     $('#concrete-opacity').disabled = showOpts.renderMode !== 'xray';
-    $('#section-axis').disabled = showOpts.renderMode !== 'cutaway';
-    $('#section-position').disabled = showOpts.renderMode !== 'cutaway';
   };
   $('#render-mode').onchange = e => {
     showOpts.renderMode = e.target.value;
@@ -1111,10 +1142,6 @@ export function boot() {
   $('#concrete-opacity').value = showOpts.concreteOpacity * 100;
   $('#concrete-opacity').oninput = e => {
     showOpts.concreteOpacity = Number(e.target.value) / 100; refreshScene();
-  };
-  $('#section-axis').onchange = e => { showOpts.sectionAxis = e.target.value; refreshScene(); };
-  $('#section-position').oninput = e => {
-    showOpts.sectionPosition = Number(e.target.value); refreshScene();
   };
   syncViewControls();
   // Bare verktøylinjas nedtrekksmenyer (.menu) skal lukkes av utenfor-klikk/
@@ -1252,14 +1279,29 @@ export function boot() {
       alert('Kunne ikke åpne prosjektfila: ' + (err?.message || err));
     }
   };
-  $('#report').onclick = async (e) => {
+  // To rapporter: alt regnet med den valgte lastkombinasjonen (det du ser i
+  // programmet), eller hver kontroll med sin egen dimensjonerende kombinasjon.
+  const makeReport = mode => async (e) => {
     const b = e.currentTarget, old = b.textContent;
+    if (b.disabled) return;
+    b.disabled = true;
+    b.textContent = 'Lager PDF …';
     try {
-      const r = await saveFile(buildReport(window.__v), 'forankring-beregning.txt');
-      b.textContent = r.renamed ? 'Lagret – se filnavn' : 'Lagret';
-    } catch (err) { b.textContent = saveError(err); }
+      const pdf = await reportPdf(await reportData(mode));
+      const navn = (model.meta.prosjekt || 'forankring').trim() || 'forankring';
+      const filnavn = navn.replace(/[^\p{L}\p{N}._ -]/gu, '').replace(/[\s-]+/g, '-') +
+        (mode === 'gov' ? '-beregningsrapport-dimensjonerende.pdf' : '-beregningsrapport.pdf');
+      await saveFile(pdf, filnavn);
+      b.textContent = 'Lagret';
+    } catch (err) {
+      console.error(err);
+      b.textContent = saveError(err);
+    }
+    b.disabled = false;
     setTimeout(() => (b.textContent = old), 3000);
   };
+  $('#report').onclick = makeReport('active');
+  $('#report-gov').onclick = makeReport('gov');
 
   initSplitters();
   $('#stage').attachLabelLayer($('#hud'));
@@ -1268,122 +1310,219 @@ export function boot() {
 }
 
 // === rapport ==============================================================
-function buildReport(v) {
-  const L = [], line = ch => ch.repeat(72);
+// Samler alt rapporten skal vise, tolket ferdig til tekst og tall. Selve
+// oppsettet til PDF-en ligger i ui/report.js.
+
+// Verdien et felt viser i skjemaet, som tekst.
+function settingValue(f) {
+  const raw = f.val != null ? f.val : get(model, f.p);
+  if (f.t === 'bool') return raw ? 'Ja' : 'Nei';
+  if (f.t === 'select' || f.t === 'choice') {
+    const opts = typeof f.o === 'function' ? f.o(model) : f.o;
+    const hit = opts.find(([val]) => String(val) === String(raw));
+    return hit ? hit[1] : String(raw ?? '–');
+  }
+  const val = f.t === 'kn' ? raw / 1000 : f.t === 'knm' ? raw / 1e6 : raw;
+  // Tallet slik det står i feltet - uten utfylte desimaler.
+  return (Number.isFinite(val) ? (+val.toFixed(4)).toLocaleString('nb-NO') : String(val ?? '–')) +
+    (f.u ? ' ' + f.u : '');
+}
+const settingLabel = f => (typeof f.l === 'function' ? f.l(model) : f.l);
+
+function settingsGroups() {
+  const out = [];
+  for (const g of visibleGroups()) {
+    if (g.group === 'Tilleggsarmering') continue;
+    out.push({ title: g.group, rows: g.items.filter(f => !f.when || f.when(model))
+      .map(f => [settingLabel(f), settingValue(f)]) });
+  }
+  model.reinforcements.forEach((r, i) => {
+    const fields = reinforcementFields(model, i);
+    const rows = [['Type', PURPOSE_LABEL[r.purpose]]];
+    for (const S of REINF_SECTIONS) {
+      const own = fields.filter(f => f.sec === S.id);
+      if (!own.length) continue;
+      rows.push({ section: S.l });
+      for (const f of own) rows.push([settingLabel(f), settingValue(f)]);
+    }
+    out.push({ title: `Tilleggsarmering – ${reinforcementLabel(r)}`, rows });
+  });
+  if (!model.reinforcements.length)
+    out.push({ title: 'Tilleggsarmering', rows: [], empty: 'Ingen tilleggsarmering lagt inn.' });
+  return out;
+}
+
+function reinforcementRows(v) {
+  return model.reinforcements.map(r => {
+    const { s, issues, ok } = reinforcementOk(v, r);
+    const lines = [`${PURPOSE_LABEL[r.purpose]} · ${r.geometryType}`];
+    // Plasseringa er selve kravet i pkt. 7.2.1.2 - den hører hjemme i
+    // sammendraget, ikke bare nede i den enkelte kontrollen.
+    if (r.purpose === 'tension') {
+      const g = groupGeometry(model, null, r).geo;
+      if (g) lines.push(`Avstand bolt–bein ${n(g.dNearest, 0)}–${n(g.dOwn, 0)} mm ` +
+        `(maks. 0,75·h_ef = ${n(g.dMax, 0)} mm), c/c ${n(g.sMin, 0)} mm, ` +
+        `l_1 = ${n(g.insideLen, 0)} mm, forankring utenfor kjegla ` +
+        `${n(g.anchorageAvail, 0)}/${n(g.lbd, 0)} mm`);
+    }
+    if (issues.length) lines.push(issues.join(' '));
+    if (s.replaced)
+      lines.push(`Erstatter ${r.purpose === 'tension' ? 'betongkjeglebrudd' : 'kantbrudd'} ` +
+        'som dimensjonerende bruddform.');
+    return { label: reinforcementLabel(r), need: `${s.need}×⌀${r.ds}`,
+             chosen: `${r.count}×⌀${r.ds}`, worst: s.worst, ok, lines };
+  });
+}
+
+function comboRows(res) {
+  let govId = null, govU = -1;
+  for (const [id, cv] of res)
+    if (cv && cv.maxUtil > govU) { govU = cv.maxUtil; govId = id; }
+  const rows = model.combos.map(c => {
+    const cv = res.get(c.id);
+    const invalid = cv && (!cv.res.converged || cv.issues.some(i => i.level === 'error'));
+    const bearing = cv && cv.bearing && !cv.bearing.ok;
+    return {
+      ...c, active: c.id === model.activeCombo, governing: c.id === govId,
+      limitLabel: (LIMIT_STATES.find(([k]) => k === c.limit) || [, c.limit])[1],
+      util: cv ? cv.maxUtil : NaN,
+      utilText: !cv ? '–' : invalid ? 'Ugyldig' : bearing ? 'Trykk > 100 %' : pct(cv.maxUtil),
+      utilColor: invalid || bearing ? '#c0524a' : undefined,
+      governingMode: cv?.governing?.mode ?? '',
+    };
+  });
+  return { rows, gov: model.combos.find(c => c.id === govId), govU };
+}
+
+// Én beregning pr. kombinasjon som er brukt i rapporten. `run.combo` er
+// kombinasjonen, `run.v` resultatet av verify() med den som last.
+const comboLoadsTxt = c =>
+  `N = ${kN(c.N)} kN · V_x = ${kN(c.Vx)} kN · V_y = ${kN(c.Vy)} kN · ` +
+  `M_x = ${n(c.Mx / 1e6, 2)} kNm · M_y = ${n(c.My / 1e6, 2)} kNm · M_z = ${n(c.Mz / 1e6, 2)} kNm`;
+const runInvalid = v => !v.res.converged || v.issues.some(i => i.level === 'error');
+
+// mode: 'active' - alt regnes med den valgte kombinasjonen.
+//       'gov'    - hver kontroll hentes fra den bruddgrensekombinasjonen som
+//                  gir høyest utnyttelse for akkurat den kontrollen.
+async function reportData(mode) {
   const m = model;
-  L.push('BEREGNING – FORANKRING I BETONG', line('='), '',
-    `Regelverk (stål/samvirkning):  ${v.standards.generalLabel}`,
-    `Regelverk (strekk mot betong): ${v.standards.tcLabel}`,
-    `Regelverk (skjær mot betong):  ${v.standards.scLabel}`,
-    `Dato:       ${new Date().toLocaleString('no-NO')}`, '');
-  L.push('GEOMETRI', line('-'));
-  L.push(`Betong ${m.concrete.grade} (f_ck = ${m.concrete.fck} N/mm²), ` +
-    `${concreteShapeTxt(m)}`);
-  if (isShaped(m))
-    for (const [i, sh] of planShapes(m).entries()) {
+  const stage = $('#stage');
+  // Scenen bygges med et lite opphold etter hver endring - vent den ut, så
+  // bildet viser det samme som tallene.
+  await new Promise(r => setTimeout(r, 60));
+  const images = { iso: stage.snapshot(1800, 1100, 'iso'), view: stage.snapshot(1800, 1100) };
+
+  const res = utilForCombos();
+  const activeRun = { combo: m.load, v: verify(m) };
+  const runs = m.combos.filter(c => res.get(c.id)).map(c => ({ combo: c, v: res.get(c.id) }));
+  // Uten bruddgrensekombinasjoner finnes ingen dimensjonerende - da blir det
+  // den valgte, som før.
+  const gov = mode === 'gov' && runs.length > 0;
+  const used = gov ? runs : [activeRun];
+
+  // Hvilken beregning hver kontroll hentes fra. Ved lik utnyttelse vinner
+  // den første kombinasjonen i tabellen.
+  const pick = key => {
+    const best = new Map();
+    for (const run of used)
+      for (const c of run.v[key] || []) {
+        const u = applicable(c) ? c.util : -1;
+        const cur = best.get(c.id);
+        if (!cur || u > cur.u) best.set(c.id, { c, run, u });
+      }
+    return [...best.values()];
+  };
+  const chosen = pick('checks'), rep = pick('replacedConcreteChecks');
+  const runOf = new Map([...chosen, ...rep].map(x => [x.c, x.run]));
+
+  let k = 0;
+  const item = c => {
+    const nr = `5.${++k}`, run = runOf.get(c);
+    return { c, num: nr, dest: `kontroll-${nr}`, applicable: applicable(c),
+             figure: figureFor(c, { ...m, load: run.combo }),
+             combo: run.combo.name, comboLoads: comboLoadsTxt(run.combo) };
+  };
+  const fams = checkFamilies({ checks: chosen.map(x => x.c) }).map(f => ({
+    name: f.name,
+    categories: f.categories.map(cat => ({ name: cat.name, checks: cat.checks.map(item) })),
+  }));
+  const replaced = rep.map(x => item(x.c));
+  const allChecks = [...fams.flatMap(f => f.categories.flatMap(cat => cat.checks)), ...replaced];
+
+  // Samlet resultat: verste kombinasjon avgjør.
+  const worstRun = used.reduce((a, r) => (r.v.maxUtil > a.v.maxUtil ? r : a));
+  const bad = used.find(r => runInvalid(r.v)) ?? used.find(r => r.v.bearing && !r.v.bearing.ok);
+  const invalid = !bad ? null
+    : (runInvalid(bad.v) ? 'Ugyldig beregning' : 'Kontakttrykk overskredet') +
+      (gov ? ` (${bad.combo.name})` : '');
+  const govCheck = worstRun.v.governing;
+
+  // Avvik som bare gjelder noen av kombinasjonene, merkes med hvilke.
+  const issueMap = new Map();
+  for (const r of used)
+    for (const i of r.v.issues) {
+      const key = i.level + '|' + i.text;
+      if (!issueMap.has(key)) issueMap.set(key, { ...i, combos: [] });
+      issueMap.get(key).combos.push(r.combo.name);
+    }
+  const issues = [...issueMap.values()].map(i => ({ level: i.level,
+    text: i.combos.length < used.length ? `${i.text} (${i.combos.join(', ')})` : i.text }));
+
+  // Tilleggsarmeringa: verste kombinasjon for hver gruppe.
+  const reinfRuns = used.map(r => reinforcementRows(r.v));
+  const reinforcements = model.reinforcements.map((_, i) => {
+    const rows = reinfRuns.map(rr => rr[i]);
+    const worst = rows.reduce((a, r) => (r.worst > a.worst ? r : a));
+    return { ...worst, ok: rows.every(r => r.ok) };
+  });
+
+  const combos = comboRows(res);
+  if (gov)
+    for (const row of combos.rows)
+      row.governs = allChecks.filter(it => it.applicable && runOf.get(it.c).combo.id === row.id)
+        .map(it => it.num);
+
+  const assumptions = assumptionRows(activeRun.v);
+  if (gov) assumptions[0] = ['Lastkombinasjon',
+    'dimensjonerende for hver kontroll, blant alle bruddgrensekombinasjonene'];
+
+  return {
+    mode: gov ? 'gov' : 'active',
+    meta: m.meta,
+    date: new Date().toLocaleDateString('nb-NO'),
+    standard: activeRun.v.standard,
+    standards: activeRun.v.standards,
+    activeCombo: gov ? 'Dimensjonerende for hver kontroll'
+      : `${m.load.name} (${m.load.limit === 'uls' ? 'bruddgrense' : 'bruksgrense'})`,
+    verdict: { ok: used.every(r => r.v.ok), maxUtil: worstRun.v.maxUtil, invalid,
+               governing: govCheck ? govCheck.mode + (gov ? ` (${worstRun.combo.name})` : '') : null },
+    comboNote: !gov && combos.gov && combos.gov.id !== m.activeCombo
+      ? `Styrende lastkombinasjon er ${combos.gov.name} (${pct(combos.govU)}), men utregningene ` +
+        `i rapporten gjelder ${m.load.name}. Velg ${combos.gov.name} i lasttabellen, eller lag ` +
+        'rapporten med dimensjonerende lastkombinasjon pr. kontroll.'
+      : null,
+    issues,
+    images,
+    assumptions,
+    shapes: isShaped(m) ? planShapes(m).map((sh, i) => {
       const [z0, z1] = shapeZ(m, sh);
-      const geo = sh.kind === 'rect'
-        ? `${sh.bx} × ${sh.by} mm i (${sh.x}, ${sh.y})`
+      const geo = sh.kind === 'rect' ? `${sh.bx} × ${sh.by} mm i (${sh.x}, ${sh.y})`
         : sh.kind === 'circle' ? `⌀${2 * sh.r} mm i (${sh.x}, ${sh.y})`
         : `${sh.pts.length} hjørner`;
-      L.push(`  ${i + 1}. ${SHAPE_LABEL[sh.kind]}, ` +
+      return `${i + 1}. ${SHAPE_LABEL[sh.kind]}, ` +
         `${(OP_LABEL[sh.op] || OP_LABEL.add).toLowerCase()}: ${geo}, ` +
-        `kote ${Math.round(z0)} til ${Math.round(z1)}`);
-    }
-  L.push(m.plate.present
-    ? `Plate ${m.plate.bx} × ${m.plate.by} × ${m.plate.t} mm, ` +
-      `montasje: ${MOUNT_TXT[m.plate.mount]}, ` +
-      `${m.anchors.attachment === 'welded' ? 'sveiste' : 'gjennomboltede'} forankringer`
-    : `Ingen stålplate – enkeltstående dybler, utkraging e = ${m.plate.e} mm`);
-  const a = m.anchors, foot = anchorFoot(m);
-  L.push(`Bolter ${a.nx}×${a.ny} ${a.barType === 'rod' ? 'M' : '⌀'}${a.d} ` +
-    `${BAR_TXT[a.barType].toLowerCase()} ${a.steel}, ` +
-    `${a.endType === 'none' ? 'l_b' : 'h_ef'} = ${a.hef} mm, ` +
-    `c/c ${a.sx} × ${a.sy} mm`);
-  L.push(`Forankringsende: ${END_TXT[a.endType]}` + (foot.hasFoot
-    ? `, medvirkende fot ${n(foot.eff, 0)} mm, netto A_h = ${n(foot.Ah, 0)} mm²` : ''), '');
-  L.push('LASTER', line('-'));
-  const l = m.load;
-  L.push(`N = ${kN(l.N)} kN    V_x = ${kN(l.Vx)} kN    V_y = ${kN(l.Vy)} kN`);
-  L.push(`M_x = ${n(l.Mx / 1e6, 2)} kNm    M_y = ${n(l.My / 1e6, 2)} kNm    ` +
-    `M_z = ${n(l.Mz / 1e6, 2)} kNm`, '');
-  if (m.reinforcements.length) {
-    L.push('TILLEGGSARMERING', line('-'));
-    for (const r of m.reinforcements) {
-      const s = reinforcementSummary(v, r);
-      const issues = requirementIssues(r);
-      L.push(`${reinforcementLabel(r)}  ⌀${r.ds}, ${r.geometryType}`);
-      L.push(`  Nødvendig: ${s.need}×⌀${r.ds}    Valgt: ${r.count}×⌀${r.ds}    ` +
-        `Status: ${s.ok && !issues.length ? 'OK' : 'IKKE OK'}`);
-      // Plasseringa er selve kravet i pkt. 7.2.1.2 - den hører hjemme i
-      // sammendraget, ikke bare nede i den enkelte kontrollen.
-      if (r.purpose === 'tension') {
-        const G = groupGeometry(model, null, r);
-        const g = G.geo;
-        if (g) L.push(`  Avstand bolt→bein: ${n(g.dNearest, 0)}–${n(g.dOwn, 0)} mm ` +
-          `(maks. 0,75·h_ef = ${n(g.dMax, 0)} mm), c/c ${n(g.sMin, 0)} mm, ` +
-          `l_1 = ${n(g.insideLen, 0)} mm, forankring utenfor kjegla ` +
-          `${n(g.anchorageAvail, 0)}/${n(g.lbd, 0)} mm`);
-      }
-      if (issues.length) L.push(`  ${issues.join(' ')}`);
-      if (s.replaced)
-        L.push(`  Erstatter ${r.purpose === 'tension' ? 'betongkjeglebrudd' : 'kantbrudd'} ` +
-          'som dimensjonerende bruddform.');
-    }
-    L.push('');
-  }
-  L.push('KRAFTFORDELING I BOLTEGRUPPA', line('-'));
-  L.push('  # |      x |      y |     N [kN] |     V [kN]');
-  for (const an of v.res.anchors)
-    L.push(`${String(an.id).padStart(3)} | ${String(an.x).padStart(6)} | ` +
-      `${String(an.y).padStart(6)} | ${kN(an.N).padStart(10)} | ${kN(an.V).padStart(10)}`);
-  L.push('');
-
-  for (const c of [...v.checks, ...v.replacedConcreteChecks]) {
-    L.push(line('='), `${c.mode}   [${c.standard ?? v.standard} · pkt. ${c.clause}]` +
-      (c.replacedBy ? `   -- erstattet av ${c.replacedBy}` : ''), line('='));
-    const cal = c.calc;
-    if (cal?.skipped) { L.push(`  ${cal.skipped}`, ''); continue; }
-    if (!cal) { L.push('  (ingen utregning registrert)', ''); continue; }
-    if (cal.inputs.length) {
-      L.push('', 'Inndata');
-      for (const i of cal.inputs)
-        L.push(`  ${i.sym.padEnd(12)} ${n(i.value).padStart(12)} ${i.unit.padEnd(7)} ${i.source}`);
-    }
-    if (cal.steps.length) {
-      L.push('', 'Utregning');
-      for (const s of cal.steps) {
-        L.push(`  ${s.sym}${s.desc ? '  – ' + s.desc : ''}${s.ref ? '   ' + s.ref : ''}`);
-        L.push(`      = ${s.formula}`);
-        if (s.subst && s.subst !== '–') L.push(`      = ${s.subst}`);
-        L.push(`      = ${n(s.value)} ${s.unit || ''}`);
-      }
-    }
-    if (cal.result) {
-      const r = cal.result;
-      L.push('', 'Kapasitet');
-      L.push(`  ${r.sym} = ${r.formula}${r.ref ? '   ' + r.ref : ''}`);
-      L.push(`      = ${r.subst}`);
-      L.push(`      = ${n(r.value)} ${r.unit}`);
-    }
-    if (cal.check) {
-      L.push('', 'Kontroll');
-      L.push(`  ${cal.check.formula} ≤ 1,0`);
-      L.push(`      = ${cal.check.subst}`);
-      L.push(`      = ${n(cal.check.value, 3)}   (${pct(cal.check.value)})   ` +
-        (cal.check.value <= 1 ? 'OK' : 'IKKE OK'));
-    }
-    if (c.note) L.push('', `  Merk: ${c.note}`);
-    L.push('');
-  }
-
-  if (v.issues.length) {
-    L.push('AVVIK I INNDATA', line('-'));
-    for (const i of v.issues) L.push(`  [${i.level}] ${i.text}`);
-    L.push('');
-  }
-  L.push(line('='));
-  L.push(`STYRENDE: ${v.governing?.mode} – ${pct(v.maxUtil)}`);
-  L.push(v.ok ? 'RESULTAT: OK' : 'RESULTAT: IKKE OK');
-  return L.join('\n');
+        `kote ${Math.round(z0)} til ${Math.round(z1)}`;
+    }) : [],
+    anchorSets: used.map(r => ({ title: r.combo.name, loads: comboLoadsTxt(r.combo),
+                                 anchors: r.v.res.anchors, notes: anchorNotes(r.v) })),
+    reinforcements,
+    settings: settingsGroups(),
+    combos: combos.rows,
+    combosNote: 'Bruksgrense kontrolleres ikke – NS-EN 1992-4 dekker bruddgrense. ' +
+      'Utnyttelsen er høyeste utnyttelse over alle kontrollene i kombinasjonen; ' +
+      'styrende kombinasjon er markert med farget bakgrunn.',
+    families: fams,
+    replaced,
+    allChecks,
+  };
 }

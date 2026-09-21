@@ -26,6 +26,7 @@ import { Calc, n } from './calc.js';
 import { edgeDistances } from '../core/model.js';
 import { clamp, clippedSquares } from './geometry.js';
 import { K, partialFactors } from './en1992-4.js';
+import { KB, b19Concrete } from './b19.js';
 import { requirementIssues, minAnchorageFactor, mandrelDiameter } from '../core/reinforcement.js';
 import { fbd, anchorageLength, minInsideLength, barGeometry, anchorsServed,
          effectiveCount, minEdgeForAnchors, tensionLayout,
@@ -85,8 +86,13 @@ export function groupGeometry(m, res, r) {
 //
 //  Regnes med de samme konstantene som den vanlige kjeglekontrollen
 //  (en1992-4.js pkt. 7.2.1.4), bare med h_ef og punkter fra armeringa.
+//  Er strekk mot betong valgt etter B19, regnes kjegla etter B19 pkt. 19.3.2
+//  i stedet (se reinforcementConeB19) - kjeglebrudd er dekket av boka, mens
+//  selve armeringa (stål, forankring, l_bd) ikke er det og følger
+//  NS-EN 1992-4 7.2.1.2 / NS-EN 1992-1-1 8.4 uansett.
 // ---------------------------------------------------------------------------
-function reinforcementCone(m, res, r, L) {
+function reinforcementCone(m, res, r, L, coneStd) {
+  if (coneStd === 'B19') return reinforcementConeB19(m, res, r, L);
   const g = partialFactors(m);
   const cracked = m.code.cracked;
   const hef = L.dBot;                          // dybden armeringa leverer i
@@ -156,6 +162,77 @@ function reinforcementCone(m, res, r, L) {
           ' Forenklet: ψ_ec,N = 1,0, siden bøylene ligger symmetrisk om boltraden.' };
 }
 
+// Samme kontroll etter B19 pkt. 19.3.2: k-faktoren gir dimensjonerende verdi
+// direkte (k_1 = 11,9/γ_c · √f_ck,cube), og 0,7-reduksjonen for risset
+// betong faller bort når det er kantarmering og bøyler - som b19ConeBranch.
+function reinforcementConeB19(m, res, r, L) {
+  const cd = b19Concrete(m);
+  const hef = L.dBot;
+  const ccr = 1.5 * hef;
+  const pts = L.bars.flatMap(b => b.endPoints);
+  const NEd = res.tension.Ntot;
+  const plain = m.code.cracked && m.code.edgeReinf !== 'bars+stirrups';
+
+  const c = new Calc('19.3.2');
+  c.in('h_ef,re', hef, 'mm', 'Dybde til enden av tilleggsarmeringa');
+  c.in('f_ck,cube', cd.fckCube, 'N/mm²', `Betongdel · ${cd.grade} · terningfasthet`);
+  c.in('γ_c', cd.gc, '–', 'Regelverk');
+  c.in('n_punkt', pts.length, 'stk',
+    L.endType === 'hook' ? 'Enden av kroken på hvert bein'
+      : L.endBend ? 'Enden av foten på hvert bein' : 'Bunnen av hvert bein');
+  c.in('N_Ed,g', NEd, 'N', 'Sum strekk i boltegruppa');
+
+  const k1 = c.step({ sym: 'k_1', desc: plain
+      ? 'Risset uarmert betong (uten kantarmering eller bøyler): 0,7 · k_1'
+      : 'Urisset betong, eller risset med kantarmering og bøyler',
+    formula: (plain ? '0,7 · ' : '') + '(11,9 / γ_c) · √f_ck,cube',
+    subst: `${plain ? '0,7 · ' : ''}(11,9 / ${n(cd.gc, 2)}) · √${n(cd.fckCube, 0)}`,
+    value: (plain ? KB.crackedPlain : 1) * (KB.k1 / cd.gc) * Math.sqrt(cd.fckCube),
+    unit: 'N/mm^1,5', ref: 'tab. B 19.3.1' });
+  const N0 = c.step({ sym: 'N⁰_Rd,c', desc: 'Kjeglekapasitet for ett punkt, uten kant- eller gruppevirkning',
+    formula: 'k_1 · h_ef,re^1,5', subst: `${n(k1, 2)} · ${n(hef, 0)}^1,5`,
+    value: k1 * Math.pow(hef, 1.5), unit: 'N', ref: '19.3.2.1' });
+  const A0 = c.step({ sym: 'A⁰_c,N', desc: 'Full utrivingskjegle for ett punkt',
+    formula: '9 · h_ef,re²', subst: `9 · ${n(hef, 0)}²`, value: 9 * hef * hef, unit: 'mm²',
+    ref: '19.3.2.2' });
+  const Ac = c.step({ sym: 'A_c,N', desc: 'Faktisk utbruddsareal fra armeringsendene',
+    formula: 'union av (endepunkt ± 1,5·h_ef,re), klippet mot frie kanter',
+    subst: `${pts.length} punkt, 1,5·h_ef,re = ${n(ccr, 0)} mm`,
+    value: clippedSquares(m, pts, ccr), unit: 'mm²', ref: 'fig. B 19.11' });
+
+  let cmin = Infinity;
+  for (const p of pts) {
+    const e = edgeDistances(m, p.x, p.y);
+    cmin = Math.min(cmin, e.xNeg, e.xPos, e.yNeg, e.yPos);
+  }
+  const psi_s = c.step({ sym: 'Ψ_s,N', desc: 'Kanteffekt',
+    formula: '0,7 + 0,3 · a / (1,5 · h_ef,re) ≤ 1,0',
+    subst: Number.isFinite(cmin) ? `0,7 + 0,3 · ${n(cmin, 0)} / ${n(ccr, 0)}`
+      : 'ingen fri kant',
+    value: Number.isFinite(cmin) ? clamp(0.7 + 0.3 * cmin / ccr, 0, 1) : 1, unit: '–',
+    ref: '19.3.2.3' });
+  const psi_re = c.step({ sym: 'Ψ_re,N', desc: 'Overflatearmering – bare aktuell når h_ef < 100 mm',
+    formula: '0,5 + h_ef,re / 200 ≤ 1,0', subst: `0,5 + ${n(hef, 0)} / 200`,
+    value: clamp(0.5 + hef / 200, 0, 1), unit: '–', ref: '19.3.2.3' });
+
+  const NRd = c.res({ sym: 'N_Rd,c,re',
+    formula: 'N⁰_Rd,c · (A_c,N / A⁰_c,N) · Ψ_s,N · Ψ_re,N',
+    subst: `${n(N0)} · (${n(Ac, 0)}/${n(A0, 0)}) · ${n(psi_s)} · ${n(psi_re)}`,
+    value: N0 * (Ac / A0) * psi_s * psi_re, unit: 'N', ref: '19.3.2.5' });
+  c.util({ formula: 'N_Ed,g / N_Rd,c,re', subst: `${n(NEd)} / ${n(NRd)}`, value: NEd / NRd });
+
+  return { id: `N-sre-cone-${r.id}`,
+    mode: `Tilleggsarmering ${r.id} – kjeglebrudd fra armeringsenden`,
+    clause: '19.3.2', standardId: 'B19', scope: 'gruppe', NRk: NRd, NRd, NEd,
+    util: NEd / NRd, calc: c, group: r.id,
+    note: 'Kjegla fra forankringsfoten er erstattet av armeringa, men lasta må fortsatt ' +
+          'ut i betongen der armeringa slutter. Regnet etter B19 19.3.2 (valgt for strekk ' +
+          'mot betong); kravet om kontrollen er hentet fra NS-EN 1992-4 7.2.1.2(2)e), ' +
+          'siden B19 ikke har egne regler for armeringsenden. ' +
+          'Forenklet: Ψ_ec,N = 1,0 (bøylene ligger symmetrisk), og h′_ef etter 19.3.2.2 ' +
+          'er ikke brukt for armeringsendene.' };
+}
+
 // ===========================================================================
 //  STREKK - erstatter betongkjeglebrudd, pkt. 7.2.1.2 (jf. B19.3.2.6)
 //
@@ -168,7 +245,10 @@ function reinforcementCone(m, res, r, L) {
 //    e) kjeglebrudd regnet på nytt fra enden av armeringa
 //    f) overlapp mot konstruksjonens armering (påkrevd for rett stang)
 // ===========================================================================
-export function tensionSupplementary(m, res, r) {
+//  coneStd: regelverket valgt for strekk mot betong ('EN1992-4' | 'B19').
+//  Styrer bare kontroll e); resten er armeringsregler B19 ikke har, og
+//  følger NS-EN 1992-4 / NS-EN 1992-1-1 uansett.
+export function tensionSupplementary(m, res, r, coneStd = 'EN1992-4') {
   const G = groupGeometry(m, res, r);
   const L = G.geo;
   const checks = [];
@@ -450,7 +530,7 @@ export function tensionSupplementary(m, res, r) {
   }
 
   // --- e) kjeglebrudd på nytt, fra enden av armeringa ---------------------
-  if (L && L.bars.length) checks.push(reinforcementCone(m, res, r, L));
+  if (L && L.bars.length) checks.push(reinforcementCone(m, res, r, L, coneStd));
 
   // --- f) videre kraftoverføring til konstruksjonens armering -------------
   //  U-bøyle/løkke: bøyen skal fortrinnsvis omslutte overflatearmeringa, så
@@ -482,8 +562,10 @@ export function tensionSupplementary(m, res, r) {
   // --- g) sjekkliste for enkeltkrava i pkt. 7.2.1.2(2) a)-f) --------------
   //  Ordrett fra NS-EN 1992-4:2018 (E), vurdert mot de samme størrelsene som
   //  kontrollene over. Punkt f) - overflatearmering mot stavmodell og
-  //  spaltekrefter etter 7.2.1.7(2)b) - er ikke implementert og vises derfor
-  //  alltid som ikke kontrollert.
+  //  spaltekrefter etter 7.2.1.7(2)b) - er ikke implementert. Det vises
+  //  derfor verken som oppfylt eller som brutt (checked: false), bare som en
+  //  påminnelse om at det må dokumenteres særskilt, og telles ikke med i
+  //  allOk under - et ukontrollert punkt skal ikke gjøre gruppa "Ikke OK".
   {
     const noReach = !!L && L.zConeMin <= L.dLegTop + 1e-6;
     const dOk = !!L && G.insideLen >= G.insideMin && !noReach;
@@ -494,7 +576,6 @@ export function tensionSupplementary(m, res, r) {
     const eOk = lbdOk && coneOk;
     const aOk = G.reqIssues.length === 0;
     const cOk = !!L && L.zoneOk && L.allServed;
-    const fOk = false;
     const govTxt = gov ? ` (styrende bolt ${gov.p.id})` : '';
 
     const items = [
@@ -562,20 +643,21 @@ export function tensionSupplementary(m, res, r) {
         comment: (lbdOk ? 'Forankringslengden utenfor kjegla er tilstrekkelig, se ' +
             'kontrollen for l_bd. ' : 'Forankringslengden utenfor kjegla er IKKE ' +
             'tilstrekkelig, se kontrollen for l_bd. ') +
-          (coneOk ? 'Kjeglebrudd fra enden av armeringa (formel 7.1) er kontrollert og OK. '
-            : 'Kjeglebrudd fra enden av armeringa (formel 7.1) er kontrollert og IKKE OK. ') +
+          `Kjeglebrudd fra enden av armeringa (${coneStd === 'B19' ? 'B19 pkt. 19.3.2' : 'formel 7.1'}) ` +
+          `er kontrollert og ${coneOk ? 'OK' : 'IKKE OK'}. ` +
           'Denne kjeglekontrollen kunne vært utelatt ved tilstrekkelig overlapp mot ' +
           'konstruksjonens armering, men modellen regner den alltid, som en ' +
           'konservativ kontroll.' },
-      { letter: 'f', ok: fOk,
+      { letter: 'f', ok: null, checked: false,
         quote: 'Surface reinforcement should be provided as shown in Figure 7.2 ' +
           'designed to resist the forces arising from the assumed strut and tie model ' +
           'and the splitting forces according to 7.2.1.7 (2)b).',
-        comment: 'IKKE kontrollert av modellen: dimensjonering av overflatearmeringa mot ' +
-          'stavmodellen og spaltekreftene etter 7.2.1.7(2)b) må dokumenteres særskilt.' },
+        comment: 'Bør kontrolleres iht. Eurokode: dimensjonering av overflatearmeringa ' +
+          'mot stavmodellen og spaltekreftene etter 7.2.1.7(2)b) gjøres ikke av modellen ' +
+          'og må dokumenteres særskilt.' },
     ];
 
-    const allOk = items.every(it => it.ok);
+    const allOk = items.filter(it => it.checked !== false).every(it => it.ok);
     checks.push({ id: `N-sre-detailing-${r.id}`,
       mode: `Tilleggsarmering ${r.id} – detaljeringskrav 7.2.1.2(2) a-f`,
       clause: '7.2.1.2(2)', scope: 'gruppe', NRk: NaN, NRd: NaN, NEd: NaN,
@@ -586,9 +668,12 @@ export function tensionSupplementary(m, res, r) {
         'supplementary reinforcement shall be designed according to 7.2.1.9 to resist ' +
         'the total load. ' +
         (allOk
-          ? 'Alle enkeltkrav a)-f) i pkt. 7.2.1.2(2) er vurdert som oppfylt - se tabellen.'
-          : 'Ett eller flere av enkeltkrava a)-f) i pkt. 7.2.1.2(2) er ikke oppfylt, ' +
-            'eller ikke kontrollert av modellen (punkt f) - se tabellen.') });
+          ? 'Alle enkeltkrav a)-e) i pkt. 7.2.1.2(2) som kontrolleres av modellen er ' +
+            'oppfylt - se tabellen. Punkt f) kontrolleres ikke av modellen og må ' +
+            'dokumenteres særskilt.'
+          : 'Ett eller flere av enkeltkrava a)-e) i pkt. 7.2.1.2(2) er ikke oppfylt - se ' +
+            'tabellen. Punkt f) kontrolleres uansett ikke av modellen og må dokumenteres ' +
+            'særskilt.') });
   }
 
   return { checks, qualifies: G.qualifies, geometry: G };

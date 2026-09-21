@@ -490,6 +490,50 @@ export class ThreeDStage extends HTMLElement {
     this.key.position.copy(c).add(new THREE.Vector3(-r * 1.8, r * 2.0, r * 1.4));
   }
 
+  // Bilde av modellen til rapporten, i fast oppløsning uavhengig av hvor stor
+  // ruta er - eller om den i det hele tatt vises. Uten `view` brukes kameraet
+  // slik brukeren har stilt det; med `view` (iso/top/front/side) rammes
+  // modellen inn på nytt i et eget kamera, så visninga i appen ikke flytter seg.
+  snapshot(width = 1600, height = 1000, view = null) {
+    const r = this.renderer, a = width / height;
+    let cam;
+    if (view) {
+      const dirs = { iso: [1, 0.75, 1], top: [0.001, 1, 0.001],
+                     front: [0, 0.05, 1], side: [1, 0.05, 0] };
+      const box = this._bounds();
+      const c = box.getCenter(new THREE.Vector3());
+      const rad = box.getSize(new THREE.Vector3()).length() / 2;
+      cam = this.perspCam.clone();
+      cam.aspect = a;
+      const vertical = THREE.MathUtils.degToRad(cam.fov) / 2;
+      const half = Math.min(vertical, Math.atan(Math.tan(vertical) * a));
+      const dist = rad / Math.sin(half) * 0.68;
+      cam.position.copy(c).addScaledVector(
+        new THREE.Vector3(...(dirs[view] || dirs.iso)).normalize(), dist);
+      cam.up.set(0, 1, 0);
+      cam.lookAt(c);
+      cam.near = Math.max(1, dist / 500);
+      cam.far = dist * 20;
+    } else {
+      cam = this.camera.clone();
+      if (cam.isPerspectiveCamera) cam.aspect = a;
+      else Object.assign(cam, { left: -this._orthoSize * a, right: this._orthoSize * a,
+                                top: this._orthoSize, bottom: -this._orthoSize });
+    }
+    cam.updateProjectionMatrix();
+
+    const size = r.getSize(new THREE.Vector2()), pr = r.getPixelRatio();
+    r.setPixelRatio(1);
+    r.setSize(width, height, false);
+    r.render(this.scene, cam);
+    const url = r.domElement.toDataURL('image/jpeg', 0.92);
+    r.setPixelRatio(pr);
+    r.setSize(size.x, size.y, false);
+    this._resize();
+    r.render(this.scene, this.camera);
+    return url;
+  }
+
   setView(v) {
     const box = this._bounds();
     const c = box.getCenter(new THREE.Vector3());

@@ -736,8 +736,12 @@ export function b19Interaction(m, res, checks) {
     util: uS, calc: cs, NRk: NaN, NRd: NaN, NEd: NaN });
 
   // --- betong -----------------------------------------------------------
-  const nC = uMax(['N-conc', 'N-cone', 'N-pullout', 'N-blowout', 'N-split']);
-  const vC = uMax(['V-conc', 'V-pryout', 'V-edge']);
+  // Tilleggsarmeringas kontroller har id-er pr. gruppe (N-sre-cone-<id> osv.)
+  // og tar over for kjegla når den er erstattet - fanges med mønster.
+  const sre = re => checks.filter(c => re.test(c.id)).map(c => c.id);
+  const nC = uMax(['N-conc', 'N-cone', 'N-pullout', 'N-blowout', 'N-split',
+                   ...sre(/^N-sre-(steel|anchorage|cone)-/)]);
+  const vC = uMax(['V-conc', 'V-pryout', 'V-edge', ...sre(/^V-sre-(steel|anchorage)-/)]);
   const cc = new Calc('19.6');
   cc.in('n', nC, '–', 'Utrivning av betong – utnyttelse');
   cc.in('v', vC, '–', 'Dybelskjær i betong – utnyttelse');
